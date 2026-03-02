@@ -1,0 +1,59 @@
+# PRI_at_commitment
+
+Standalone synthetic contradiction benchmark focused on **Predictive Rupture Index (PRI)** at generation commitment.
+
+This repository is extracted from `/Users/mstrkttt/Documents/anthropic-ai-safety` and intentionally removes semantic-uncertainty / `hbar_s` logic.
+
+## Included Signals
+
+- `pri`
+- `delta_sigma_jsd`
+- `acr_mid_mean`
+- SVD diagnostics (`pc1_ratio`, `effective_rank`, `spectral_entropy`)
+
+## Main Script
+
+Run the full experiment:
+
+```bash
+python scripts/run_synthetic_logic_experiment.py \
+  --model-name llama_3.2_3b \
+  --n-per-cell 200 \
+  --preflight-per-cell 20 \
+  --short-chain-steps 1 \
+  --long-chain-steps 2 \
+  --prompt-template-variant worked_example_v2 \
+  --control-accuracy-gate 0.80 \
+  --enforce-control-accuracy-gate \
+  --window-tight 5 \
+  --window-wide 12 \
+  --max-gen-tokens 12 \
+  --max-gen-tokens-escalated 24 \
+  --n-permutations 10000 \
+  --output-prefix synthetic_logic_promptfix_full_llama \
+  --results-dir ./results
+```
+
+Plot summary figures:
+
+```bash
+python scripts/plot_synthetic_logic_results.py \
+  --summary ./results/synthetic_logic_promptfix_full_llama_summary.json \
+  --output-dir ./figures
+```
+
+## Repository Layout
+
+- `synthetic_logic_loader.py`: synthetic puzzle generation with contradiction injection and anchor indexing.
+- `synthetic_trace.py`: prefix and generation trace collection, event-window summaries, permutation tests.
+- `pri_metrics.py`: PRI, surprise, cosine distance, cross-layer JSD, and SVD spectrum metrics.
+- `scripts/run_synthetic_logic_experiment.py`: end-to-end runner with preflight behavioral gate.
+- `scripts/plot_synthetic_logic_results.py`: plotting utility for event-aligned trajectories and peak offsets.
+- `model_adapters.py`, `hidden_state_collector.py`, `attention_contribution.py`: MLX instrumentation stack.
+- `config.py`: model registry and PRI-related numeric config.
+
+## Notes
+
+- Decoding defaults to greedy (`temperature=0`).
+- The preflight gate enforces control-accuracy sanity before the full run.
+- No semantic-uncertainty (`hbar_s`) or delta-mu reporting is included.
