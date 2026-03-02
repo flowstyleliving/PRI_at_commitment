@@ -106,7 +106,11 @@ def _step1_g_stratified(records: List[dict]) -> float:
     return g_meta
 
 
-def _prefix_mean_by_offset(records: List[dict], signal: str, contradiction: bool) -> np.ndarray:
+def _prefix_mean_ci_by_offset(
+    records: List[dict],
+    signal: str,
+    contradiction: bool,
+) -> tuple[np.ndarray, np.ndarray]:
     offsets = np.arange(-5, 6, dtype=int)
     buckets: Dict[int, List[float]] = {int(o): [] for o in offsets}
     for r in records:
@@ -119,11 +123,24 @@ def _prefix_mean_by_offset(records: List[dict], signal: str, contradiction: bool
             v = float(p.get(signal, np.nan))
             if math.isfinite(v):
                 buckets[rel].append(v)
-    out = []
+    means: List[float] = []
+    cis: List[float] = []
     for off in offsets:
         vals = buckets[int(off)]
-        out.append(float(np.mean(vals)) if vals else float("nan"))
-    return np.asarray(out, dtype=float)
+        if not vals:
+            means.append(float("nan"))
+            cis.append(float("nan"))
+            continue
+        arr = np.asarray(vals, dtype=float)
+        mean = float(np.mean(arr))
+        if arr.size > 1:
+            se = float(np.std(arr, ddof=1) / np.sqrt(arr.size))
+            ci = 1.96 * se
+        else:
+            ci = 0.0
+        means.append(mean)
+        cis.append(ci)
+    return np.asarray(means, dtype=float), np.asarray(cis, dtype=float)
 
 
 def _plot_three_model_pri_step1(records_by_model: Dict[str, List[dict]], out: Path) -> None:
@@ -274,15 +291,17 @@ def _plot_prefix_null(records_by_model: Dict[str, List[dict]], out: Path) -> Non
     signals = [("pri", "PRI"), ("delta_sigma_jsd", "delta_sigma_jsd"), ("acr_mid_mean", "acr_mid_mean")]
     offsets = np.arange(-5, 6, dtype=int)
 
-    fig, axes = plt.subplots(3, 3, figsize=(16, 10), dpi=300, sharex=True)
+    fig, axes = plt.subplots(3, 3, figsize=(16, 10), dpi=300, sharex=True, sharey="col")
     for r, model in enumerate(models):
         records = records_by_model[model]
         for c, (signal_key, title) in enumerate(signals):
             ax = axes[r, c]
-            y_ctrl = _prefix_mean_by_offset(records, signal_key, contradiction=False)
-            y_con = _prefix_mean_by_offset(records, signal_key, contradiction=True)
+            y_ctrl, ci_ctrl = _prefix_mean_ci_by_offset(records, signal_key, contradiction=False)
+            y_con, ci_con = _prefix_mean_ci_by_offset(records, signal_key, contradiction=True)
             ax.plot(offsets, y_ctrl, color=C_CONTROL, lw=1.8, label="Control")
+            ax.fill_between(offsets, y_ctrl - ci_ctrl, y_ctrl + ci_ctrl, color=C_CONTROL, alpha=0.15, linewidth=0)
             ax.plot(offsets, y_con, color=C_CONTRA, lw=1.8, label="Contradiction")
+            ax.fill_between(offsets, y_con - ci_con, y_con + ci_con, color=C_CONTRA, alpha=0.15, linewidth=0)
             ax.axvline(0, linestyle="--", color="#666", lw=1.0, alpha=0.9)
             ax.grid(axis="y", alpha=0.18)
             ax.spines["top"].set_visible(False)
@@ -296,7 +315,7 @@ def _plot_prefix_null(records_by_model: Dict[str, List[dict]], out: Path) -> Non
             if r == 0 and c == 2:
                 ax.legend(frameon=False, loc="upper right")
 
-    fig.suptitle("Prefix-Phase Encoding: No Differential Signal (3 Models x 3 Signals)", y=0.995, fontsize=14)
+    fig.suptitle("Prefix-Phase Event-Aligned Trajectories (3 Models x 3 Signals)", y=0.995, fontsize=14)
     fig.tight_layout(rect=[0, 0, 1, 0.98])
     fig.savefig(out, dpi=300, bbox_inches="tight")
     plt.close(fig)
