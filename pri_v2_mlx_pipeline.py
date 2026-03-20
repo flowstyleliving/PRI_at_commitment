@@ -1276,7 +1276,12 @@ def run_analysis(results: pd.DataFrame, config: Config) -> pd.DataFrame:
                 n_perm=config.n_permutations,
                 seed=config.seed,
             )
-            star = " <- best?" if col.startswith("pri_v2") and (not np.isnan(auc) and auc > 0.99) else ""
+            if not np.isnan(auc) and auc < 0.5:
+                star = " <- INVERTED"
+            elif col.startswith("pri_v2") and (not np.isnan(auc) and auc > 0.99):
+                star = " <- best?"
+            else:
+                star = ""
             print(
                 f"  {col:<24} {g:>7.3f} "
                 f"[{ci[0]:>6.2f},{ci[1]:>6.2f}] {auc:>8.4f} {p:>10.4f}{star}"
