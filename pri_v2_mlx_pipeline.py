@@ -71,6 +71,7 @@ class Config:
 
     # Generation
     max_new_tokens: int = 30
+    n_trace_dumps: int = 5  # per condition (control/contradiction), per model
 
     # PRI parameters
     alpha_values: List[float] = field(default_factory=lambda: [0.5, 1.0, 2.0, 5.0, 10.0])
@@ -1038,6 +1039,7 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
     print(dataset.groupby(["chain_length", "contradiction"]).size().unstack(fill_value=0))
 
     all_results: List[Dict[str, Any]] = []
+    all_trace_dumps: List[Dict[str, Any]] = []
 
     for model_name in config.models:
         print_header(f"MODEL: {model_name}")
@@ -1096,6 +1098,9 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
         n_total = len(run_df)
         t0 = time.time()
         diagnostic_printed = False
+        n_ctrl_dumps = 0
+        n_contr_dumps = 0
+        trace_dumps: List[Dict[str, Any]] = []
 
         print(f"  Full run: {n_total} remaining samples")
         for idx, (_, row) in enumerate(run_df.iterrows(), start=1):
@@ -1127,6 +1132,68 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
             is_correct = check_answer(trace["generated_text"], row["correct_value"])
             n_steps = len(trace["gen_surprises"])
+
+            # Per-sample trace dumps for a small balanced subset (control/contradiction).
+            is_contr = bool(row["contradiction"])
+            want_dump = (
+                (not is_contr and n_ctrl_dumps < config.n_trace_dumps)
+                or (is_contr and n_contr_dumps < config.n_trace_dumps)
+            )
+            if want_dump:
+                dump_layer = "final" if "final" in layer_indices else list(layer_indices.keys())[0]
+                dump_alpha = float(config.alpha_default)
+
+                gen_pri_v1_cosine: List[float] = []
+                gen_pri_v2_full: List[float] = []
+                gen_delta_h_cosine: List[float] = []
+                gen_d_F_full: List[float] = []
+
+                for step in range(n_steps):
+                    S_t_dump = float(trace["gen_surprises"][step])
+                    h_t_dump = trace["gen_hidden"][dump_layer][step]
+                    if step == 0:
+                        h_prev_dump = trace["last_prefix_hidden"][dump_layer]
+                    else:
+                        h_prev_dump = trace["gen_hidden"][dump_layer][step - 1]
+                    p_t_dump = trace["gen_probs"][step]
+
+                    cos_d_dump = pri_comp.cosine_dist(h_t_dump, h_prev_dump)
+                    dh_dump = h_t_dump - h_prev_dump
+                    z_dump = pri_comp._project(dh_dump)
+                    if z_dump.shape[0] != p_t_dump.shape[0]:
+                        m_dump = min(z_dump.shape[0], p_t_dump.shape[0])
+                        z_dump = z_dump[:m_dump]
+                        p_t_dump = p_t_dump[:m_dump]
+                        p_t_dump = p_t_dump / (np.sum(p_t_dump) + 1e-10)
+                    d_full_dump = pri_comp.fim_full_from_proj(z_dump, p_t_dump)
+
+                    gen_delta_h_cosine.append(float(cos_d_dump))
+                    gen_d_F_full.append(float(d_full_dump))
+                    gen_pri_v1_cosine.append(float(pri_comp.pri_v1(S_t_dump, cos_d_dump, dump_alpha)))
+                    gen_pri_v2_full.append(float(pri_comp.pri_v2(S_t_dump, d_full_dump, dump_alpha)))
+
+                trace_dump = {
+                    "model": model_name,
+                    "sample_id": int(row["sample_id"]),
+                    "chain_length": int(row["chain_length"]),
+                    "contradiction": is_contr,
+                    "is_correct": bool(is_correct),
+                    "prompt": row["prompt"],
+                    "generated_text": trace["generated_text"],
+                    "gen_token_ids": [int(t) for t in trace["gen_token_ids"]],
+                    "prefix_surprises": trace["prefix_surprises"].tolist(),
+                    "gen_surprises": [float(v) for v in trace["gen_surprises"]],
+                    "gen_pri_v1_cosine": gen_pri_v1_cosine,
+                    "gen_pri_v2_full": gen_pri_v2_full,
+                    "gen_delta_h_cosine": gen_delta_h_cosine,
+                    "gen_d_F_full": gen_d_F_full,
+                }
+                trace_dumps.append(trace_dump)
+                all_trace_dumps.append(trace_dump)
+                if is_contr:
+                    n_contr_dumps += 1
+                else:
+                    n_ctrl_dumps += 1
 
             for step in range(n_steps):
                 S_t = float(trace["gen_surprises"][step])
@@ -1193,6 +1260,10 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
         model_df = pd.DataFrame(model_results)
         model_file = write_frame(model_df, os.path.join(config.save_dir, f"{short}_results"))
         print(f"  Saved model results: {os.path.basename(model_file)} ({len(model_df)} rows)")
+        if trace_dumps:
+            dumps_df = pd.DataFrame(trace_dumps)
+            dumps_file = write_frame(dumps_df, os.path.join(config.save_dir, f"{short}_trace_dumps"))
+            print(f"  Saved trace dumps: {os.path.basename(dumps_file)} ({len(dumps_df)} rows)")
 
         for ext in [".parquet", ".csv"]:
             p = f"{ckpt_base}{ext}"
@@ -1206,6 +1277,12 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
     results = pd.DataFrame(all_results)
     all_file = write_frame(results, os.path.join(config.save_dir, "all_results"))
     print(f"\n  Total rows: {len(results)} | saved: {os.path.basename(all_file)}")
+    if all_trace_dumps:
+        all_dumps_file = write_frame(
+            pd.DataFrame(all_trace_dumps),
+            os.path.join(config.save_dir, "all_trace_dumps"),
+        )
+        print(f"  Trace dumps total: {len(all_trace_dumps)} | saved: {os.path.basename(all_dumps_file)}")
 
     return results, dataset
 
@@ -1396,6 +1473,97 @@ def run_analysis(results: pd.DataFrame, config: Config) -> pd.DataFrame:
     if not summary.empty:
         summary = summary.sort_values(["model", "auroc"], ascending=[True, False])
     return summary
+
+
+def log_failure_cases(results: pd.DataFrame, config: Config) -> pd.DataFrame:
+    print_header("FAILURE CASE ANALYSIS")
+    if results.empty:
+        print("  No results available; skipping failure case logging.")
+        return pd.DataFrame()
+
+    failure_frames: List[pd.DataFrame] = []
+
+    for model_name in sorted(results["model"].unique()):
+        s1 = results[
+            (results["model"] == model_name)
+            & (results["gen_step"] == 1)
+            & (results["layer"] == "final")
+            & (results["alpha"] == config.alpha_default)
+        ]
+        if s1.empty:
+            continue
+
+        short = model_name.split("/")[-1]
+
+        for variant in ["pri_v1_cosine", "pri_v2_full"]:
+            if variant not in s1.columns:
+                continue
+
+            ctrl = s1[~s1["contradiction"]]
+            contr = s1[s1["contradiction"]]
+            if ctrl.empty or contr.empty:
+                continue
+
+            ctrl_median = ctrl[variant].median()
+            contr_q25 = contr[variant].quantile(0.25)
+
+            fn = s1[s1["contradiction"] & (s1[variant] <= ctrl_median)].copy()
+            fn["failure_type"] = "false_negative"
+            fn["variant"] = variant
+            fn["ctrl_median"] = ctrl_median
+
+            fp = s1[~s1["contradiction"] & (s1[variant] >= contr_q25)].copy()
+            fp["failure_type"] = "false_positive"
+            fp["variant"] = variant
+            fp["ctrl_median"] = ctrl_median
+
+            if not fn.empty:
+                failure_frames.append(fn)
+            if not fp.empty:
+                failure_frames.append(fp)
+
+            print(f"  {short} | {variant}")
+            print(f"    False negatives (contr <= ctrl median): {len(fn)}")
+            print(f"    False positives (ctrl >= contr q25): {len(fp)}")
+
+        if "pri_v1_cosine" in s1.columns and "pri_v2_full" in s1.columns:
+            ctrl_v1_med = s1[~s1["contradiction"]]["pri_v1_cosine"].median()
+            ctrl_v2_med = s1[~s1["contradiction"]]["pri_v2_full"].median()
+
+            v1_miss_v2_catch = s1[
+                s1["contradiction"]
+                & (s1["pri_v1_cosine"] <= ctrl_v1_med)
+                & (s1["pri_v2_full"] > ctrl_v2_med)
+            ].copy()
+            v1_miss_v2_catch["failure_type"] = "v1_miss_v2_catch"
+            v1_miss_v2_catch["variant"] = "comparison"
+            v1_miss_v2_catch["ctrl_median"] = np.nan
+
+            v2_miss_v1_catch = s1[
+                s1["contradiction"]
+                & (s1["pri_v2_full"] <= ctrl_v2_med)
+                & (s1["pri_v1_cosine"] > ctrl_v1_med)
+            ].copy()
+            v2_miss_v1_catch["failure_type"] = "v2_miss_v1_catch"
+            v2_miss_v1_catch["variant"] = "comparison"
+            v2_miss_v1_catch["ctrl_median"] = np.nan
+
+            if not v1_miss_v2_catch.empty:
+                failure_frames.append(v1_miss_v2_catch)
+            if not v2_miss_v1_catch.empty:
+                failure_frames.append(v2_miss_v1_catch)
+
+            print(f"    v1 miss / v2 catch: {len(v1_miss_v2_catch)}")
+            print(f"    v2 miss / v1 catch: {len(v2_miss_v1_catch)}")
+
+    if failure_frames:
+        failures = pd.concat(failure_frames, ignore_index=True)
+        path = write_frame(failures, os.path.join(config.save_dir, "failure_cases"))
+        print(f"\n  Saved {len(failures)} failure case rows: {path}")
+        return failures
+
+    print("  No failure rows found.")
+    return pd.DataFrame()
 
 
 # ╔════════════════════════════════════════════════════════════════╗
@@ -1630,6 +1798,7 @@ if __name__ == "__main__":
 
     summary_df = run_analysis(results_df, cfg)
     summary_path = write_frame(summary_df, os.path.join(cfg.save_dir, "summary"))
+    failures_df = log_failure_cases(results_df, cfg)
 
     make_figures(results_df, cfg)
 
@@ -1637,4 +1806,5 @@ if __name__ == "__main__":
     print(f"  Dataset samples: {len(dataset_df)}")
     print(f"  Result rows: {len(results_df)}")
     print(f"  Summary file: {summary_path}")
+    print(f"  Failure rows: {len(failures_df)}")
     print(f"  Output dir: {cfg.save_dir}")
