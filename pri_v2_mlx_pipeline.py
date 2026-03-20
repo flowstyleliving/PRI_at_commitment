@@ -701,33 +701,43 @@ def trace_sample(
     gen_surprises: List[float] = []
     gen_token_ids: List[int] = []
 
-    # v1-compatible generation semantics:
-    # at each step, capture hidden/logits from the current context (pre-append),
-    # then choose and append the next token.
+    # At the start, prev_probs comes from the last prefix position.
     prev_probs = prefix_probs[-1]
+    # Current logits for choosing the first token come from prefix.
+    current_logits_vec = prefix_logits_2d[-1].astype(np.float32)
 
     for _ in range(max_new_tokens):
-        step_input = np.array(token_ids, dtype=np.int32)[None, :]
-        step_logits, step_selected_hidden = _forward_with_hidden(step_input)
-        step_logits_vec = step_logits[0, -1].astype(np.float32)
-        step_probs_vec = safe_softmax(step_logits_vec)
-        next_id = int(np.argmax(step_logits_vec))
+        # 1. Choose next token from current logits.
+        next_id = int(np.argmax(current_logits_vec))
+
+        # 2. Compute surprise using the probability distribution BEFORE this token was appended.
         surprise = float(-math.log(prev_probs[next_id] + 1e-10))
 
+        # 3. Check EOS before committing.
+        if eos_id is not None and next_id == eos_id:
+            break
+
+        # 4. Append token to context.
+        token_ids.append(next_id)
+        gen_token_ids.append(next_id)
+        gen_surprises.append(surprise)
+
+        # 5. Run forward with the updated context (includes the new token).
+        step_input = np.array(token_ids, dtype=np.int32)[None, :]
+        step_logits, step_selected_hidden = _forward_with_hidden(step_input)
+
+        # 6. Capture hidden state at the LAST position (= generated token position).
         for lname in layer_indices:
             act = step_selected_hidden[lname]
             gen_hidden[lname].append(act[0, -1].astype(np.float32))
 
+        # 7. Capture logits/probs for this step and next iteration.
+        step_logits_vec = step_logits[0, -1].astype(np.float32)
+        step_probs_vec = safe_softmax(step_logits_vec)
         gen_logits.append(step_logits_vec)
         gen_probs.append(step_probs_vec)
-        gen_surprises.append(surprise)
-        gen_token_ids.append(next_id)
-
-        if eos_id is not None and next_id == eos_id:
-            break
-
-        token_ids.append(next_id)
         prev_probs = step_probs_vec
+        current_logits_vec = step_logits_vec
 
     generated_text = decode_ids(tokenizer, gen_token_ids)
 
@@ -918,6 +928,13 @@ def stratified_perm_test(
     labels = np.asarray(labels).astype(int)
     strata = np.asarray(strata)
 
+    finite = np.isfinite(values)
+    if finite.sum() < 4:
+        return np.nan
+    values = values[finite]
+    labels = labels[finite]
+    strata = strata[finite]
+
     if len(np.unique(labels)) < 2:
         return np.nan
 
@@ -1036,7 +1053,6 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
         ckpt_df = read_frame_if_exists(ckpt_base)
         if ckpt_df is not None and len(ckpt_df) > 0:
             model_results = ckpt_df.to_dict("records")
-            all_results.extend(model_results)
             processed_sample_ids = set(int(x) for x in ckpt_df["sample_id"].unique())
             print(
                 f"  Resume checkpoint found: {len(ckpt_df)} rows, {len(processed_sample_ids)} samples."
@@ -1169,11 +1185,11 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                             **metrics,
                         }
                         model_results.append(row_out)
-                        all_results.append(row_out)
 
         elapsed = time.time() - t0
         print(f"  Completed in {elapsed / 60:.1f} min")
 
+        all_results.extend(model_results)
         model_df = pd.DataFrame(model_results)
         model_file = write_frame(model_df, os.path.join(config.save_dir, f"{short}_results"))
         print(f"  Saved model results: {os.path.basename(model_file)} ({len(model_df)} rows)")
