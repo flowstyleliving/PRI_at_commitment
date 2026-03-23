@@ -20,14 +20,15 @@ so we can access hidden states, logits, probabilities, and unembedding weights.
 from __future__ import annotations
 
 import gc
+import json
 import math
 import os
 import random
+import re
 import time
 import warnings
 from dataclasses import dataclass, field
-from types import MethodType
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -56,7 +57,7 @@ sns.set_theme(style="whitegrid", font_scale=1.1)
 class Config:
     # Experiment design
     n_samples_per_cell: int = 200
-    chain_lengths: List[int] = field(default_factory=lambda: [1, 2])
+    chain_lengths: List[int] = field(default_factory=lambda: [2, 5])
     pilot_n: int = 20
     pilot_threshold: float = 0.80
 
@@ -165,102 +166,88 @@ def read_frame_if_exists(base_path_no_ext: str) -> Optional[pd.DataFrame]:
     return None
 
 
+def checkpoint_meta_path(ckpt_base: str) -> str:
+    return f"{ckpt_base}_meta.json"
+
+
+def checkpoint_signature(config: Config, model_name: str) -> Dict[str, Any]:
+    return {
+        "model": model_name,
+        "seed": int(config.seed),
+        "n_samples_per_cell": int(config.n_samples_per_cell),
+        "chain_lengths": [int(x) for x in config.chain_lengths],
+        "pilot_n": int(config.pilot_n),
+        "pilot_threshold": float(config.pilot_threshold),
+        "max_new_tokens": int(config.max_new_tokens),
+        "alpha_values": [float(x) for x in config.alpha_values],
+        "alpha_default": float(config.alpha_default),
+        "topk_values": [int(x) for x in config.topk_values],
+        "lowrank_values": [int(x) for x in config.lowrank_values],
+        "layers_to_probe": list(config.layers_to_probe),
+    }
+
+
 # ╔════════════════════════════════════════════════════════════════╗
 # ║  SECTION 1: DATA GENERATION                                   ║
 # ╚════════════════════════════════════════════════════════════════╝
 
 
 class PuzzleGenerator:
-    """Synthetic logic puzzles — 2x2 factorial (chain_length x contradiction)."""
+    """Synthetic logic puzzles — 2x2 factorial (chain_length x contradiction).
 
-    SPECIES = [
+    Aligned with v1 synthetic format:
+    - Universal chain: All X are Y ...
+    - Subject assignment
+    - Injected control/contradiction statement on subject-target relation
+    - Forced YES/NO question
+    """
+
+    TERM_POOL = [
         "glorp",
-        "flib",
-        "tarn",
-        "quex",
-        "vorn",
-        "plim",
-        "drek",
-        "zath",
-        "murl",
-        "krev",
-        "blix",
-        "snod",
-        "welp",
-        "jint",
-        "choz",
-        "frug",
-        "nalt",
-        "grix",
-        "pavo",
-        "yelk",
-        "hust",
-        "mogg",
-        "delp",
-        "swib",
-        "trel",
-        "bonk",
-        "visk",
-        "zarb",
-        "plod",
-        "kemp",
-        "wung",
-        "clib",
+        "blen",
+        "trune",
+        "vask",
+        "mordin",
+        "krel",
+        "zenith",
+        "prax",
+        "nuvin",
+        "seral",
+        "thalen",
+        "quorin",
+        "dravan",
+        "melta",
+        "sorin",
+        "valen",
+        "torin",
+        "dorin",
+        "virel",
+        "jorin",
     ]
 
-    PROPERTIES = [
-        (
-            "color",
-            [
-                "blue",
-                "red",
-                "green",
-                "purple",
-                "orange",
-                "yellow",
-                "silver",
-                "golden",
-            ],
-        ),
-        ("habitat", ["underground", "arboreal", "aquatic", "volcanic", "glacial", "aerial"]),
-        ("diet", ["herbivorous", "carnivorous", "crystallivorous", "photosynthetic"]),
-        ("size", ["tiny", "enormous", "microscopic", "colossal"]),
-        ("temperament", ["docile", "aggressive", "playful", "reclusive"]),
-    ]
-
-    NAMES = [
-        "Bip",
-        "Zol",
-        "Kaf",
-        "Rin",
-        "Mox",
-        "Tiv",
-        "Pex",
-        "Yub",
-        "Gon",
-        "Lef",
-        "Wim",
-        "Dax",
-        "Fey",
-        "Huz",
-        "Nop",
-        "Quv",
-        "Sar",
-        "Jik",
-        "Vem",
-        "Cob",
-        "Ald",
-        "Briv",
-        "Dun",
-        "Elp",
+    SUBJECT_POOL = [
+        "Flib",
+        "Nara",
+        "Tovin",
+        "Rell",
+        "Sema",
+        "Varn",
+        "Kiro",
+        "Mela",
+        "Drax",
+        "Luni",
+        "Pavo",
+        "Rima",
     ]
 
     WORKED_EXAMPLE = (
-        "Here is an example of a reasoning task:\n\n"
-        "All wibbles are round. All round things are smooth. Pim is a wibble. "
-        "What texture is Pim?\n\n"
-        "Answer: Pim is a wibble. All wibbles are round. All round things are smooth. "
-        "Therefore, Pim is smooth.\n\n"
+        "Instruction: Read the premises and answer the final question from those premises.\n\n"
+        "Premises:\n"
+        "1. All round things are smooth things.\n"
+        "2. Blex is a round thing.\n"
+        "3. Blex is a smooth thing.\n"
+        "Question: Is Blex a smooth thing? Answer with only YES or NO.\n"
+        "Answer: YES\n\n"
         "Now solve the following:\n\n"
     )
 
@@ -268,40 +255,44 @@ class PuzzleGenerator:
         self.rng = random.Random(seed)
 
     def generate_puzzle(self, chain_length: int, contradiction: bool) -> Dict[str, Any]:
-        prop_type, prop_values = self.rng.choice(self.PROPERTIES)
-        values = self.rng.sample(prop_values, min(3, len(prop_values)))
-        correct_value = values[0]
-        contradict_value = values[1]
+        if chain_length + 1 > len(self.TERM_POOL):
+            raise ValueError("TERM_POOL too small for requested chain length")
 
-        species = self.rng.sample(self.SPECIES, 1 if chain_length == 1 else chain_length)
-        name = self.rng.choice(self.NAMES)
+        terms = self.rng.sample(self.TERM_POOL, chain_length + 1)
+        target = terms[-1]
+        subject_base = self.rng.choice(self.SUBJECT_POOL)
+        subject = f"{subject_base}{self.rng.randint(0, 9999):04d}"
 
-        premises: List[str] = []
-        if chain_length == 1:
-            premises.append(f"All {species[0]}s are {correct_value}.")
-            premises.append(f"{name} is a {species[0]}.")
-        else:
-            premises.append(f"All {species[0]}s are {species[1]}s.")
-            premises.append(f"All {species[1]}s are {correct_value}.")
-            premises.append(f"{name} is a {species[0]}.")
+        premise_lines: List[str] = []
+        for i in range(chain_length):
+            premise_lines.append(f"{i + 1}. All {terms[i]}s are {terms[i + 1]}s.")
 
+        subject_line_num = chain_length + 1
+        subject_line = f"{subject_line_num}. {subject} is a {terms[0]}."
+
+        inject_line_num = chain_length + 2
         if contradiction:
-            premises.insert(1, f"All {species[0]}s are {contradict_value}.")
+            injected = f"{inject_line_num}. {subject} is not a {target}."
+        else:
+            injected = f"{inject_line_num}. {subject} is a {target}."
 
-        premises_text = " ".join(premises)
-        question = f"What {prop_type} is {name}?"
-        prompt = self.WORKED_EXAMPLE + premises_text + " " + question
+        question = f"Question: Is {subject} a {target}? Answer with only YES or NO."
+        intro = "Instruction: Read the premises and answer the final question from those premises."
+        premises_block = "\n".join(
+            [intro, "", "Premises:"] + premise_lines + [subject_line, injected]
+        )
+        prompt = self.WORKED_EXAMPLE + premises_block + "\n" + question
+        correct_answer = "NO" if contradiction else "YES"
 
         return {
             "prompt": prompt,
             "chain_length": chain_length,
             "contradiction": contradiction,
-            "premises_text": premises_text,
-            "question": question,
-            "entity_name": name,
-            "property_type": prop_type,
-            "correct_value": correct_value,
-            "contradict_value": contradict_value if contradiction else None,
+            "subject": subject,
+            "target": target,
+            "terms": terms,
+            "correct_value": correct_answer,
+            "injected_statement": injected,
         }
 
     def generate_dataset(self, n_per_cell: int, chain_lengths: List[int]) -> pd.DataFrame:
@@ -323,41 +314,6 @@ class PuzzleGenerator:
 # ╔════════════════════════════════════════════════════════════════╗
 # ║  SECTION 2: MODEL LOADING                                     ║
 # ╚════════════════════════════════════════════════════════════════╝
-
-
-class ForwardTracer:
-    """Hooks selected transformer layers during forward to capture activations."""
-
-    def __init__(self, layer_map: Dict[str, Any]):
-        self.layer_map = layer_map
-        self.records: Dict[str, List[np.ndarray]] = {k: [] for k in layer_map}
-        self._original_call: Dict[str, Callable[..., Any]] = {}
-
-    def _wrap(self, name: str, layer: Any) -> Callable[..., Any]:
-        original_call = layer.__call__
-
-        def wrapped(this: Any, *args: Any, **kwargs: Any) -> Any:
-            out = original_call(*args, **kwargs)
-            if isinstance(out, tuple):
-                act = out[0]
-            else:
-                act = out
-            self.records[name].append(to_numpy(act))
-            return out
-
-        return wrapped
-
-    def __enter__(self) -> "ForwardTracer":
-        for name, layer in self.layer_map.items():
-            self._original_call[name] = layer.__call__
-            layer.__call__ = MethodType(self._wrap(name, layer), layer)
-        return self
-
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        for name, layer in self.layer_map.items():
-            original = self._original_call.get(name)
-            if original is not None:
-                layer.__call__ = original
 
 
 def find_layers(model: Any) -> List[Any]:
@@ -496,42 +452,6 @@ class OutputProjection:
         if rows_np.ndim == 2:
             return rows_np
         return None
-
-
-def model_forward(model: Any, input_ids: np.ndarray, cache: Any = None) -> Tuple[np.ndarray, Any]:
-    x = mx.array(input_ids)
-
-    outputs = None
-    if cache is not None:
-        try:
-            outputs = model(x, cache=cache)
-        except TypeError:
-            outputs = model(x)
-    else:
-        try:
-            outputs = model(x)
-        except TypeError:
-            outputs = model(x, cache=None)
-
-    logits = None
-    new_cache = cache
-
-    if isinstance(outputs, tuple):
-        if len(outputs) >= 1:
-            logits = outputs[0]
-        if len(outputs) >= 2:
-            new_cache = outputs[1]
-    elif hasattr(outputs, "logits"):
-        logits = outputs.logits
-        new_cache = getattr(outputs, "cache", cache)
-    else:
-        logits = outputs
-
-    if logits is None:
-        raise RuntimeError("Model forward did not return logits.")
-
-    logits_np = to_numpy(logits)
-    return logits_np, new_cache
 
 
 def encode_text(tokenizer: Any, text: str) -> List[int]:
@@ -1025,7 +945,20 @@ def bootstrap_auc_diff(
 
 
 def check_answer(generated: str, expected_value: str) -> bool:
-    return expected_value.lower() in generated.lower().strip()
+    """Parse first meaningful token and compare against expected YES/NO."""
+    if generated is None:
+        return False
+    text = str(generated).strip()
+    text = re.sub(r"<\|[^|>]+?\|>", " ", text)
+    stopwords = {"assistant", "user", "system"}
+    for match in re.finditer(r"[A-Za-z]+", text):
+        token = match.group(0).upper()
+        if token in stopwords:
+            continue
+        if token.startswith("YES") or token.startswith("NO"):
+            return token.startswith(expected_value.upper())
+        return False
+    return False
 
 
 def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -1049,16 +982,36 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
         short = model_name.split("/")[-1]
 
         ckpt_base = os.path.join(config.save_dir, f"{short}_checkpoint")
+        ckpt_meta = checkpoint_meta_path(ckpt_base)
+        expected_sig = checkpoint_signature(config, model_name)
         model_results: List[Dict[str, Any]] = []
         processed_sample_ids: set[int] = set()
 
         ckpt_df = read_frame_if_exists(ckpt_base)
         if ckpt_df is not None and len(ckpt_df) > 0:
-            model_results = ckpt_df.to_dict("records")
-            processed_sample_ids = set(int(x) for x in ckpt_df["sample_id"].unique())
-            print(
-                f"  Resume checkpoint found: {len(ckpt_df)} rows, {len(processed_sample_ids)} samples."
-            )
+            compatible = False
+            if os.path.exists(ckpt_meta):
+                try:
+                    with open(ckpt_meta, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    compatible = meta.get("signature") == expected_sig
+                except Exception:
+                    compatible = False
+
+            if compatible:
+                model_results = ckpt_df.to_dict("records")
+                processed_sample_ids = set(int(x) for x in ckpt_df["sample_id"].unique())
+                print(
+                    f"  Resume checkpoint found: {len(ckpt_df)} rows, {len(processed_sample_ids)} samples."
+                )
+            else:
+                print("  Checkpoint found but signature mismatch (or missing metadata). Ignoring stale checkpoint.")
+                for ext in [".parquet", ".csv"]:
+                    stale = f"{ckpt_base}{ext}"
+                    if os.path.exists(stale):
+                        os.remove(stale)
+                if os.path.exists(ckpt_meta):
+                    os.remove(ckpt_meta)
 
         # Behavioral gate on unprocessed control samples
         controls = dataset[~dataset.contradiction]
@@ -1114,6 +1067,15 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                 )
                 ckpt_file = write_frame(pd.DataFrame(model_results), ckpt_base)
                 print(f"    Checkpoint saved: {os.path.basename(ckpt_file)}")
+                with open(ckpt_meta, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {
+                            "signature": expected_sig,
+                            "rows": int(len(model_results)),
+                            "saved_at": float(time.time()),
+                        },
+                        f,
+                    )
                 gc.collect()
                 clear_mlx_cache()
 
@@ -1156,21 +1118,20 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     else:
                         h_prev_dump = trace["gen_hidden"][dump_layer][step - 1]
                     p_t_dump = trace["gen_probs"][step]
+                    dump_metrics = pri_comp.compute_step(
+                        h_t_dump,
+                        h_prev_dump,
+                        p_t_dump,
+                        S_t_dump,
+                        dump_alpha,
+                        topk_values=(),
+                        lowrank_values=(),
+                    )
 
-                    cos_d_dump = pri_comp.cosine_dist(h_t_dump, h_prev_dump)
-                    dh_dump = h_t_dump - h_prev_dump
-                    z_dump = pri_comp._project(dh_dump)
-                    if z_dump.shape[0] != p_t_dump.shape[0]:
-                        m_dump = min(z_dump.shape[0], p_t_dump.shape[0])
-                        z_dump = z_dump[:m_dump]
-                        p_t_dump = p_t_dump[:m_dump]
-                        p_t_dump = p_t_dump / (np.sum(p_t_dump) + 1e-10)
-                    d_full_dump = pri_comp.fim_full_from_proj(z_dump, p_t_dump)
-
-                    gen_delta_h_cosine.append(float(cos_d_dump))
-                    gen_d_F_full.append(float(d_full_dump))
-                    gen_pri_v1_cosine.append(float(pri_comp.pri_v1(S_t_dump, cos_d_dump, dump_alpha)))
-                    gen_pri_v2_full.append(float(pri_comp.pri_v2(S_t_dump, d_full_dump, dump_alpha)))
+                    gen_delta_h_cosine.append(float(dump_metrics["delta_h_cosine"]))
+                    gen_d_F_full.append(float(dump_metrics["d_F_full"]))
+                    gen_pri_v1_cosine.append(float(dump_metrics["pri_v1_cosine"]))
+                    gen_pri_v2_full.append(float(dump_metrics["pri_v2_full"]))
 
                 trace_dump = {
                     "model": model_name,
@@ -1269,6 +1230,8 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
             p = f"{ckpt_base}{ext}"
             if os.path.exists(p):
                 os.remove(p)
+        if os.path.exists(ckpt_meta):
+            os.remove(ckpt_meta)
 
         del model, tokenizer, output_projection, pri_comp
         gc.collect()
