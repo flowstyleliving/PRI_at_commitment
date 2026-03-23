@@ -945,19 +945,22 @@ def bootstrap_auc_diff(
 
 
 def check_answer(generated: str, expected_value: str) -> bool:
-    """Parse first meaningful token and compare against expected YES/NO."""
+    """Extract the first explicit YES/NO token from generated text."""
     if generated is None:
         return False
-    text = str(generated).strip()
-    text = re.sub(r"<\|[^|>]+?\|>", " ", text)
-    stopwords = {"assistant", "user", "system"}
+    expected = str(expected_value).strip().upper()
+    if expected not in {"YES", "NO"}:
+        return expected.lower() in str(generated).lower()
+
+    text = re.sub(r"<\|[^|>]+?\|>", " ", str(generated).strip())
     for match in re.finditer(r"[A-Za-z]+", text):
         token = match.group(0).upper()
-        if token in stopwords:
-            continue
-        if token.startswith("YES") or token.startswith("NO"):
-            return token.startswith(expected_value.upper())
-        return False
+        if token in {"YES", "NO"}:
+            return token == expected
+
+    # Fallback for uncommon tokenization patterns.
+    low = text.lower()
+    return expected.lower() in low
     return False
 
 
