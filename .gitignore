@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
 .DS_Store
+.venv/
+pri_v2_results/
+run.log
 
 results/
 figures/

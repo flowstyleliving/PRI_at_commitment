@@ -444,7 +444,7 @@ class OutputProjection:
             w_rows = mx.take(w, idx_mx, axis=0)
             s_rows = mx.take(scales, idx_mx, axis=0)
             b_rows = mx.take(biases, idx_mx, axis=0) if biases is not None else None
-            rows = mx.dequantize(w_rows, s_rows, b_rows, dtype=mx.float32)
+            rows = mx.dequantize(w_rows, s_rows, b_rows)
             return np.array(rows).astype(np.float32)
 
         rows = mx.take(w, idx_mx, axis=0)
@@ -961,7 +961,6 @@ def check_answer(generated: str, expected_value: str) -> bool:
     # Fallback for uncommon tokenization patterns.
     low = text.lower()
     return expected.lower() in low
-    return False
 
 
 def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -980,9 +979,31 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
     for model_name in config.models:
         print_header(f"MODEL: {model_name}")
 
+        short = model_name.split("/")[-1]
+        result_base = os.path.join(config.save_dir, f"{short}_results")
+        trace_dumps_base = os.path.join(config.save_dir, f"{short}_trace_dumps")
+
+        existing_results_df = read_frame_if_exists(result_base)
+        if existing_results_df is not None and len(existing_results_df) > 0:
+            all_results.extend(existing_results_df.to_dict("records"))
+            print(
+                "  Completed results found: "
+                f"{os.path.basename(result_base)} "
+                f"({len(existing_results_df)} rows, "
+                f"{existing_results_df['sample_id'].nunique()} samples). Skipping model."
+            )
+
+            existing_dumps_df = read_frame_if_exists(trace_dumps_base)
+            if existing_dumps_df is not None and len(existing_dumps_df) > 0:
+                all_trace_dumps.extend(existing_dumps_df.to_dict("records"))
+                print(
+                    "  Loaded existing trace dumps: "
+                    f"{len(existing_dumps_df)} rows."
+                )
+            continue
+
         model, tokenizer, output_projection, layer_indices = load_model(model_name)
         pri_comp = PRIComputer(output_projection)
-        short = model_name.split("/")[-1]
 
         ckpt_base = os.path.join(config.save_dir, f"{short}_checkpoint")
         ckpt_meta = checkpoint_meta_path(ckpt_base)
@@ -1222,11 +1243,11 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
         all_results.extend(model_results)
         model_df = pd.DataFrame(model_results)
-        model_file = write_frame(model_df, os.path.join(config.save_dir, f"{short}_results"))
+        model_file = write_frame(model_df, result_base)
         print(f"  Saved model results: {os.path.basename(model_file)} ({len(model_df)} rows)")
         if trace_dumps:
             dumps_df = pd.DataFrame(trace_dumps)
-            dumps_file = write_frame(dumps_df, os.path.join(config.save_dir, f"{short}_trace_dumps"))
+            dumps_file = write_frame(dumps_df, trace_dumps_base)
             print(f"  Saved trace dumps: {os.path.basename(dumps_file)} ({len(dumps_df)} rows)")
 
         for ext in [".parquet", ".csv"]:
