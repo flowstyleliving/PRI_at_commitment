@@ -79,6 +79,7 @@ class Config:
     alpha_default: float = 1.0
     topk_values: List[int] = field(default_factory=lambda: [32, 64, 128, 256])
     lowrank_values: List[int] = field(default_factory=lambda: [8, 16, 32])
+    v3_rank_values: List[int] = field(default_factory=lambda: [8, 16, 32, 64])
     layers_to_probe: List[str] = field(default_factory=lambda: ["final", "mid", "quarter"])
 
     # Stats
@@ -183,6 +184,7 @@ def checkpoint_signature(config: Config, model_name: str) -> Dict[str, Any]:
         "alpha_default": float(config.alpha_default),
         "topk_values": [int(x) for x in config.topk_values],
         "lowrank_values": [int(x) for x in config.lowrank_values],
+        "v3_rank_values": [int(x) for x in config.v3_rank_values],
         "layers_to_probe": list(config.layers_to_probe),
     }
 
@@ -834,6 +836,7 @@ class PRIComputer:
         alpha: float,
         topk_values: Iterable[int],
         lowrank_values: Iterable[int],
+        v3_rank_values: Iterable[int] = (),
     ) -> Dict[str, float]:
         cos_d = self.cosine_dist(h_t, h_prev)
         l2_d = self.l2_dist(h_t, h_prev)
@@ -872,6 +875,11 @@ class PRIComputer:
             d = self.fim_lowrank(dh, z, p_t, rank=int(rank))
             out[f"d_F_lowrank{rank}"] = d
             out[f"pri_v2_lowrank{rank}"] = self.pri_v2(S_t, d, alpha)
+
+        v3_list = list(v3_rank_values)
+        if v3_list:
+            v3_out = self.null_ratio_and_energy(dh, p_t, v3_list)
+            out.update(v3_out)
 
         return out
 
@@ -1266,6 +1274,7 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                             alpha,
                             topk_values=config.topk_values,
                             lowrank_values=config.lowrank_values,
+                            v3_rank_values=config.v3_rank_values,
                         )
 
                         if (
