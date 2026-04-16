@@ -752,6 +752,71 @@ class PRIComputer:
         mean_proj = float(np.sum(p_t * z))
         return float(np.sqrt(max(d2 - mean_proj**2, 1e-10)))
 
+    def null_ratio_and_energy(
+        self,
+        dh: np.ndarray,
+        p_t: np.ndarray,
+        rank_values: Iterable[int],
+    ) -> Dict[str, float]:
+        """
+        For each r in rank_values, emit:
+          null_ratio_rank{r}     = ||dh - V_top V_topᵀ dh|| / ||dh||
+          fisher_energy_rank{r}  = Σ_{i≤r} σ_i² / Σ_i σ_i²
+        V_top = top-r right singular vectors of sqrt(p_t)·W_u restricted to
+        the top-`support` probability rows (same truncation as fim_lowrank).
+        Note: null is measured relative to that truncated support, not the
+        full vocab — null_ratio > 0 can reflect either within-support modes
+        beyond rank r OR directions outside the row-span entirely.
+        SVD is shared across all requested ranks.
+        """
+        out: Dict[str, float] = {}
+        rank_list = [int(r) for r in rank_values]
+        if not rank_list:
+            return out
+
+        dh_norm_sq = float(np.dot(dh, dh))
+        if dh_norm_sq <= 0.0:
+            for r in rank_list:
+                out[f"null_ratio_rank{r}"] = 0.0
+                out[f"fisher_energy_rank{r}"] = 0.0
+            return out
+        dh_norm = float(np.sqrt(dh_norm_sq))
+
+        max_rank = max(rank_list)
+        support = int(min(max(256, max_rank * 16), p_t.shape[0]))
+        idx = np.argpartition(-p_t, kth=support - 1)[:support]
+        p_s = p_t[idx]
+        W_s = self.output_projection.get_rows(idx)
+
+        nan_out = {
+            **{f"null_ratio_rank{r}": float("nan") for r in rank_list},
+            **{f"fisher_energy_rank{r}": float("nan") for r in rank_list},
+        }
+        if W_s is None or W_s.ndim != 2:
+            return nan_out
+
+        A = (np.sqrt(p_s + 1e-10)[:, None]) * W_s
+        try:
+            _, S, Vt = np.linalg.svd(A, full_matrices=False)
+        except np.linalg.LinAlgError:
+            return nan_out
+
+        s_sq = S**2
+        total_energy = float(np.sum(s_sq)) + 1e-10
+        proj = Vt @ dh
+        cum_proj_sq = np.cumsum(proj**2)
+        cum_energy = np.cumsum(s_sq)
+        max_available = Vt.shape[0]
+
+        for r in rank_list:
+            r_eff = int(min(r, max_available))
+            top_proj_sq = float(cum_proj_sq[r_eff - 1]) if r_eff > 0 else 0.0
+            null_sq = max(dh_norm_sq - top_proj_sq, 0.0)
+            out[f"null_ratio_rank{r}"] = float(np.sqrt(null_sq) / dh_norm)
+            out[f"fisher_energy_rank{r}"] = float(cum_energy[r_eff - 1] / total_energy) if r_eff > 0 else 0.0
+
+        return out
+
     @staticmethod
     def pri_v1(S_t: float, delta_h: float, alpha: float) -> float:
         return S_t * (1.0 + alpha * delta_h)
