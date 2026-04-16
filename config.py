@@ -2,8 +2,8 @@
 Configuration for the PRI-at-commitment synthetic contradiction experiment.
 """
 
-from dataclasses import dataclass
-from typing import Tuple
+from dataclasses import dataclass, field
+from typing import Tuple, Iterable
 
 
 @dataclass
@@ -16,6 +16,10 @@ class UncertaintyConfig:
     # Delta-sigma / SVD numerical stability
     delta_sigma_jsd_epsilon: float = 1e-8
     svd_epsilon: float = 1e-8
+
+    # v3 null-space direction signal — ranks at which to compute null_ratio
+    # and Fisher energy ε(r) = Σ_{i≤r} σ_i² / Σ_i σ_i².
+    v3_rank_values: Iterable[int] = field(default_factory=lambda: (8, 16, 32, 64))
 
 
 DEFAULT_UNCERTAINTY_CONFIG = UncertaintyConfig()
