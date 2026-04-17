@@ -37,7 +37,7 @@ def main() -> int:
     cfg.alpha_values = [1.0]
     cfg.topk_values = [32]
     cfg.lowrank_values = [16]
-    cfg.v3_rank_values = [8, 16, 32, 64]
+    cfg.v3_rank_values = [1, 2, 3, 4, 5, 8, 13, 16, 21, 32, 34, 55, 64]
     cfg.max_new_tokens = 4
     cfg.n_trace_dumps = 0
     cfg.save_dir = os.path.join(ROOT, "pri_v2_results_smoke_v3")

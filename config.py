@@ -19,7 +19,7 @@ class UncertaintyConfig:
 
     # v3 null-space direction signal — ranks at which to compute null_ratio
     # and Fisher energy ε(r) = Σ_{i≤r} σ_i² / Σ_i σ_i².
-    v3_rank_values: Iterable[int] = field(default_factory=lambda: (8, 16, 32, 64))
+    v3_rank_values: Iterable[int] = field(default_factory=lambda: (1, 2, 3, 4, 5, 8, 13, 16, 21, 32, 34, 55, 64))
 
 
 DEFAULT_UNCERTAINTY_CONFIG = UncertaintyConfig()

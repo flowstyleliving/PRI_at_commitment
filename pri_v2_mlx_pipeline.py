@@ -79,7 +79,7 @@ class Config:
     alpha_default: float = 1.0
     topk_values: List[int] = field(default_factory=lambda: [32, 64, 128, 256])
     lowrank_values: List[int] = field(default_factory=lambda: [8, 16, 32])
-    v3_rank_values: List[int] = field(default_factory=lambda: [8, 16, 32, 64])
+    v3_rank_values: List[int] = field(default_factory=lambda: [1, 2, 3, 4, 5, 8, 13, 16, 21, 32, 34, 55, 64])
     layers_to_probe: List[str] = field(default_factory=lambda: ["final", "mid", "quarter"])
 
     # Stats
