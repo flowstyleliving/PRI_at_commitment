@@ -747,11 +747,17 @@ class GemmaAdapter(ModelAdapter):
 
         x = self.embed_tokens(input_ids)
 
+        # Gemma 3 scales embeddings by sqrt(hidden_size) after the embed
+        # lookup — see gemma3_text.Gemma3Model.__call__. Without this, every
+        # downstream hidden state captured through the adapter is off by
+        # that factor. Shared helper handles detection.
+        core = self._gemma3_core if self._gemma3_core is not None else self.model
+        x = post_embed_scale(core, x)
+
         # Gemma 3 interleaves sliding + global attention. Build both masks
         # and route per-layer exactly as Gemma3Model.__call__ does. Read
         # pattern/window from the cached Gemma3Model (handles multimodal
         # wrapper where these attrs are nested under .language_model.model).
-        core = self._gemma3_core if self._gemma3_core is not None else self.model
         pattern = int(getattr(core, "sliding_window_pattern", 6))
         window = int(
             getattr(core, "window_size", getattr(core, "sliding_window", 512))
