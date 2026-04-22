@@ -3,7 +3,7 @@
 Prereq 4 gate — end-to-end dry-run of the v3 capture schedule on the shared
 production pipeline (`pri_v2_mlx_pipeline.trace_sample` with `v3_capture=True`).
 
-Sealed spec: wiki/pri-v3-plan.md §Prerequisites.4 (eight assertion bundles).
+Sealed spec: v3 plan §Prerequisites.4 (eight assertion bundles).
 
 Scope (intentionally tiny — schema / provenance / tripwire / parquet / audit):
   * One contradiction-cell synthetic-logic puzzle (seed 42).

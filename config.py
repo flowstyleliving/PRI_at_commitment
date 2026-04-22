@@ -78,7 +78,8 @@ MODEL_CONFIGS = [
 # across architectures in the validated set.
 #
 # 0.020 is the Qwen-calibrated value from the 2026-04-18 Prereq 8 ladder run
-# (see wiki/pri-v3-plan.md §Prereq 8). Other models inherit the default until
+# (normed Option A rerun, rank 32, n=4/cell; max |dev from baseline 0.9955|
+# = 0.0302 at Qwen's final layer). Other models inherit the default until
 # their own calibration lands. Override per-model by adding an entry keyed by
 # MODEL_CONFIGS[i]["model_type"].
 GATE_THRESHOLD_DEFAULT: float = 0.020

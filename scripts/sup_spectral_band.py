@@ -264,7 +264,7 @@ def main() -> int:
                   f"median={row['median']:.2e}  "
                   f"[{row['min']:.2e}, {row['max']:.2e}]")
 
-    print("\nDone. Combine parquets in wiki/results/sup-spectral-band.md.")
+    print("\nDone. Combine parquets and write the verdict into your research log.")
     return 0
 
 

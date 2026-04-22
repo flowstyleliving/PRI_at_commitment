@@ -349,7 +349,7 @@ def main() -> int:
         "    If layer=0 dominates pooled result, the artifact is isolated — \n"
         "    the layer>0 column is then the honest success signal."
     )
-    print("  See wiki/results/e23-option-c.md for verdict writeup.")
+    print("  See your research log for the E23 verdict writeup.")
     return 0
 
 

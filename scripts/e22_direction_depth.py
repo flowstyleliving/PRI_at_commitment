@@ -313,7 +313,7 @@ def main() -> int:
                 f"[{r['min']:.3f}, {r['max']:.3f}]"
             )
 
-    print("\nDone. Combine parquets in wiki/results/e22-direction-depth.md.")
+    print("\nDone. Combine parquets and write the verdict into your research log.")
     return 0
 
 
