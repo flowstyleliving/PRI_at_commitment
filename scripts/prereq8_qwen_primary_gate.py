@@ -66,16 +66,18 @@ from scripts.e22_direction_depth import (
 )
 from scripts.e23_option_c import apply_final_norm, option_a_null_ratio
 from scripts._paths import experiment_run_dir
+from config import gate_threshold_for
 
 
 # ---- Config ----
 
 MODEL = "mlx-community/Qwen2.5-7B-Instruct-4bit"
+MODEL_TYPE = "qwen"
 N_PER_CELL = 4
 SUPPORT = 256
 RANK = 32
 SEED = 42
-GATE_THRESHOLD = 0.020
+GATE_THRESHOLD = gate_threshold_for(MODEL_TYPE)
 
 EXPERIMENT_SLUG = "prereq8-qwen-gate"
 

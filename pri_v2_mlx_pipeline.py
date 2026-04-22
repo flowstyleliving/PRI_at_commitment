@@ -581,7 +581,7 @@ def trace_sample(
       * The paper-path outputs (`gen_hidden`, `last_prefix_hidden`, …) are still
         populated for any caller in `layer_indices`.
     """
-    from mlx_lm.models.base import create_attention_mask
+    from model_adapters import build_attention_masks, forward_layer, pick_layer_mask
 
     core = model.model if hasattr(model, "model") else model
     layers = find_layers(model)
@@ -601,28 +601,13 @@ def trace_sample(
         else:
             raise RuntimeError("Could not locate token embedding layer on model.")
 
-        fa_mask = create_attention_mask(h, None)
-        swa_mask = None
-        if hasattr(core, "swa_idx") and getattr(core, "swa_idx") is not None:
-            swa_mask = create_attention_mask(
-                h, None, window_size=getattr(core, "sliding_window", None)
-            )
+        fa_mask, swa_mask = build_attention_masks(core, h)
 
         selected_hidden: Dict[str, np.ndarray] = {}
 
         for li, layer in enumerate(layers):
-            mask = (
-                swa_mask
-                if (swa_mask is not None and hasattr(layer, "use_sliding") and layer.use_sliding)
-                else fa_mask
-            )
-            try:
-                h = layer(h, mask, cache=None)
-            except TypeError:
-                try:
-                    h = layer(h, mask, None)
-                except TypeError:
-                    h = layer(h, mask)
+            mask = pick_layer_mask(layer, fa_mask, swa_mask)
+            h = forward_layer(layer, h, mask)
 
             if li in target_idx_to_name:
                 mx.eval(h)

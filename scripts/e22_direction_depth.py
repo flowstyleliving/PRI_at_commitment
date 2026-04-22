@@ -45,7 +45,8 @@ sys.path.insert(0, str(_REPO_ROOT))
 
 import mlx.core as mx
 from mlx_lm import load as mlx_load
-from mlx_lm.models.base import create_attention_mask
+
+from model_adapters import build_attention_masks, forward_layer, pick_layer_mask
 
 from pri_v2_mlx_pipeline import (
     OutputProjection,
@@ -97,27 +98,12 @@ def forward_all_layers_two_pos(
     else:
         raise RuntimeError("Could not locate token embedding layer.")
 
-    fa_mask = create_attention_mask(h, None)
-    swa_mask = None
-    if hasattr(core, "swa_idx") and getattr(core, "swa_idx") is not None:
-        swa_mask = create_attention_mask(
-            h, None, window_size=getattr(core, "sliding_window", None)
-        )
+    fa_mask, swa_mask = build_attention_masks(core, h)
 
     per_layer_two: List[Tuple[np.ndarray, np.ndarray]] = []
     for layer in layers:
-        mask = (
-            swa_mask
-            if (swa_mask is not None and hasattr(layer, "use_sliding") and layer.use_sliding)
-            else fa_mask
-        )
-        try:
-            h = layer(h, mask, cache=None)
-        except TypeError:
-            try:
-                h = layer(h, mask, None)
-            except TypeError:
-                h = layer(h, mask)
+        mask = pick_layer_mask(layer, fa_mask, swa_mask)
+        h = forward_layer(layer, h, mask)
         mx.eval(h)
         h_np = to_numpy(h)[0]  # [T+1, d]
         per_layer_two.append(
@@ -139,13 +125,11 @@ def greedy_commit_token(
         h = core.embed_tokens(x)
     elif hasattr(core, "wte"):
         h = core.wte(x)
-    fa_mask = create_attention_mask(h, None)
+    fa_mask, swa_mask = build_attention_masks(core, h)
     layers = find_layers(model)
     for layer in layers:
-        try:
-            h = layer(h, fa_mask, cache=None)
-        except TypeError:
-            h = layer(h, fa_mask)
+        mask = pick_layer_mask(layer, fa_mask, swa_mask)
+        h = forward_layer(layer, h, mask)
     if hasattr(core, "norm"):
         h = core.norm(h)
     elif hasattr(core, "final_layernorm"):

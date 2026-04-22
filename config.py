@@ -3,7 +3,7 @@ Configuration for the PRI-at-commitment synthetic contradiction experiment.
 """
 
 from dataclasses import dataclass, field
-from typing import Tuple, Iterable
+from typing import Dict, Tuple, Iterable
 
 
 @dataclass
@@ -45,3 +45,24 @@ MODEL_CONFIGS = [
         "model_type": "qwen",
     },
 ]
+
+
+# Prereq-8 primary-gate thresholds: the minimum deviation from the random
+# baseline √((d−r)/d) (per-layer max |dev|) for a model to pass the null_ratio
+# direction-depth gate. The random baseline itself varies per model with its
+# hidden dim, but a deviation of 0.020 sits in a regime that is comparable
+# across architectures in the validated set.
+#
+# 0.020 is the Qwen-calibrated value from the 2026-04-18 Prereq 8 ladder run
+# (see wiki/pri-v3-plan.md §Prereq 8). Other models inherit the default until
+# their own calibration lands. Override per-model by adding an entry keyed by
+# MODEL_CONFIGS[i]["model_type"].
+GATE_THRESHOLD_DEFAULT: float = 0.020
+GATE_THRESHOLDS: Dict[str, float] = {
+    "qwen": 0.020,
+}
+
+
+def gate_threshold_for(model_type: str) -> float:
+    """Return the Prereq-8 primary-gate threshold for a given model_type."""
+    return GATE_THRESHOLDS.get(model_type, GATE_THRESHOLD_DEFAULT)

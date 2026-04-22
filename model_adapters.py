@@ -22,6 +22,67 @@ import hidden_state_collector
 import attention_contribution
 
 
+# ---------------------------------------------------------------------------
+# Shared attention-mask + layer-forward helpers
+#
+# Consolidates the SWA mask-building pattern that was previously duplicated
+# across pri_v2_mlx_pipeline.py, scripts/e22_direction_depth.py, and
+# scripts/sup_spectral_band.py. Any helper that runs a manual block-by-block
+# forward pass should use these three functions so the SWA handling (and
+# MLX-LM layer signature variants) stay in a single place.
+# ---------------------------------------------------------------------------
+
+
+def build_attention_masks(core: Any, h: mx.array):
+    """Build (full_causal, sliding_window_or_None) attention masks for a core model.
+
+    `swa_mask` is None for models without Sliding-Window Attention. Per-layer
+    routing is handled by `pick_layer_mask`: use `swa_mask` when the layer's
+    `use_sliding` attribute is True, else `fa_mask`.
+    """
+    if create_attention_mask is None:
+        raise RuntimeError(
+            "mlx_lm.models.llama.create_attention_mask is unavailable; "
+            "cannot build attention masks."
+        )
+    fa_mask = create_attention_mask(h, None)
+    swa_mask = None
+    if hasattr(core, "swa_idx") and getattr(core, "swa_idx") is not None:
+        swa_mask = create_attention_mask(
+            h, None, window_size=getattr(core, "sliding_window", None)
+        )
+    return fa_mask, swa_mask
+
+
+def pick_layer_mask(layer: Any, fa_mask: Any, swa_mask: Optional[Any]) -> Any:
+    """Pick the correct attention mask for a transformer layer.
+
+    Uses `swa_mask` when the layer's `use_sliding` attribute is truthy and a
+    sliding mask was built; falls back to the full causal mask otherwise.
+    """
+    if swa_mask is not None and hasattr(layer, "use_sliding") and layer.use_sliding:
+        return swa_mask
+    return fa_mask
+
+
+def forward_layer(layer: Any, h: mx.array, mask: Any) -> mx.array:
+    """Apply a transformer block with tolerant argument handling.
+
+    MLX-LM layer signatures vary across model families:
+      - layer(h, mask, cache=None)   (most common)
+      - layer(h, mask, None)         (positional cache)
+      - layer(h, mask)               (no cache arg)
+    Try the most expressive form first; fall back as needed.
+    """
+    try:
+        return layer(h, mask, cache=None)
+    except TypeError:
+        try:
+            return layer(h, mask, None)
+        except TypeError:
+            return layer(h, mask)
+
+
 class ModelAdapter(ABC):
     """
     Abstract base class for model-specific adapters.
