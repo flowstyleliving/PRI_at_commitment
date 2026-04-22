@@ -633,6 +633,95 @@ class MistralAdapter(ModelAdapter):
         return logits
 
 
+class GemmaAdapter(ModelAdapter):
+    """
+    Adapter for Gemma 3 text models (1B, 4B, 12B, 27B).
+
+    MLX-LM module: `mlx_lm.models.gemma3_text` (class `Model` wrapping
+    `Gemma3Model`). Targets the text-only builds under mlx-community
+    (e.g. `gemma-3-1b-it-4bit`, `gemma-3-4b-it-4bit`). Separate adapters
+    are needed for legacy `gemma` / `gemma2` / multimodal `gemma3` /
+    `gemma3n` — this class is `model_type == "gemma3"` only.
+
+    Structure:
+      - model.model.embed_tokens   (scaled by sqrt(hidden_size) internally)
+      - model.model.layers         (TransformerBlock list)
+      - model.model.norm           (final RMSNorm)
+      - model.lm_head              (Optional — weight-tied checkpoints pop it)
+
+    Attention pattern:
+      Gemma 3 interleaves sliding-window and global attention. Every
+      `sliding_window_pattern`-th layer (default 6) is global; all other
+      layers use a sliding-window mask with `window_size == sliding_window`
+      (default 512). Mask routing here mirrors `Gemma3Model.__call__` in
+      MLX-LM so hidden-state capture matches the native forward exactly.
+    """
+
+    def _locate_components(self) -> None:
+        if hasattr(self.model, "model"):
+            self.embed_tokens = getattr(self.model.model, "embed_tokens", None)
+            self.layers = getattr(self.model.model, "layers", None)
+            self.norm = getattr(self.model.model, "norm", None)
+        else:
+            self.embed_tokens = getattr(self.model, "embed_tokens", None)
+            self.layers = getattr(self.model, "layers", None)
+            self.norm = getattr(self.model, "norm", None)
+        # lm_head is absent on weight-tied checkpoints — base _validate_components
+        # tolerates None; forward_prefix_with_collection falls back to as_linear.
+        self.lm_head = getattr(self.model, "lm_head", None)
+
+    def forward_prefix_with_collection(self, input_ids: mx.array) -> mx.array:
+        self.collector.start()
+        if self.acr_collector is not None:
+            self.acr_collector.start()
+            self._prev_acr_input = None
+
+        if input_ids.ndim == 1:
+            input_ids = input_ids[None, :]
+
+        x = self.embed_tokens(input_ids)
+
+        # Gemma 3 interleaves sliding + global attention. Build both masks
+        # and route per-layer exactly as Gemma3Model.__call__ does.
+        core = self.model.model if hasattr(self.model, "model") else self.model
+        pattern = int(getattr(core, "sliding_window_pattern", 6))
+        window = int(
+            getattr(core, "window_size", getattr(core, "sliding_window", 512))
+        )
+
+        if create_attention_mask is not None:
+            global_mask = create_attention_mask(x, None)
+            sliding_mask = (
+                create_attention_mask(x, None, window_size=window)
+                if pattern > 1
+                else None
+            )
+        else:
+            seq_len = x.shape[1] if x.ndim >= 2 else int(x.shape[0])
+            global_mask = self._make_causal_mask(seq_len)
+            sliding_mask = None  # no helper to build windowed mask in fallback
+
+        for layer_idx, layer in enumerate(self.layers):
+            is_global = (layer_idx % pattern) == (pattern - 1)
+            mask = global_mask if (is_global or sliding_mask is None) else sliding_mask
+            x = self._forward_layer_with_optional_acr(layer_idx, layer, x, mask=mask)
+            last_token_hidden = self._extract_last_token_hidden(x)
+            self.collector.record(layer_idx, last_token_hidden)
+
+        x = self.norm(x)
+        last_token = self._extract_last_token_hidden(x)
+
+        if self.lm_head is not None:
+            logits = self.lm_head(last_token)
+        else:
+            # Weight-tied checkpoint: project via embedding table.
+            logits = self.embed_tokens.as_linear(last_token)
+
+        if logits.ndim == 2:
+            logits = logits.squeeze(0)
+        return logits
+
+
 class SmolLMAdapter(ModelAdapter):
     """
     Adapter for SmolLM models (Llama-like in MLX).
@@ -740,6 +829,7 @@ def create_adapter(
         "qwen": QwenAdapter,
         "phi3": Phi3Adapter,
         "mistral": MistralAdapter,
+        "gemma3": GemmaAdapter,
         "smollm": SmolLMAdapter,
         "llava": LLaVAMiniAdapter
     }
