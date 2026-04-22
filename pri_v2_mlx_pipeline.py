@@ -825,11 +825,13 @@ def trace_sample(
                 h_t = act[0, -1].astype(np.float32)
                 h_prev_causal = act[0, -2].astype(np.float32)
                 # H4 write-once guard: duplicate layer keys within one step
-                # are a capture-store bug, not a silent overwrite.
-                assert lname not in step_captures, (
-                    f"H4 dict-collision: step {step_idx}, layer '{lname}' "
-                    f"(idx {_li}) already present in step_captures"
-                )
+                # are a capture-store bug, not a silent overwrite. Use
+                # `raise` (not `assert`) so the check survives `python -O`.
+                if lname in step_captures:
+                    raise RuntimeError(
+                        f"H4 dict-collision: step {step_idx}, layer '{lname}' "
+                        f"(idx {_li}) already present in step_captures"
+                    )
                 step_captures[lname] = {
                     "h_t": h_t,
                     "h_prev_causal": h_prev_causal,
