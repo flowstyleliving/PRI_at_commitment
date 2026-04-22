@@ -772,7 +772,12 @@ class GemmaAdapter(ModelAdapter):
             )
         else:
             seq_len = x.shape[1] if x.ndim >= 2 else int(x.shape[0])
-            global_mask = self._make_causal_mask(seq_len)
+            # Match the activation dtype — _make_causal_mask defaults to float16,
+            # which breaks scaled_dot_product_attention on Gemma 3-4B under
+            # bfloat16 activations. Mirrors the QwenAdapter fallback pattern.
+            global_mask = self._make_causal_mask(
+                seq_len, dtype=x.dtype if hasattr(x, "dtype") else mx.float16
+            )
             sliding_mask = None  # no helper to build windowed mask in fallback
 
         for layer_idx, layer in enumerate(self.layers):
