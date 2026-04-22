@@ -26,7 +26,7 @@ Reuses: sup_spectral_band.py helpers (greedy_commit_token, forward_all_layers
 modified to return two positions). OutputProjection + safe_softmax + find_layers
 from pri_v2_mlx_pipeline.
 
-Output: raw/experiments/e22-direction-depth/2026-04-16/{model_slug}_e22.parquet
+Output: experiments/e22-direction-depth/<YYYY-MM-DD>/run-NN/{model_slug}_e22.parquet
 """
 
 from __future__ import annotations
@@ -58,6 +58,7 @@ from synthetic_logic_loader import (
     SyntheticLogicConfig,
     generate_synthetic_logic_dataset,
 )
+from scripts._paths import experiment_run_dir
 
 
 # ---- Config ----
@@ -71,10 +72,7 @@ N_PER_CELL = 4
 SUPPORT = 256
 RANKS = (8, 16, 32, 64)
 
-OUT_DIR = Path(
-    "/Users/msrk/Desktop/furnace-research/raw/experiments/e22-direction-depth/2026-04-16"
-)
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+EXPERIMENT_SLUG = "e22-direction-depth"
 
 
 # ---- Forward pass: per-layer hidden at last TWO positions ----
@@ -301,10 +299,11 @@ def model_slug(name: str) -> str:
 
 
 def main() -> int:
+    out_dir = experiment_run_dir(EXPERIMENT_SLUG)
     print("=" * 72)
     print("E22 direction-depth signature gate")
     print(f"  n={N_PER_CELL}/cell × 4 cells × 3 models × every layer × {len(RANKS)} ranks")
-    print(f"  Output: {OUT_DIR}")
+    print(f"  Output: {out_dir}")
     print("=" * 72)
 
     cfg = SyntheticLogicConfig(n_per_cell=N_PER_CELL, seed=42)
@@ -313,7 +312,7 @@ def main() -> int:
 
     for model_name in tqdm(MODELS, desc="models", unit="model"):
         df = run_model(model_name, samples)
-        out_path = OUT_DIR / f"{model_slug(model_name)}_e22.parquet"
+        out_path = out_dir / f"{model_slug(model_name)}_e22.parquet"
         df.to_parquet(out_path, index=False)
         print(f"  wrote {out_path} ({len(df)} rows)")
 

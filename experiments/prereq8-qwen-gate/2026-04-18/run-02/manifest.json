@@ -1,0 +1,20 @@
+{
+  "run_id": "run-20260418T211045Z",
+  "utc": "2026-04-18T21:11:04.473461+00:00",
+  "script": "scripts/prereq8_qwen_primary_gate.py",
+  "git_sha": "6868991d727d08a8fc0a27ff87824353d6803e40-dirty",
+  "model": "mlx-community/Qwen2.5-7B-Instruct-4bit",
+  "n_per_cell": 4,
+  "n_samples": 16,
+  "seed": 42,
+  "support": 256,
+  "rank": 32,
+  "gate_threshold": 0.02,
+  "baseline_random_null_ratio": 0.9955257046261682,
+  "n_layers": 28,
+  "hidden_dim": 3584,
+  "final_norm_applied": true,
+  "max_abs_dev": 0.0301547255108644,
+  "argmax_layer": 27,
+  "gate_passed": true
+}

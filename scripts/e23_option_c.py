@@ -36,7 +36,7 @@ Success criterion (reported for three partitions: all / layer=0 / layer>0):
 Scope: Llama 3B only (prototype). n=4/cell. rank=32 only. Replicate on Mistral/Qwen
 only if a winner emerges.
 
-Output: raw/experiments/e23-option-c/2026-04-17/llama_e23_fixed.parquet
+Output: experiments/e23-option-c/<YYYY-MM-DD>/run-NN/llama_e23_fixed.parquet
   (underscore-fixed suffix indicates post-review build that applies final norm
   before logit-lens, sweeps support, and persists support metadata.)
 Reuses: e22_direction_depth.forward_all_layers_two_pos, greedy_commit_token,
@@ -77,6 +77,7 @@ from scripts.e22_direction_depth import (
     final_p_t_eigenspace,
     model_slug,
 )
+from scripts._paths import experiment_run_dir
 
 
 # ---- Config ----
@@ -87,10 +88,7 @@ SUPPORTS = (128, 256, 512)  # Sweep — fixed SUPPORT=256 was the pre-fix cutoff
 RANK = 32
 ALPHAS = (0.0, 0.25, 0.5, 1.0)  # α=1.0 reproduces Option B (known-bad reference).
 
-OUT_DIR = Path(
-    "/Users/msrk/Desktop/furnace-research/raw/experiments/e23-option-c/2026-04-17"
-)
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+EXPERIMENT_SLUG = "e23-option-c"
 
 
 def alpha_key(a: float) -> str:
@@ -323,13 +321,14 @@ def print_split_diagnostics(df: pd.DataFrame) -> None:
 
 
 def main() -> int:
+    out_dir = experiment_run_dir(EXPERIMENT_SLUG)
     print("=" * 72)
     print("E23 sharpness-aware Option C prototype (post-review fixed build)")
     print(
         f"  {MODEL.split('/')[-1]} × n={N_PER_CELL}/cell × every layer "
         f"× α∈{ALPHAS} × supp∈{SUPPORTS}"
     )
-    print(f"  Output: {OUT_DIR}")
+    print(f"  Output: {out_dir}")
     print("=" * 72)
 
     cfg = SyntheticLogicConfig(n_per_cell=N_PER_CELL, seed=42)
@@ -337,7 +336,7 @@ def main() -> int:
     print(f"\nGenerated {len(samples)} samples")
 
     df = run_model(MODEL, samples)
-    out_path = OUT_DIR / f"{model_slug(MODEL)}_e23_fixed.parquet"
+    out_path = out_dir / f"{model_slug(MODEL)}_e23_fixed.parquet"
     df.to_parquet(out_path, index=False)
     print(f"\n  wrote {out_path} ({len(df)} rows)")
 

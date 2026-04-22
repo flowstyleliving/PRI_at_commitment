@@ -23,8 +23,8 @@ Scope (intentionally tiny — schema / provenance / tripwire / parquet / audit):
 Exit 0 = all eight bundles green on all three models; v3 main run may launch.
 Exit non-zero = shared pipeline still unfit; do NOT launch the main run.
 
-Artifacts (per sealed spec):
-  /Users/msrk/Desktop/the_GOAT/raw/experiments/v3-capture-dryrun/<DATE>/<RUN_ID>/
+Artifacts (auto-incremented run-NN per date):
+  experiments/v3-capture-dryrun/<YYYY-MM-DD>/run-NN/
     dryrun_capture.parquet   union of per-(step,layer) rows across all 3 models
     dryrun_report.json       per-model bundle results + config + git SHA
     {model}_dryrun.json      per-model assertion log (diagnostic detail)
@@ -63,6 +63,7 @@ from synthetic_logic_loader import (
     SyntheticLogicConfig,
     generate_synthetic_logic_dataset,
 )
+from scripts._paths import experiment_run_dir
 
 
 # ---- Config ----
@@ -104,9 +105,7 @@ PARQUET_SCHEMA = pa.schema([
     ("capture_schedule_tag", pa.string()),
 ])
 
-OUT_ROOT = Path(
-    "/Users/msrk/Desktop/the_GOAT/raw/experiments/v3-capture-dryrun"
-)
+EXPERIMENT_SLUG = "v3-capture-dryrun"
 
 # Consumer under audit (H2). The grep target is PRIComputer.compute_step, whose
 # per-row inputs (h_t, h_prev, p_t, S_t) define the "consumed set" for the audit.
@@ -598,24 +597,12 @@ def check_model(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prereq 4 v3-capture dry-run")
-    parser.add_argument("--force", action="store_true")
-    parser.add_argument("--run-id", type=str, default=None)
-    args = parser.parse_args()
+    # Auto-incremented run-NN per date. No --run-id / --force: each invocation
+    # gets a fresh run directory; nothing can be overwritten.
+    argparse.ArgumentParser(description="Prereq 4 v3-capture dry-run").parse_args()
 
-    run_id = args.run_id or datetime.now(timezone.utc).strftime(
-        "run-%Y%m%dT%H%M%SZ"
-    )
-    date_dir = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    out_dir = OUT_ROOT / date_dir / run_id
-
-    if out_dir.exists() and any(out_dir.iterdir()) and not args.force:
-        print(
-            f"ERROR: run dir already populated: {out_dir}\n"
-            f"       pass --force to overwrite, or supply a different --run-id."
-        )
-        return 2
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = experiment_run_dir(EXPERIMENT_SLUG)
+    run_id = out_dir.name
     git_sha = _git_sha()
 
     print("=" * 72)

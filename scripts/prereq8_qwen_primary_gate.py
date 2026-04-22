@@ -23,12 +23,10 @@ Gate condition (vs random baseline √((d−r)/d) ≈ 0.9955 for d=3584, r=32):
     → Qwen flatness survives the norm fix; escalate to rank sweep
        (step 2) or deferred fp16 replication (step 3).
 
-Artifacts (one timestamped subdirectory per run):
-  /Users/msrk/Desktop/the_GOAT/raw/experiments/prereq8-qwen-gate/<DATE>/<RUN_ID>/
+Artifacts (auto-incremented run-NN per date):
+  experiments/prereq8-qwen-gate/<YYYY-MM-DD>/run-NN/
     qwen2_5-7b-instruct-4bit_prereq8.parquet
     manifest.json   (model, config, git SHA, baseline, verdict)
-
-Reruns refuse to overwrite unless --force is passed.
 """
 
 from __future__ import annotations
@@ -49,14 +47,12 @@ from tqdm import tqdm
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-import mlx.core as mx
 from mlx_lm import load as mlx_load
 
 from pri_v2_mlx_pipeline import (
     OutputProjection,
     find_layers,
     encode_text,
-    to_numpy,
 )
 from synthetic_logic_loader import (
     SyntheticLogicConfig,
@@ -68,6 +64,8 @@ from scripts.e22_direction_depth import (
     final_p_t_eigenspace,
     model_slug,
 )
+from scripts.e23_option_c import apply_final_norm, option_a_null_ratio
+from scripts._paths import experiment_run_dir
 
 
 # ---- Config ----
@@ -79,43 +77,7 @@ RANK = 32
 SEED = 42
 GATE_THRESHOLD = 0.020
 
-OUT_ROOT = Path(
-    "/Users/msrk/Desktop/the_GOAT/raw/experiments/prereq8-qwen-gate"
-)
-
-
-# ---- Inlined helpers (no import-time side effects) ----
-
-
-def apply_final_norm(model: Any, h_np: np.ndarray) -> np.ndarray:
-    """Apply the model's final norm to a raw block-output hidden vector.
-
-    Inlined from scripts/e23_option_c.py to avoid picking up that module's
-    top-level `OUT_DIR.mkdir(...)` on an unrelated path during import.
-    """
-    core = model.model if hasattr(model, "model") else model
-    h_mx = mx.array(h_np.astype(np.float32)[None, None, :])  # [1, 1, d]
-    if hasattr(core, "norm"):
-        h_mx = core.norm(h_mx)
-    elif hasattr(core, "final_layernorm"):
-        h_mx = core.final_layernorm(h_mx)
-    else:
-        raise RuntimeError("Model core has no norm / final_layernorm attribute.")
-    mx.eval(h_mx)
-    return to_numpy(h_mx)[0, 0].astype(np.float32)  # [d]
-
-
-def option_a_null_ratio(
-    dh: np.ndarray, Vt_A: np.ndarray, rank: int
-) -> float:
-    """Project Δh into the single fixed final-p eigenspace (Option A)."""
-    dh_f = dh.astype(np.float64)
-    dh_norm = float(np.linalg.norm(dh_f))
-    if dh_norm < 1e-12:
-        return float("nan")
-    V_r = Vt_A[:rank]
-    proj = V_r.T @ (V_r @ dh_f)
-    return float(np.linalg.norm(dh_f - proj) / dh_norm)
+EXPERIMENT_SLUG = "prereq8-qwen-gate"
 
 
 def _git_sha() -> str:
@@ -204,29 +166,12 @@ def run_model(model_name: str, samples: List[Dict[str, Any]]) -> pd.DataFrame:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prereq 8 primary gate")
-    parser.add_argument(
-        "--force", action="store_true",
-        help="Overwrite existing verdict artifact in the same run dir (normally refused).",
-    )
-    parser.add_argument(
-        "--run-id", type=str, default=None,
-        help="Override run id (default: UTC timestamp).",
-    )
-    args = parser.parse_args()
+    # Auto-incremented run-NN per date. No --run-id / --force: each invocation
+    # gets a fresh run directory; nothing can be overwritten.
+    argparse.ArgumentParser(description="Prereq 8 primary gate").parse_args()
 
-    run_id = args.run_id or datetime.now(timezone.utc).strftime("run-%Y%m%dT%H%M%SZ")
-    date_dir = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    out_dir = OUT_ROOT / date_dir / run_id
-
-    if out_dir.exists() and any(out_dir.iterdir()) and not args.force:
-        print(
-            f"ERROR: run dir already populated: {out_dir}\n"
-            f"       pass --force to overwrite, or supply a different --run-id."
-        )
-        return 2
-
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = experiment_run_dir(EXPERIMENT_SLUG)
+    run_id = out_dir.name
 
     print("=" * 72)
     print("Prereq 8 — primary gate: normed Option A Qwen rerun")

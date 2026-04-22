@@ -1,0 +1,10 @@
+{
+  "model": "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+  "passed": false,
+  "errors": [
+    "exception: RuntimeError: No hidden state captured for layer 'layer_08'."
+  ],
+  "traceback": "Traceback (most recent call last):\n  File \"/Users/msrk/Documents/PRI_at_commitment/scripts/v3_capture_dryrun.py\", line 652, in main\n    rec = check_model(\n  File \"/Users/msrk/Documents/PRI_at_commitment/scripts/v3_capture_dryrun.py\", line 360, in check_model\n    trace = trace_sample(\n  File \"/Users/msrk/Documents/PRI_at_commitment/pri_v2_mlx_pipeline.py\", line 691, in trace_sample\n    raise RuntimeError(f\"No hidden state captured for layer '{lname}'.\")\nRuntimeError: No hidden state captured for layer 'layer_08'.\n",
+  "row_counts_by_schedule": {},
+  "tripwire_distribution": {}
+}

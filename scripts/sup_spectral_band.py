@@ -14,7 +14,7 @@ For each model × puzzle × layer ℓ:
 
 Reuses: OutputProjection + safe_softmax + find_layers from pri_v2_mlx_pipeline.
 
-Writes:  furnace-research/raw/experiments/sup-spectral-band/2026-04-14/{model_slug}_spectrum.parquet
+Writes:  experiments/sup-spectral-band/<YYYY-MM-DD>/run-NN/{model_slug}_spectrum.parquet
 Schema:  [model, sample_id, cell, has_contradiction, layer_index, layer_normalized,
           lambda_max, lambda_mean, lambda_ratio, fisher_energy_r8, _r16, _r32, _r64,
           p_t_entropy, top1_prob, support_rows]
@@ -51,6 +51,7 @@ from synthetic_logic_loader import (
     SyntheticLogicConfig,
     generate_synthetic_logic_dataset,
 )
+from scripts._paths import experiment_run_dir
 
 
 # ---- Config ----
@@ -64,10 +65,7 @@ N_PER_CELL = 4
 SUPPORT = 256
 ENERGY_RANKS = (8, 16, 32, 64)
 
-OUT_DIR = Path(
-    "/Users/msrk/Desktop/furnace-research/raw/experiments/sup-spectral-band/2026-04-14"
-)
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+EXPERIMENT_SLUG = "sup-spectral-band"
 
 
 # ---- Per-layer capture forward pass ----
@@ -253,9 +251,10 @@ def model_slug(name: str) -> str:
 
 
 def main() -> int:
+    out_dir = experiment_run_dir(EXPERIMENT_SLUG)
     print("=" * 72)
     print("SUP spectral-band validation  |  n=4/cell × 3 models × every layer")
-    print(f"Output: {OUT_DIR}")
+    print(f"Output: {out_dir}")
     print("=" * 72)
 
     cfg = SyntheticLogicConfig(n_per_cell=N_PER_CELL, seed=42)
@@ -265,7 +264,7 @@ def main() -> int:
 
     for model_name in tqdm(MODELS, desc="models", unit="model"):
         df = run_model(model_name, samples)
-        out_path = OUT_DIR / f"{model_slug(model_name)}_spectrum.parquet"
+        out_path = out_dir / f"{model_slug(model_name)}_spectrum.parquet"
         df.to_parquet(out_path, index=False)
         print(f"  wrote {out_path} ({len(df)} rows)")
 
