@@ -82,9 +82,13 @@ class Config:
     v3_rank_values: List[int] = field(default_factory=lambda: [1, 2, 3, 4, 5, 8, 13, 16, 21, 32, 34, 55, 64])
     layers_to_probe: List[str] = field(default_factory=lambda: ["final", "mid", "quarter"])
 
-    # v3 capture schedule (opt-in via v3_capture=True on trace_sample).
-    # For gen steps < v3_all_layers_for_first_n_steps, capture every transformer block.
-    # For later steps, fall back to probe_4_layers.
+    # v3 capture schedule. When v3_capture is True, trace_sample captures every
+    # transformer block for the first v3_all_layers_for_first_n_steps gen steps
+    # and falls back to probe_4_layers after. False (default) keeps the paper
+    # path (only layer_indices, last position) — sufficient for E17/E17b/E18/E19
+    # which only need final-layer null_ratio. Set True for E21 depth-profile
+    # data at the cost of larger traces.
+    v3_capture: bool = False
     probe_4_layers: List[str] = field(
         default_factory=lambda: ["final", "three_quarters", "mid", "quarter"]
     )
@@ -1435,6 +1439,10 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     layer_indices,
                     output_projection,
                     config.max_new_tokens,
+                    v3_capture=config.v3_capture,
+                    v3_all_for_first_n_steps=config.v3_all_layers_for_first_n_steps,
+                    v3_probe_fallback=config.probe_4_layers,
+                    h_prev_sanity_max_ratio=config.h_prev_sanity_max_ratio,
                 )
             except Exception as exc:
                 print(f"    Sample {row['sample_id']} failed: {exc}")
