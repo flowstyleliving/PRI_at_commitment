@@ -135,7 +135,13 @@ def to_numpy(arr: Any) -> np.ndarray:
     try:
         return np.array(arr)
     except Exception:
-        return np.array(mx.eval(arr))
+        # bfloat16 has no numpy buffer protocol; cast to float32 in MLX first.
+        # The previous fallback `np.array(mx.eval(arr))` silently returned a
+        # 0-d ndarray because mx.eval() returns None — bfloat16 hidden states
+        # then looked like scalars downstream.
+        if hasattr(arr, "astype"):
+            return np.array(arr.astype(mx.float32))
+        raise
 
 
 def safe_softmax(logits: np.ndarray) -> np.ndarray:
@@ -581,7 +587,12 @@ def trace_sample(
       * The paper-path outputs (`gen_hidden`, `last_prefix_hidden`, …) are still
         populated for any caller in `layer_indices`.
     """
-    from model_adapters import build_attention_masks, forward_layer, pick_layer_mask
+    from model_adapters import (
+        build_attention_masks,
+        forward_layer,
+        pick_layer_mask,
+        post_embed_scale,
+    )
 
     core = model.model if hasattr(model, "model") else model
     layers = find_layers(model)
@@ -600,6 +611,8 @@ def trace_sample(
             h = core.wte(x)
         else:
             raise RuntimeError("Could not locate token embedding layer on model.")
+
+        h = post_embed_scale(core, h)
 
         fa_mask, swa_mask = build_attention_masks(core, h)
 

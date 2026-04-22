@@ -37,8 +37,14 @@ def build_attention_masks(core: Any, h: mx.array):
     """Build (full_causal, sliding_window_or_None) attention masks for a core model.
 
     `swa_mask` is None for models without Sliding-Window Attention. Per-layer
-    routing is handled by `pick_layer_mask`: use `swa_mask` when the layer's
-    `use_sliding` attribute is True, else `fa_mask`.
+    routing is handled by `pick_layer_mask`.
+
+    Supported SWA shapes:
+      * Mistral — `core.swa_idx` set; per-layer flag `layer.use_sliding`.
+      * Gemma 3 — `core.sliding_window_pattern > 1`; per-layer flag
+        `layer.is_sliding` (interleaved: every pattern-th layer is global,
+        rest sliding). Window size on `core.window_size` or `sliding_window`.
+      * No SWA — neither attr present → `swa_mask` is None.
     """
     if create_attention_mask is None:
         raise RuntimeError(
@@ -51,18 +57,56 @@ def build_attention_masks(core: Any, h: mx.array):
         swa_mask = create_attention_mask(
             h, None, window_size=getattr(core, "sliding_window", None)
         )
+    elif (
+        hasattr(core, "sliding_window_pattern")
+        and int(getattr(core, "sliding_window_pattern", 1) or 1) > 1
+    ):
+        window = (
+            getattr(core, "window_size", None)
+            or getattr(core, "sliding_window", 512)
+        )
+        swa_mask = create_attention_mask(h, None, window_size=int(window))
     return fa_mask, swa_mask
 
 
 def pick_layer_mask(layer: Any, fa_mask: Any, swa_mask: Optional[Any]) -> Any:
     """Pick the correct attention mask for a transformer layer.
 
-    Uses `swa_mask` when the layer's `use_sliding` attribute is truthy and a
-    sliding mask was built; falls back to the full causal mask otherwise.
+    Uses `swa_mask` when a sliding mask was built and the layer opts into it:
+      * Mistral layers flag via `use_sliding`.
+      * Gemma 3 layers flag via `is_sliding`.
+    Falls back to `fa_mask` (full causal) otherwise.
     """
-    if swa_mask is not None and hasattr(layer, "use_sliding") and layer.use_sliding:
-        return swa_mask
+    if swa_mask is not None:
+        if hasattr(layer, "use_sliding") and layer.use_sliding:
+            return swa_mask
+        if hasattr(layer, "is_sliding") and layer.is_sliding:
+            return swa_mask
     return fa_mask
+
+
+def post_embed_scale(core: Any, h: mx.array) -> mx.array:
+    """Apply any architecture-specific post-embedding, pre-layer scaling.
+
+    Gemma 3 scales the embedding output by sqrt(hidden_size) before the first
+    transformer block — see `gemma3_text.Gemma3Model.__call__`. Without this
+    scale, every downstream hidden state diverges from the native forward by
+    a constant factor, which breaks any absolute-magnitude metric (and makes
+    manual-forward logits mismatch native-forward logits).
+
+    Detection uses `core.sliding_window_pattern` as the Gemma 3 signature —
+    Mistral uses `swa_idx` (not `sliding_window_pattern`) so this won't
+    false-positive on the other SWA family. Llama / Qwen 2.5 / Qwen3 / Phi-3.5
+    have no `sliding_window_pattern` and return `h` unchanged.
+    """
+    if not hasattr(core, "sliding_window_pattern"):
+        return h
+    args = getattr(core, "args", None)
+    hidden = int(getattr(args, "hidden_size", 0) or 0) if args is not None else 0
+    if hidden <= 0:
+        return h
+    scale = float(hidden) ** 0.5
+    return h * mx.array(scale, h.dtype)
 
 
 def forward_layer(layer: Any, h: mx.array, mask: Any) -> mx.array:

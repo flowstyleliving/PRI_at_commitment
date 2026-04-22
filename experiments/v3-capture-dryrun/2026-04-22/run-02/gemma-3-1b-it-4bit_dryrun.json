@@ -1,0 +1,87 @@
+{
+  "model": "mlx-community/gemma-3-1b-it-4bit",
+  "n_layers": 26,
+  "hidden_dim": 1152,
+  "n_gen_steps": 14,
+  "h_prev_source_log": [
+    "prefix_last",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev"
+  ],
+  "step0_sanity": {
+    "layer_name": "layer_25",
+    "layer_index": 25.0,
+    "h_t_norm": 8459.3271484375,
+    "dh_causal_norm": 5303.4384765625,
+    "dh_over_ht": 0.6269338427870217,
+    "max_ratio_allowed": 10.0,
+    "dh_prefix_norm": 5303.4384765625,
+    "causal_vs_prefix_rel_l2": 0.0,
+    "causal_matches_prefix_last": 1.0
+  },
+  "generated_text": "\n\nAnalysis:\n1. All praxs are mordins.\n",
+  "row_counts_by_schedule": {
+    "every_layer_steps_1_12": 312,
+    "probe_4_steps_13+": 8
+  },
+  "tripwire_distribution": {
+    "count": 26,
+    "min": 0.11240019421539098,
+    "p50": 0.2795378471540295,
+    "p99": 0.7506591663774422,
+    "max": 0.7919009409075825,
+    "step0_final_layer_r": 0.6269338427870217
+  },
+  "bundle_results": {
+    "schema": {
+      "passed": true,
+      "errors": []
+    },
+    "schedule": {
+      "passed": true,
+      "errors": []
+    },
+    "provenance": {
+      "passed": true,
+      "errors": []
+    },
+    "finite": {
+      "passed": true,
+      "errors": []
+    },
+    "tripwire_healthy": {
+      "passed": true,
+      "errors": []
+    },
+    "tripwire_fault_injection": {
+      "passed": true,
+      "errors": [],
+      "detail": {
+        "mutation": "h_prev_source_log[0] 'prefix_last' -> 'gen_prev'",
+        "healthy_errors": [],
+        "mutated_errors": [
+          "provenance: step 0 h_prev_source='gen_prev', expected 'prefix_last'"
+        ],
+        "fired": true,
+        "passed": true
+      }
+    },
+    "dict_collision": {
+      "passed": true,
+      "errors": []
+    }
+  },
+  "passed": true,
+  "errors": []
+}

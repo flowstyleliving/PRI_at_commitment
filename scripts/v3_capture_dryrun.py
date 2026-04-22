@@ -72,13 +72,23 @@ MODELS = [
     "mlx-community/Llama-3.2-3B-Instruct-4bit",
     "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
     "mlx-community/Qwen2.5-7B-Instruct-4bit",
+    "mlx-community/gemma-3-1b-it-4bit",
+    "mlx-community/gemma-3-4b-it-4bit",
+    "mlx-community/Qwen3-8B-4bit",
+    "mlx-community/Phi-3.5-mini-instruct-4bit",
 ]
 SEED = 42
 # Bumped 4 → 14 so step_idx ∈ {12, 13} land in the probe_4 regime, giving the
 # "probe_4 identical across steps" schedule assertion two steps to compare.
 MAX_NEW_TOKENS = 14
 ALL_FOR_FIRST_N_STEPS = 12
-H_PREV_SANITY_MAX_RATIO = 10.0
+# Measured bound: p99(r_healthy) × 2 on 216 step-0 rows across 7 healthy models
+# (experiments/v3-capture-dryrun/2026-04-22/run-02). p99 = 1.0908 → p99×2 = 2.18,
+# rounded up to 2.2 for a small safety margin. Replaces the placeholder `< 10`
+# per pri-v3-plan.md §Prerequisites.4 calibration note H3. The pipeline-level
+# default in pri_v2_mlx_pipeline.trace_sample is intentionally left at 10.0 as
+# the conservative outer bound for non-v3 callers.
+H_PREV_SANITY_MAX_RATIO = 2.2
 PROBE_LAYERS = ["final", "mid", "quarter"]  # paper-path layers to keep populated
 PROBE_FALLBACK = ["final", "three_quarters", "mid", "quarter"]
 
@@ -346,6 +356,13 @@ def check_model(
     print(f"\n[{model_name}]")
     t0 = time.time()
     model, tokenizer = mlx_load(model_name)
+    # Gemma 3 4B (and other multimodal gemma3.Model builds) wrap a
+    # gemma3_text.Model at `.language_model` with no top-level `.model` attr.
+    # The shared pipeline (find_layers / OutputProjection / trace_sample core
+    # lookup) assumes a standard `.model.*` layout, so reach through the
+    # multimodal shell to the text core before handing the model downstream.
+    if hasattr(model, "language_model") and not hasattr(model, "model"):
+        model = model.language_model
     projection = OutputProjection(model)
     n_layers = len(find_layers(model))
     hidden_dim = projection.hidden_size
@@ -459,7 +476,7 @@ def check_model(
             b_tripwire_healthy.append(
                 f"step0_sanity.dh_over_ht={dh_over_ht:.4f} ≥ max "
                 f"{H_PREV_SANITY_MAX_RATIO} "
-                f"(placeholder bound; to be re-set from measured percentile)"
+                f"(measured bound: p99 × 2 on 7-model healthy distribution)"
             )
     if "causal_matches_prefix_last" in sanity and (
         sanity["causal_matches_prefix_last"] != 1.0
