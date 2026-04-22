@@ -635,19 +635,21 @@ class MistralAdapter(ModelAdapter):
 
 class GemmaAdapter(ModelAdapter):
     """
-    Adapter for Gemma 3 text models (1B, 4B, 12B, 27B).
+    Adapter for Gemma 3 family (1B text-only, 4B/12B/27B multimodal).
 
-    MLX-LM module: `mlx_lm.models.gemma3_text` (class `Model` wrapping
-    `Gemma3Model`). Targets the text-only builds under mlx-community
-    (e.g. `gemma-3-1b-it-4bit`, `gemma-3-4b-it-4bit`). Separate adapters
-    are needed for legacy `gemma` / `gemma2` / multimodal `gemma3` /
-    `gemma3n` — this class is `model_type == "gemma3"` only.
+    MLX-LM dispatches Gemma 3 to one of two modules:
+      - `gemma3_text` — text-only (1B only). Top-level wrapper is
+        `gemma3_text.Model`, with `model.model` = `Gemma3Model` and
+        `model.lm_head` directly.
+      - `gemma3` — multimodal (4B/12B/27B, text + vision). Top-level is
+        `gemma3.Model` which has `self.language_model = gemma3_text.Model(...)`
+        and NO `self.model`. The `Gemma3Model` is at
+        `model.language_model.model`, and `lm_head` at `model.language_model.lm_head`.
 
-    Structure:
-      - model.model.embed_tokens   (scaled by sqrt(hidden_size) internally)
-      - model.model.layers         (TransformerBlock list)
-      - model.model.norm           (final RMSNorm)
-      - model.lm_head              (Optional — weight-tied checkpoints pop it)
+    This adapter handles both shapes; `_locate_components` detects which
+    wrapper is in front and navigates accordingly. `_gemma3_core` is cached
+    for the forward pass so mask building reads pattern/window from the
+    Gemma3Model instance directly.
 
     Attention pattern:
       Gemma 3 interleaves sliding-window and global attention. Every
@@ -655,20 +657,36 @@ class GemmaAdapter(ModelAdapter):
       layers use a sliding-window mask with `window_size == sliding_window`
       (default 512). Mask routing here mirrors `Gemma3Model.__call__` in
       MLX-LM so hidden-state capture matches the native forward exactly.
+
+    Separate adapters would be needed for legacy `gemma` / `gemma2` / the
+    multimodal-audio variant `gemma3n` — this class is `model_type == "gemma3"`
+    across both text-only (1B) and multimodal (4B+) builds.
     """
 
     def _locate_components(self) -> None:
-        if hasattr(self.model, "model"):
-            self.embed_tokens = getattr(self.model.model, "embed_tokens", None)
-            self.layers = getattr(self.model.model, "layers", None)
-            self.norm = getattr(self.model.model, "norm", None)
+        # Detect which Gemma 3 wrapper is in front and navigate to the inner
+        # Gemma3Model (where embed_tokens / layers / norm / sliding attrs live).
+        if hasattr(self.model, "language_model"):
+            # Multimodal wrapper (gemma3.Model): model.language_model is a
+            # gemma3_text.Model; its .model is the Gemma3Model we need.
+            lm_outer = self.model.language_model
+            gemma3_core = getattr(lm_outer, "model", None)
+            lm_head_holder = lm_outer
+        elif hasattr(self.model, "model"):
+            # Text-only wrapper (gemma3_text.Model): model.model is Gemma3Model.
+            gemma3_core = self.model.model
+            lm_head_holder = self.model
         else:
-            self.embed_tokens = getattr(self.model, "embed_tokens", None)
-            self.layers = getattr(self.model, "layers", None)
-            self.norm = getattr(self.model, "norm", None)
+            gemma3_core = self.model
+            lm_head_holder = self.model
+
+        self._gemma3_core = gemma3_core
+        self.embed_tokens = getattr(gemma3_core, "embed_tokens", None) if gemma3_core is not None else None
+        self.layers = getattr(gemma3_core, "layers", None) if gemma3_core is not None else None
+        self.norm = getattr(gemma3_core, "norm", None) if gemma3_core is not None else None
         # lm_head is absent on weight-tied checkpoints — base _validate_components
         # tolerates None; forward_prefix_with_collection falls back to as_linear.
-        self.lm_head = getattr(self.model, "lm_head", None)
+        self.lm_head = getattr(lm_head_holder, "lm_head", None)
 
     def forward_prefix_with_collection(self, input_ids: mx.array) -> mx.array:
         self.collector.start()
@@ -682,8 +700,10 @@ class GemmaAdapter(ModelAdapter):
         x = self.embed_tokens(input_ids)
 
         # Gemma 3 interleaves sliding + global attention. Build both masks
-        # and route per-layer exactly as Gemma3Model.__call__ does.
-        core = self.model.model if hasattr(self.model, "model") else self.model
+        # and route per-layer exactly as Gemma3Model.__call__ does. Read
+        # pattern/window from the cached Gemma3Model (handles multimodal
+        # wrapper where these attrs are nested under .language_model.model).
+        core = self._gemma3_core if self._gemma3_core is not None else self.model
         pattern = int(getattr(core, "sliding_window_pattern", 6))
         window = int(
             getattr(core, "window_size", getattr(core, "sliding_window", 512))
@@ -827,6 +847,7 @@ def create_adapter(
     adapters = {
         "llama": LlamaAdapter,
         "qwen": QwenAdapter,
+        "qwen3": QwenAdapter,  # Qwen3 shares Qwen2's component layout; same adapter.
         "phi3": Phi3Adapter,
         "mistral": MistralAdapter,
         "gemma3": GemmaAdapter,

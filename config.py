@@ -44,6 +44,18 @@ MODEL_CONFIGS = [
         "display_name": "Qwen 2.5 7B Instruct",
         "model_type": "qwen",
     },
+    {
+        "name": "gemma_3_1b",
+        "path": "mlx-community/gemma-3-1b-it-4bit",
+        "display_name": "Gemma 3 1B IT",
+        "model_type": "gemma3",
+    },
+    {
+        "name": "gemma_3_4b",
+        "path": "mlx-community/gemma-3-4b-it-4bit",
+        "display_name": "Gemma 3 4B IT",
+        "model_type": "gemma3",
+    },
 ]
 
 
