@@ -8,3 +8,7 @@ run.log
 results/
 figures/
 data/
+pri_v2_results_smoke_v3/
+
+# Experiment artifacts: track manifests (.json), skip large binaries.
+experiments/**/*.parquet

@@ -14,7 +14,7 @@ For each model × puzzle × layer ℓ:
 
 Reuses: OutputProjection + safe_softmax + find_layers from pri_v2_mlx_pipeline.
 
-Writes:  furnace-research/raw/experiments/sup-spectral-band/2026-04-14/{model_slug}_spectrum.parquet
+Writes:  experiments/sup-spectral-band/<YYYY-MM-DD>/run-NN/{model_slug}_spectrum.parquet
 Schema:  [model, sample_id, cell, has_contradiction, layer_index, layer_normalized,
           lambda_max, lambda_mean, lambda_ratio, fisher_energy_r8, _r16, _r32, _r64,
           p_t_entropy, top1_prob, support_rows]
@@ -38,7 +38,8 @@ sys.path.insert(0, str(_REPO_ROOT))
 
 import mlx.core as mx
 from mlx_lm import load as mlx_load
-from mlx_lm.models.base import create_attention_mask
+
+from model_adapters import build_attention_masks, forward_layer, pick_layer_mask
 
 from pri_v2_mlx_pipeline import (
     OutputProjection,
@@ -51,6 +52,7 @@ from synthetic_logic_loader import (
     SyntheticLogicConfig,
     generate_synthetic_logic_dataset,
 )
+from scripts._paths import experiment_run_dir
 
 
 # ---- Config ----
@@ -64,10 +66,7 @@ N_PER_CELL = 4
 SUPPORT = 256
 ENERGY_RANKS = (8, 16, 32, 64)
 
-OUT_DIR = Path(
-    "/Users/msrk/Desktop/furnace-research/raw/experiments/sup-spectral-band/2026-04-14"
-)
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+EXPERIMENT_SLUG = "sup-spectral-band"
 
 
 # ---- Per-layer capture forward pass ----
@@ -86,27 +85,12 @@ def forward_all_layers(model: Any, token_ids: np.ndarray) -> List[np.ndarray]:
     else:
         raise RuntimeError("Could not locate token embedding layer.")
 
-    fa_mask = create_attention_mask(h, None)
-    swa_mask = None
-    if hasattr(core, "swa_idx") and getattr(core, "swa_idx") is not None:
-        swa_mask = create_attention_mask(
-            h, None, window_size=getattr(core, "sliding_window", None)
-        )
+    fa_mask, swa_mask = build_attention_masks(core, h)
 
     per_layer_last: List[np.ndarray] = []
     for layer in layers:
-        mask = (
-            swa_mask
-            if (swa_mask is not None and hasattr(layer, "use_sliding") and layer.use_sliding)
-            else fa_mask
-        )
-        try:
-            h = layer(h, mask, cache=None)
-        except TypeError:
-            try:
-                h = layer(h, mask, None)
-            except TypeError:
-                h = layer(h, mask)
+        mask = pick_layer_mask(layer, fa_mask, swa_mask)
+        h = forward_layer(layer, h, mask)
         mx.eval(h)
         per_layer_last.append(to_numpy(h)[0, -1].astype(np.float32))
 
@@ -125,13 +109,11 @@ def greedy_commit_token(
         h = core.embed_tokens(x)
     elif hasattr(core, "wte"):
         h = core.wte(x)
-    fa_mask = create_attention_mask(h, None)
+    fa_mask, swa_mask = build_attention_masks(core, h)
     layers = find_layers(model)
     for layer in layers:
-        try:
-            h = layer(h, fa_mask, cache=None)
-        except TypeError:
-            h = layer(h, fa_mask)
+        mask = pick_layer_mask(layer, fa_mask, swa_mask)
+        h = forward_layer(layer, h, mask)
     if hasattr(core, "norm"):
         h = core.norm(h)
     elif hasattr(core, "final_layernorm"):
@@ -253,9 +235,10 @@ def model_slug(name: str) -> str:
 
 
 def main() -> int:
+    out_dir = experiment_run_dir(EXPERIMENT_SLUG)
     print("=" * 72)
     print("SUP spectral-band validation  |  n=4/cell × 3 models × every layer")
-    print(f"Output: {OUT_DIR}")
+    print(f"Output: {out_dir}")
     print("=" * 72)
 
     cfg = SyntheticLogicConfig(n_per_cell=N_PER_CELL, seed=42)
@@ -265,7 +248,7 @@ def main() -> int:
 
     for model_name in tqdm(MODELS, desc="models", unit="model"):
         df = run_model(model_name, samples)
-        out_path = OUT_DIR / f"{model_slug(model_name)}_spectrum.parquet"
+        out_path = out_dir / f"{model_slug(model_name)}_spectrum.parquet"
         df.to_parquet(out_path, index=False)
         print(f"  wrote {out_path} ({len(df)} rows)")
 
@@ -281,7 +264,7 @@ def main() -> int:
                   f"median={row['median']:.2e}  "
                   f"[{row['min']:.2e}, {row['max']:.2e}]")
 
-    print("\nDone. Combine parquets in wiki/results/sup-spectral-band.md.")
+    print("\nDone. Combine parquets and write the verdict into your research log.")
     return 0
 
 

@@ -1,0 +1,364 @@
+{
+  "run_id": "run-01",
+  "utc": "2026-04-22T22:11:34.371681+00:00",
+  "script": "scripts/v3_capture_dryrun.py",
+  "git_sha": "c497c0fea74571dde645c04d129d2ccf425b64b5-dirty",
+  "config": {
+    "models": [
+      "mlx-community/Llama-3.2-3B-Instruct-4bit",
+      "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+      "mlx-community/Qwen2.5-7B-Instruct-4bit",
+      "mlx-community/gemma-3-1b-it-4bit",
+      "mlx-community/gemma-3-4b-it-4bit",
+      "mlx-community/Qwen3-8B-4bit",
+      "mlx-community/Phi-3.5-mini-instruct-4bit"
+    ],
+    "seed": 42,
+    "max_new_tokens": 14,
+    "all_for_first_n_steps": 12,
+    "probe_fallback": [
+      "final",
+      "three_quarters",
+      "mid",
+      "quarter"
+    ],
+    "probe_layers_paper_path": [
+      "final",
+      "mid",
+      "quarter"
+    ],
+    "h_prev_sanity_max_ratio": 10.0,
+    "sample_id": "short_with_contradiction_0000",
+    "condition": "short_with_contradiction"
+  },
+  "parquet": {
+    "path": "dryrun_capture.parquet",
+    "schema": {
+      "run_id": "string",
+      "git_sha": "string",
+      "model": "string",
+      "sample_id": "string",
+      "condition": "string",
+      "step": "int32",
+      "layer": "string",
+      "h_t": "list<item: float>",
+      "h_prev": "list<item: float>",
+      "h_prev_source": "string",
+      "capture_schedule_tag": "string"
+    },
+    "total_rows": 1332
+  },
+  "consumer_audit": {
+    "consumer": "PRIComputer.compute_step",
+    "consumer_file": "pri_v2_mlx_pipeline.py",
+    "signature_fields": [
+      "h_t",
+      "h_prev",
+      "p_t",
+      "S_t",
+      "alpha",
+      "topk_values",
+      "lowrank_values",
+      "v3_rank_values"
+    ],
+    "consumed_per_row": [
+      "h_t",
+      "h_prev"
+    ],
+    "consumed_per_step": [
+      "p_t",
+      "S_t"
+    ],
+    "consumed_config": [
+      "alpha",
+      "topk_values",
+      "lowrank_values",
+      "v3_rank_values"
+    ],
+    "parquet_schema_columns": [
+      "run_id",
+      "git_sha",
+      "model",
+      "sample_id",
+      "condition",
+      "step",
+      "layer",
+      "h_t",
+      "h_prev",
+      "h_prev_source",
+      "capture_schedule_tag"
+    ],
+    "schema_validated_per_row_fields": [
+      "h_t",
+      "h_prev"
+    ],
+    "dead_schema_checks": [],
+    "missing_schema_checks_for_consumed": [],
+    "per_step_validation_notes": "p_t via trace['gen_probs'][si] finite check; S_t via trace['gen_surprises'][si] finite check",
+    "passed": true
+  },
+  "all_passed": false,
+  "per_model": [
+    {
+      "model": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+      "passed": true,
+      "n_errors": 0,
+      "row_counts_by_schedule": {
+        "every_layer_steps_1_12": 84,
+        "probe_4_steps_13+": 0
+      },
+      "tripwire_distribution": {
+        "count": 28,
+        "min": 0.8387845163745642,
+        "p50": 0.946796809371902,
+        "p99": 1.1307115975440338,
+        "max": 1.1450913060081849,
+        "step0_final_layer_r": 1.0424023757136012
+      },
+      "bundle_results": {
+        "schema": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "schedule": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "provenance": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "finite": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "tripwire_healthy": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "tripwire_fault_injection": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "dict_collision": {
+          "passed": true,
+          "n_errors": 0
+        }
+      }
+    },
+    {
+      "model": "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+      "passed": true,
+      "n_errors": 0,
+      "row_counts_by_schedule": {
+        "every_layer_steps_1_12": 192,
+        "probe_4_steps_13+": 0
+      },
+      "tripwire_distribution": {
+        "count": 32,
+        "min": 0.7905250599087856,
+        "p50": 0.8814773909653348,
+        "p99": 1.0572514694576751,
+        "max": 1.0664372262917068,
+        "step0_final_layer_r": 0.860944983890612
+      },
+      "bundle_results": {
+        "schema": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "schedule": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "provenance": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "finite": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "tripwire_healthy": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "tripwire_fault_injection": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "dict_collision": {
+          "passed": true,
+          "n_errors": 0
+        }
+      }
+    },
+    {
+      "model": "mlx-community/Qwen2.5-7B-Instruct-4bit",
+      "passed": true,
+      "n_errors": 0,
+      "row_counts_by_schedule": {
+        "every_layer_steps_1_12": 336,
+        "probe_4_steps_13+": 8
+      },
+      "tripwire_distribution": {
+        "count": 28,
+        "min": 0.8317471753963458,
+        "p50": 0.9511188885758148,
+        "p99": 1.133935772644046,
+        "max": 1.1619084460382254,
+        "step0_final_layer_r": 1.1619084460382254
+      },
+      "bundle_results": {
+        "schema": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "schedule": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "provenance": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "finite": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "tripwire_healthy": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "tripwire_fault_injection": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "dict_collision": {
+          "passed": true,
+          "n_errors": 0
+        }
+      }
+    },
+    {
+      "model": "mlx-community/gemma-3-1b-it-4bit",
+      "passed": true,
+      "n_errors": 0,
+      "row_counts_by_schedule": {
+        "every_layer_steps_1_12": 312,
+        "probe_4_steps_13+": 8
+      },
+      "tripwire_distribution": {
+        "count": 26,
+        "min": 0.11240019421539098,
+        "p50": 0.2795378471540295,
+        "p99": 0.7506591663774422,
+        "max": 0.7919009409075825,
+        "step0_final_layer_r": 0.6269338427870217
+      },
+      "bundle_results": {
+        "schema": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "schedule": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "provenance": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "finite": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "tripwire_healthy": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "tripwire_fault_injection": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "dict_collision": {
+          "passed": true,
+          "n_errors": 0
+        }
+      }
+    },
+    {
+      "model": "mlx-community/gemma-3-4b-it-4bit",
+      "passed": false,
+      "n_errors": 1,
+      "row_counts_by_schedule": {},
+      "tripwire_distribution": {},
+      "bundle_results": {
+        "dict_collision": {
+          "passed": false,
+          "n_errors": 0
+        }
+      }
+    },
+    {
+      "model": "mlx-community/Qwen3-8B-4bit",
+      "passed": false,
+      "n_errors": 1,
+      "row_counts_by_schedule": {},
+      "tripwire_distribution": {},
+      "bundle_results": {
+        "dict_collision": {
+          "passed": false,
+          "n_errors": 0
+        }
+      }
+    },
+    {
+      "model": "mlx-community/Phi-3.5-mini-instruct-4bit",
+      "passed": true,
+      "n_errors": 0,
+      "row_counts_by_schedule": {
+        "every_layer_steps_1_12": 384,
+        "probe_4_steps_13+": 8
+      },
+      "tripwire_distribution": {
+        "count": 32,
+        "min": 0.5081640588723424,
+        "p50": 0.6063311456223526,
+        "p99": 0.7385668477746593,
+        "max": 0.7401450234765176,
+        "step0_final_layer_r": 0.6359589101625762
+      },
+      "bundle_results": {
+        "schema": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "schedule": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "provenance": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "finite": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "tripwire_healthy": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "tripwire_fault_injection": {
+          "passed": true,
+          "n_errors": 0
+        },
+        "dict_collision": {
+          "passed": true,
+          "n_errors": 0
+        }
+      }
+    }
+  ]
+}

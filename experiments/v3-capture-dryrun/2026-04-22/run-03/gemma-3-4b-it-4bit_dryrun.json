@@ -1,0 +1,83 @@
+{
+  "model": "mlx-community/gemma-3-4b-it-4bit",
+  "n_layers": 34,
+  "hidden_dim": 2560,
+  "n_gen_steps": 10,
+  "h_prev_source_log": [
+    "prefix_last",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev"
+  ],
+  "step0_sanity": {
+    "layer_name": "layer_33",
+    "layer_index": 33.0,
+    "h_t_norm": 60857.0703125,
+    "dh_causal_norm": 19058.552734375,
+    "dh_over_ht": 0.31316908021548956,
+    "max_ratio_allowed": 2.2,
+    "dh_prefix_norm": 19058.552734375,
+    "causal_vs_prefix_rel_l2": 0.0,
+    "causal_matches_prefix_last": 1.0
+  },
+  "generated_text": "\nAnswer: NO\n```\nNO\n```",
+  "row_counts_by_schedule": {
+    "every_layer_steps_1_12": 340,
+    "probe_4_steps_13+": 0
+  },
+  "tripwire_distribution": {
+    "count": 34,
+    "min": 0.040890241631150966,
+    "p50": 0.17414565142409372,
+    "p99": 0.36166684437631563,
+    "max": 0.3635095955613747,
+    "step0_final_layer_r": 0.31316908021548956
+  },
+  "bundle_results": {
+    "schema": {
+      "passed": true,
+      "errors": []
+    },
+    "schedule": {
+      "passed": true,
+      "errors": []
+    },
+    "provenance": {
+      "passed": true,
+      "errors": []
+    },
+    "finite": {
+      "passed": true,
+      "errors": []
+    },
+    "tripwire_healthy": {
+      "passed": true,
+      "errors": []
+    },
+    "tripwire_fault_injection": {
+      "passed": true,
+      "errors": [],
+      "detail": {
+        "mutation": "h_prev_source_log[0] 'prefix_last' -> 'gen_prev'",
+        "healthy_errors": [],
+        "mutated_errors": [
+          "provenance: step 0 h_prev_source='gen_prev', expected 'prefix_last'"
+        ],
+        "fired": true,
+        "passed": true
+      }
+    },
+    "dict_collision": {
+      "passed": true,
+      "errors": []
+    }
+  },
+  "passed": true,
+  "errors": []
+}

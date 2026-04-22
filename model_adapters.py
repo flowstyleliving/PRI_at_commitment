@@ -22,6 +22,111 @@ import hidden_state_collector
 import attention_contribution
 
 
+# ---------------------------------------------------------------------------
+# Shared attention-mask + layer-forward helpers
+#
+# Consolidates the SWA mask-building pattern that was previously duplicated
+# across pri_v2_mlx_pipeline.py, scripts/e22_direction_depth.py, and
+# scripts/sup_spectral_band.py. Any helper that runs a manual block-by-block
+# forward pass should use these three functions so the SWA handling (and
+# MLX-LM layer signature variants) stay in a single place.
+# ---------------------------------------------------------------------------
+
+
+def build_attention_masks(core: Any, h: mx.array):
+    """Build (full_causal, sliding_window_or_None) attention masks for a core model.
+
+    `swa_mask` is None for models without Sliding-Window Attention. Per-layer
+    routing is handled by `pick_layer_mask`.
+
+    Supported SWA shapes:
+      * Mistral — `core.swa_idx` set; per-layer flag `layer.use_sliding`.
+      * Gemma 3 — `core.sliding_window_pattern > 1`; per-layer flag
+        `layer.is_sliding` (interleaved: every pattern-th layer is global,
+        rest sliding). Window size on `core.window_size` or `sliding_window`.
+      * No SWA — neither attr present → `swa_mask` is None.
+    """
+    if create_attention_mask is None:
+        raise RuntimeError(
+            "mlx_lm.models.llama.create_attention_mask is unavailable; "
+            "cannot build attention masks."
+        )
+    fa_mask = create_attention_mask(h, None)
+    swa_mask = None
+    if hasattr(core, "swa_idx") and getattr(core, "swa_idx") is not None:
+        swa_mask = create_attention_mask(
+            h, None, window_size=getattr(core, "sliding_window", None)
+        )
+    elif (
+        hasattr(core, "sliding_window_pattern")
+        and int(getattr(core, "sliding_window_pattern", 1) or 1) > 1
+    ):
+        window = (
+            getattr(core, "window_size", None)
+            or getattr(core, "sliding_window", 512)
+        )
+        swa_mask = create_attention_mask(h, None, window_size=int(window))
+    return fa_mask, swa_mask
+
+
+def pick_layer_mask(layer: Any, fa_mask: Any, swa_mask: Optional[Any]) -> Any:
+    """Pick the correct attention mask for a transformer layer.
+
+    Uses `swa_mask` when a sliding mask was built and the layer opts into it:
+      * Mistral layers flag via `use_sliding`.
+      * Gemma 3 layers flag via `is_sliding`.
+    Falls back to `fa_mask` (full causal) otherwise.
+    """
+    if swa_mask is not None:
+        if hasattr(layer, "use_sliding") and layer.use_sliding:
+            return swa_mask
+        if hasattr(layer, "is_sliding") and layer.is_sliding:
+            return swa_mask
+    return fa_mask
+
+
+def post_embed_scale(core: Any, h: mx.array) -> mx.array:
+    """Apply any architecture-specific post-embedding, pre-layer scaling.
+
+    Gemma 3 scales the embedding output by sqrt(hidden_size) before the first
+    transformer block — see `gemma3_text.Gemma3Model.__call__`. Without this
+    scale, every downstream hidden state diverges from the native forward by
+    a constant factor, which breaks any absolute-magnitude metric (and makes
+    manual-forward logits mismatch native-forward logits).
+
+    Detection uses `core.sliding_window_pattern` as the Gemma 3 signature —
+    Mistral uses `swa_idx` (not `sliding_window_pattern`) so this won't
+    false-positive on the other SWA family. Llama / Qwen 2.5 / Qwen3 / Phi-3.5
+    have no `sliding_window_pattern` and return `h` unchanged.
+    """
+    if not hasattr(core, "sliding_window_pattern"):
+        return h
+    args = getattr(core, "args", None)
+    hidden = int(getattr(args, "hidden_size", 0) or 0) if args is not None else 0
+    if hidden <= 0:
+        return h
+    scale = float(hidden) ** 0.5
+    return h * mx.array(scale, h.dtype)
+
+
+def forward_layer(layer: Any, h: mx.array, mask: Any) -> mx.array:
+    """Apply a transformer block with tolerant argument handling.
+
+    MLX-LM layer signatures vary across model families:
+      - layer(h, mask, cache=None)   (most common)
+      - layer(h, mask, None)         (positional cache)
+      - layer(h, mask)               (no cache arg)
+    Try the most expressive form first; fall back as needed.
+    """
+    try:
+        return layer(h, mask, cache=None)
+    except TypeError:
+        try:
+            return layer(h, mask, None)
+        except TypeError:
+            return layer(h, mask)
+
+
 class ModelAdapter(ABC):
     """
     Abstract base class for model-specific adapters.
@@ -407,27 +512,31 @@ class QwenAdapter(ModelAdapter):
     def forward_prefix_with_collection(self, input_ids: mx.array) -> mx.array:
         """
         Qwen-specific forward pass with hidden state collection.
+        Covers Qwen 2.5 (float16) and Qwen3 (bfloat16) — mask is built after
+        embedding so it matches the activation dtype.
         """
         # Reset collector for this token step
         self.collector.start()
         if self.acr_collector is not None:
             self.acr_collector.start()
             self._prev_acr_input = None
-        
+
         # Normalize input shape
         if input_ids.ndim == 1:
             input_ids = input_ids[None, :]
-        
-        seq_len = input_ids.shape[1]
-        mask = self._make_causal_mask(seq_len)
-        
-        # Embed tokens
+
+        # Embed tokens first, THEN build mask so its dtype matches x. A
+        # hardcoded float16 mask breaks scaled_dot_product_attention under
+        # bfloat16 activations (Qwen3-8B-4bit); _make_attention_mask reads
+        # the dtype off x.
         x = self.embed_tokens(input_ids)
-        
+        cache = [None] * len(self.layers)
+        mask = self._make_attention_mask(x, cache[0])
+
         # Pass through transformer blocks
-        for layer_idx, layer in enumerate(self.layers):
-            x = self._forward_layer_with_optional_acr(layer_idx, layer, x, mask=mask)
-            
+        for layer_idx, (layer, c) in enumerate(zip(self.layers, cache)):
+            x = self._forward_layer_with_optional_acr(layer_idx, layer, x, mask=mask, cache=c)
+
             # Record hidden state
             last_token_hidden = self._extract_last_token_hidden(x)
             self.collector.record(layer_idx, last_token_hidden)
@@ -572,6 +681,121 @@ class MistralAdapter(ModelAdapter):
         return logits
 
 
+class GemmaAdapter(ModelAdapter):
+    """
+    Adapter for Gemma 3 family (1B text-only, 4B/12B/27B multimodal).
+
+    MLX-LM dispatches Gemma 3 to one of two modules:
+      - `gemma3_text` — text-only (1B only). Top-level wrapper is
+        `gemma3_text.Model`, with `model.model` = `Gemma3Model` and
+        `model.lm_head` directly.
+      - `gemma3` — multimodal (4B/12B/27B, text + vision). Top-level is
+        `gemma3.Model` which has `self.language_model = gemma3_text.Model(...)`
+        and NO `self.model`. The `Gemma3Model` is at
+        `model.language_model.model`, and `lm_head` at `model.language_model.lm_head`.
+
+    This adapter handles both shapes; `_locate_components` detects which
+    wrapper is in front and navigates accordingly. `_gemma3_core` is cached
+    for the forward pass so mask building reads pattern/window from the
+    Gemma3Model instance directly.
+
+    Attention pattern:
+      Gemma 3 interleaves sliding-window and global attention. Every
+      `sliding_window_pattern`-th layer (default 6) is global; all other
+      layers use a sliding-window mask with `window_size == sliding_window`
+      (default 512). Mask routing here mirrors `Gemma3Model.__call__` in
+      MLX-LM so hidden-state capture matches the native forward exactly.
+
+    Separate adapters would be needed for legacy `gemma` / `gemma2` / the
+    multimodal-audio variant `gemma3n` — this class is `model_type == "gemma3"`
+    across both text-only (1B) and multimodal (4B+) builds.
+    """
+
+    def _locate_components(self) -> None:
+        # Detect which Gemma 3 wrapper is in front and navigate to the inner
+        # Gemma3Model (where embed_tokens / layers / norm / sliding attrs live).
+        if hasattr(self.model, "language_model"):
+            # Multimodal wrapper (gemma3.Model): model.language_model is a
+            # gemma3_text.Model; its .model is the Gemma3Model we need.
+            lm_outer = self.model.language_model
+            gemma3_core = getattr(lm_outer, "model", None)
+            lm_head_holder = lm_outer
+        elif hasattr(self.model, "model"):
+            # Text-only wrapper (gemma3_text.Model): model.model is Gemma3Model.
+            gemma3_core = self.model.model
+            lm_head_holder = self.model
+        else:
+            gemma3_core = self.model
+            lm_head_holder = self.model
+
+        self._gemma3_core = gemma3_core
+        self.embed_tokens = getattr(gemma3_core, "embed_tokens", None) if gemma3_core is not None else None
+        self.layers = getattr(gemma3_core, "layers", None) if gemma3_core is not None else None
+        self.norm = getattr(gemma3_core, "norm", None) if gemma3_core is not None else None
+        # lm_head is absent on weight-tied checkpoints — base _validate_components
+        # tolerates None; forward_prefix_with_collection falls back to as_linear.
+        self.lm_head = getattr(lm_head_holder, "lm_head", None)
+
+    def forward_prefix_with_collection(self, input_ids: mx.array) -> mx.array:
+        self.collector.start()
+        if self.acr_collector is not None:
+            self.acr_collector.start()
+            self._prev_acr_input = None
+
+        if input_ids.ndim == 1:
+            input_ids = input_ids[None, :]
+
+        x = self.embed_tokens(input_ids)
+
+        # Gemma 3 scales embeddings by sqrt(hidden_size) after the embed
+        # lookup — see gemma3_text.Gemma3Model.__call__. Without this, every
+        # downstream hidden state captured through the adapter is off by
+        # that factor. Shared helper handles detection.
+        core = self._gemma3_core if self._gemma3_core is not None else self.model
+        x = post_embed_scale(core, x)
+
+        # Gemma 3 interleaves sliding + global attention. Build both masks
+        # and route per-layer exactly as Gemma3Model.__call__ does. Read
+        # pattern/window from the cached Gemma3Model (handles multimodal
+        # wrapper where these attrs are nested under .language_model.model).
+        pattern = int(getattr(core, "sliding_window_pattern", 6))
+        window = int(
+            getattr(core, "window_size", getattr(core, "sliding_window", 512))
+        )
+
+        if create_attention_mask is not None:
+            global_mask = create_attention_mask(x, None)
+            sliding_mask = (
+                create_attention_mask(x, None, window_size=window)
+                if pattern > 1
+                else None
+            )
+        else:
+            seq_len = x.shape[1] if x.ndim >= 2 else int(x.shape[0])
+            global_mask = self._make_causal_mask(seq_len)
+            sliding_mask = None  # no helper to build windowed mask in fallback
+
+        for layer_idx, layer in enumerate(self.layers):
+            is_global = (layer_idx % pattern) == (pattern - 1)
+            mask = global_mask if (is_global or sliding_mask is None) else sliding_mask
+            x = self._forward_layer_with_optional_acr(layer_idx, layer, x, mask=mask)
+            last_token_hidden = self._extract_last_token_hidden(x)
+            self.collector.record(layer_idx, last_token_hidden)
+
+        x = self.norm(x)
+        last_token = self._extract_last_token_hidden(x)
+
+        if self.lm_head is not None:
+            logits = self.lm_head(last_token)
+        else:
+            # Weight-tied checkpoint: project via embedding table.
+            logits = self.embed_tokens.as_linear(last_token)
+
+        if logits.ndim == 2:
+            logits = logits.squeeze(0)
+        return logits
+
+
 class SmolLMAdapter(ModelAdapter):
     """
     Adapter for SmolLM models (Llama-like in MLX).
@@ -677,8 +901,10 @@ def create_adapter(
     adapters = {
         "llama": LlamaAdapter,
         "qwen": QwenAdapter,
+        "qwen3": QwenAdapter,  # Qwen3 shares Qwen2's component layout; same adapter.
         "phi3": Phi3Adapter,
         "mistral": MistralAdapter,
+        "gemma3": GemmaAdapter,
         "smollm": SmolLMAdapter,
         "llava": LLaVAMiniAdapter
     }

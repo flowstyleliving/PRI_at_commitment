@@ -1,0 +1,16 @@
+{
+  "model": "mlx-community/Qwen3-8B-4bit",
+  "passed": false,
+  "errors": [
+    "RuntimeError: Unexpected activation shape for 'layer_00': (), expected [B,T,D]."
+  ],
+  "bundle_results": {
+    "dict_collision": {
+      "passed": false,
+      "errors": []
+    }
+  },
+  "traceback": "Traceback (most recent call last):\n  File \"/Users/msrk/Documents/PRI_at_commitment/scripts/v3_capture_dryrun.py\", line 651, in main\n    rec = check_model(\n  File \"/Users/msrk/Documents/PRI_at_commitment/scripts/v3_capture_dryrun.py\", line 370, in check_model\n    trace = trace_sample(\n  File \"/Users/msrk/Documents/PRI_at_commitment/pri_v2_mlx_pipeline.py\", line 716, in trace_sample\n    raise RuntimeError(\nRuntimeError: Unexpected activation shape for 'layer_00': (), expected [B,T,D].\n",
+  "row_counts_by_schedule": {},
+  "tripwire_distribution": {}
+}

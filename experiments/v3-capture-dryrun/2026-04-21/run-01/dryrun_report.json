@@ -1,0 +1,123 @@
+{
+  "run_id": "run-20260421T022649Z",
+  "utc": "2026-04-21T02:26:58.798720+00:00",
+  "script": "scripts/v3_capture_dryrun.py",
+  "git_sha": "6868991d727d08a8fc0a27ff87824353d6803e40-dirty",
+  "config": {
+    "models": [
+      "mlx-community/Llama-3.2-3B-Instruct-4bit",
+      "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+      "mlx-community/Qwen2.5-7B-Instruct-4bit"
+    ],
+    "seed": 42,
+    "max_new_tokens": 14,
+    "all_for_first_n_steps": 12,
+    "probe_fallback": [
+      "final",
+      "three_quarters",
+      "mid",
+      "quarter"
+    ],
+    "probe_layers_paper_path": [
+      "final",
+      "mid",
+      "quarter"
+    ],
+    "h_prev_sanity_max_ratio": 10.0,
+    "sample_id": "short_with_contradiction_0000",
+    "condition": "short_with_contradiction"
+  },
+  "parquet": {
+    "path": "dryrun_capture.parquet",
+    "schema": {
+      "run_id": "string",
+      "git_sha": "string",
+      "model": "string",
+      "sample_id": "string",
+      "condition": "string",
+      "step": "int32",
+      "layer": "string",
+      "h_t": "list<item: float>",
+      "h_prev": "list<item: float>",
+      "h_prev_source": "string",
+      "capture_schedule_tag": "string"
+    },
+    "total_rows": 0
+  },
+  "consumer_audit": {
+    "consumer": "PRIComputer.compute_step",
+    "consumer_file": "pri_v2_mlx_pipeline.py",
+    "signature_fields": [
+      "h_t",
+      "h_prev",
+      "p_t",
+      "S_t",
+      "alpha",
+      "topk_values",
+      "lowrank_values",
+      "v3_rank_values"
+    ],
+    "consumed_per_row": [
+      "h_t",
+      "h_prev"
+    ],
+    "consumed_per_step": [
+      "p_t",
+      "S_t"
+    ],
+    "consumed_config": [
+      "alpha",
+      "topk_values",
+      "lowrank_values",
+      "v3_rank_values"
+    ],
+    "parquet_schema_columns": [
+      "run_id",
+      "git_sha",
+      "model",
+      "sample_id",
+      "condition",
+      "step",
+      "layer",
+      "h_t",
+      "h_prev",
+      "h_prev_source",
+      "capture_schedule_tag"
+    ],
+    "schema_validated_per_row_fields": [
+      "h_t",
+      "h_prev"
+    ],
+    "dead_schema_checks": [],
+    "missing_schema_checks_for_consumed": [],
+    "per_step_validation_notes": "p_t via trace['gen_probs'][si] finite check; S_t via trace['gen_surprises'][si] finite check",
+    "passed": true
+  },
+  "all_passed": false,
+  "per_model": [
+    {
+      "model": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+      "passed": false,
+      "n_errors": 1,
+      "row_counts_by_schedule": {},
+      "tripwire_distribution": {},
+      "bundle_results": {}
+    },
+    {
+      "model": "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+      "passed": false,
+      "n_errors": 1,
+      "row_counts_by_schedule": {},
+      "tripwire_distribution": {},
+      "bundle_results": {}
+    },
+    {
+      "model": "mlx-community/Qwen2.5-7B-Instruct-4bit",
+      "passed": false,
+      "n_errors": 1,
+      "row_counts_by_schedule": {},
+      "tripwire_distribution": {},
+      "bundle_results": {}
+    }
+  ]
+}

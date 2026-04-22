@@ -79,7 +79,20 @@ class Config:
     alpha_default: float = 1.0
     topk_values: List[int] = field(default_factory=lambda: [32, 64, 128, 256])
     lowrank_values: List[int] = field(default_factory=lambda: [8, 16, 32])
+    v3_rank_values: List[int] = field(default_factory=lambda: [1, 2, 3, 4, 5, 8, 13, 16, 21, 32, 34, 55, 64])
     layers_to_probe: List[str] = field(default_factory=lambda: ["final", "mid", "quarter"])
+
+    # v3 capture schedule (opt-in via v3_capture=True on trace_sample).
+    # For gen steps < v3_all_layers_for_first_n_steps, capture every transformer block.
+    # For later steps, fall back to probe_4_layers.
+    probe_4_layers: List[str] = field(
+        default_factory=lambda: ["final", "three_quarters", "mid", "quarter"]
+    )
+    v3_all_layers_for_first_n_steps: int = 12
+    # Sanity gate: ||Δh_step0|| / ||h_t_step0|| must be < this at the final layer.
+    # Guards the paper's step-0 h_prev inflation bug (paper AUROCs 0.998/0.994/0.980
+    # were artefacts of an undefined h_prev at step 0).
+    h_prev_sanity_max_ratio: float = 10.0
 
     # Stats
     n_permutations: int = 10000
@@ -122,7 +135,13 @@ def to_numpy(arr: Any) -> np.ndarray:
     try:
         return np.array(arr)
     except Exception:
-        return np.array(mx.eval(arr))
+        # bfloat16 has no numpy buffer protocol; cast to float32 in MLX first.
+        # The previous fallback `np.array(mx.eval(arr))` silently returned a
+        # 0-d ndarray because mx.eval() returns None — bfloat16 hidden states
+        # then looked like scalars downstream.
+        if hasattr(arr, "astype"):
+            return np.array(arr.astype(mx.float32))
+        raise
 
 
 def safe_softmax(logits: np.ndarray) -> np.ndarray:
@@ -183,6 +202,7 @@ def checkpoint_signature(config: Config, model_name: str) -> Dict[str, Any]:
         "alpha_default": float(config.alpha_default),
         "topk_values": [int(x) for x in config.topk_values],
         "lowrank_values": [int(x) for x in config.lowrank_values],
+        "v3_rank_values": [int(x) for x in config.v3_rank_values],
         "layers_to_probe": list(config.layers_to_probe),
     }
 
@@ -344,10 +364,33 @@ def find_layers(model: Any) -> List[Any]:
 def get_layer_indices(n_layers: int, targets: List[str]) -> Dict[str, int]:
     mapping = {
         "final": n_layers - 1,
+        "three_quarters": (3 * n_layers) // 4,
         "mid": n_layers // 2,
         "quarter": n_layers // 4,
     }
     return {name: mapping[name] for name in targets if name in mapping}
+
+
+def get_all_layer_indices(n_layers: int) -> Dict[str, int]:
+    """For v3 every-layer capture. Names are zero-padded for stable lexicographic sort."""
+    width = max(2, len(str(max(n_layers - 1, 0))))
+    return {f"layer_{i:0{width}d}": i for i in range(n_layers)}
+
+
+def layer_indices_for_step(
+    step_idx: int,
+    n_layers: int,
+    all_for_first_n_steps: int,
+    probe_fallback_targets: List[str],
+) -> Dict[str, int]:
+    """v3 capture schedule. step_idx is zero-indexed from the first generated token.
+
+    Steps < `all_for_first_n_steps` (default 12) → every transformer block.
+    Later steps → the `probe_fallback_targets` subset (default probe_4).
+    """
+    if step_idx < all_for_first_n_steps:
+        return get_all_layer_indices(n_layers)
+    return get_layer_indices(n_layers, probe_fallback_targets)
 
 
 class OutputProjection:
@@ -496,6 +539,14 @@ def load_model(
     print(f"\n  Loading model: {model_name}")
     model, tokenizer = mlx_load(model_name)
 
+    # Multimodal wrapper reach-through (e.g. gemma3.Model for Gemma 3 4B+):
+    # the outer class holds the text decoder under `.language_model` with no
+    # top-level `.model` attr. find_layers / OutputProjection / trace_sample
+    # all assume a standard `.model.*` layout, so reach through here once —
+    # every downstream caller gets a uniformly-shaped model.
+    if hasattr(model, "language_model") and not hasattr(model, "model"):
+        model = model.language_model
+
     all_layers = find_layers(model)
     layer_indices = get_layer_indices(len(all_layers), cfg.layers_to_probe)
     projection = OutputProjection(model)
@@ -522,16 +573,44 @@ def trace_sample(
     layer_indices: Dict[str, int],
     output_projection: OutputProjection,
     max_new_tokens: int,
+    *,
+    v3_capture: bool = False,
+    v3_all_for_first_n_steps: int = 12,
+    v3_probe_fallback: Optional[List[str]] = None,
+    h_prev_sanity_max_ratio: float = 10.0,
 ) -> Dict[str, Any]:
-    """Run prefix + generation tracing while collecting hidden states."""
-    from mlx_lm.models.base import create_attention_mask
+    """Run prefix + generation tracing while collecting hidden states.
+
+    The default path (v3_capture=False) is the paper pipeline: at each gen step
+    capture only the layers in `layer_indices`, last position only.
+
+    When `v3_capture=True`:
+      * Per-step schedule: every transformer block for the first N gen steps,
+        then `v3_probe_fallback` (default probe_4) for later steps.
+      * Two-position capture per layer: position T (h_t) and position T-1
+        (h_prev_causal). Under causal attention, h_prev_causal at step k equals
+        the step-(k-1) h_t (k≥1) or the last prefix hidden (k=0).
+      * Emits `gen_captures_by_step`, `h_prev_source_log`, and a step-0 sanity
+        ratio under the key `step0_sanity`.
+      * The paper-path outputs (`gen_hidden`, `last_prefix_hidden`, …) are still
+        populated for any caller in `layer_indices`.
+    """
+    from model_adapters import (
+        build_attention_masks,
+        forward_layer,
+        pick_layer_mask,
+        post_embed_scale,
+    )
 
     core = model.model if hasattr(model, "model") else model
     layers = find_layers(model)
-    target_idx_to_name = {idx: name for name, idx in layer_indices.items()}
+    n_layers = len(layers)
+    if v3_probe_fallback is None:
+        v3_probe_fallback = ["final", "three_quarters", "mid", "quarter"]
 
     def _forward_with_hidden(
         ids_2d: np.ndarray,
+        target_idx_to_name: Dict[int, str],
     ) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         x = mx.array(ids_2d.astype(np.int32))
         if hasattr(core, "embed_tokens"):
@@ -541,28 +620,15 @@ def trace_sample(
         else:
             raise RuntimeError("Could not locate token embedding layer on model.")
 
-        fa_mask = create_attention_mask(h, None)
-        swa_mask = None
-        if hasattr(core, "swa_idx") and getattr(core, "swa_idx") is not None:
-            swa_mask = create_attention_mask(
-                h, None, window_size=getattr(core, "sliding_window", None)
-            )
+        h = post_embed_scale(core, h)
+
+        fa_mask, swa_mask = build_attention_masks(core, h)
 
         selected_hidden: Dict[str, np.ndarray] = {}
 
         for li, layer in enumerate(layers):
-            mask = (
-                swa_mask
-                if (swa_mask is not None and hasattr(layer, "use_sliding") and layer.use_sliding)
-                else fa_mask
-            )
-            try:
-                h = layer(h, mask, cache=None)
-            except TypeError:
-                try:
-                    h = layer(h, mask, None)
-                except TypeError:
-                    h = layer(h, mask)
+            mask = pick_layer_mask(layer, fa_mask, swa_mask)
+            h = forward_layer(layer, h, mask)
 
             if li in target_idx_to_name:
                 mx.eval(h)
@@ -582,6 +648,48 @@ def trace_sample(
         logits_np = to_numpy(logits).astype(np.float32)
         return logits_np, selected_hidden
 
+    # Paper-path target set (static across steps).
+    paper_target_idx_to_name = {idx: name for name, idx in layer_indices.items()}
+
+    def _targets_for_step(
+        step_idx: int,
+    ) -> Tuple[Dict[int, str], Dict[str, int], Dict[str, int]]:
+        """Return (idx→canonical_name, canonical_name→idx, paper_path_aliases)
+        for a gen step.
+
+        Two naming schemes coexist under v3_capture: (a) *canonical* names from
+        the v3 schedule — `layer_NN` for every-layer steps, probe_fallback
+        names for probe steps — one name per layer index; (b) *paper-path*
+        names (`final`, `mid`, `quarter`) which are fractional-depth roles
+        that often land on indices already covered by (a). Merging both at
+        capture time collides under the idx→name inversion and loses the
+        colliding canonical entry.
+
+        3b — canonical-only capture + aliases at the output boundary. Paper-
+        path aliases are returned alongside the canonical map so the caller
+        can post-process captured hiddens into paper-path keys (same data,
+        additional keys) without a capture-time collision.
+        """
+        if v3_capture:
+            canonical = layer_indices_for_step(
+                step_idx, n_layers, v3_all_for_first_n_steps, v3_probe_fallback
+            )
+            # Paper-path names that aren't already canonical at this step are
+            # real aliases. At probe-regime steps, probe_fallback IS paper-path
+            # so the alias dict is usually empty — that's fine.
+            paper_aliases = {
+                name: idx for name, idx in layer_indices.items()
+                if name not in canonical
+            }
+        else:
+            canonical = dict(layer_indices)
+            paper_aliases = {}
+        return (
+            {idx: name for name, idx in canonical.items()},
+            canonical,
+            paper_aliases,
+        )
+
     token_ids = encode_text(tokenizer, prompt)
     if len(token_ids) < 2:
         raise RuntimeError("Prompt too short after tokenization.")
@@ -589,13 +697,32 @@ def trace_sample(
     input_ids = np.array(token_ids, dtype=np.int32)[None, :]
     eos_id = get_eos_token_id(tokenizer)
 
-    # Prefix phase
-    prefix_logits, prefix_selected_hidden = _forward_with_hidden(input_ids)
+    # Prefix phase — capture every layer during prefix when v3_capture is on so
+    # `last_prefix_hidden` is available for any layer name the gen schedule will
+    # request. Paper-path prefix captures only `layer_indices`.
+    if v3_capture:
+        # Canonical capture targets: one name per index. Paper-path names
+        # (final, mid, quarter) are added as aliases post-capture — see 3b
+        # note on `_targets_for_step`.
+        canonical_prefix_targets = get_all_layer_indices(n_layers)
+        prefix_paper_aliases = {
+            name: idx for name, idx in layer_indices.items()
+            if name not in canonical_prefix_targets
+        }
+    else:
+        canonical_prefix_targets = dict(layer_indices)
+        prefix_paper_aliases = {}
+    prefix_idx_to_name = {
+        idx: name for name, idx in canonical_prefix_targets.items()
+    }
+    prefix_logits, prefix_selected_hidden = _forward_with_hidden(
+        input_ids, prefix_idx_to_name
+    )
 
     prefix_hidden: Dict[str, List[np.ndarray]] = {}
     last_prefix_hidden: Dict[str, np.ndarray] = {}
 
-    for lname in layer_indices:
+    for lname in canonical_prefix_targets:
         if lname not in prefix_selected_hidden:
             raise RuntimeError(f"No hidden state captured for layer '{lname}'.")
         act = prefix_selected_hidden[lname]
@@ -606,6 +733,20 @@ def trace_sample(
         seq_vecs = [act[0, t].astype(np.float32) for t in range(act.shape[1])]
         prefix_hidden[lname] = seq_vecs
         last_prefix_hidden[lname] = seq_vecs[-1]
+
+    # Alias paper-path names to the canonical layer_NN captures at the same
+    # index. Shares the list objects so the paper-path v2 consumer sees the
+    # same data as if it had been captured directly under the paper-path name.
+    _idx_to_canonical_prefix = {
+        idx: name for name, idx in canonical_prefix_targets.items()
+    }
+    for paper_name, idx in prefix_paper_aliases.items():
+        canonical_name = _idx_to_canonical_prefix.get(idx)
+        if canonical_name is not None and canonical_name in prefix_hidden:
+            prefix_hidden.setdefault(paper_name, prefix_hidden[canonical_name])
+            last_prefix_hidden.setdefault(
+                paper_name, last_prefix_hidden[canonical_name]
+            )
 
     # Prefix probabilities and prefix surprise over actual next token.
     prefix_logits_2d = prefix_logits[0].astype(np.float32)  # [T, V]
@@ -622,12 +763,18 @@ def trace_sample(
     gen_surprises: List[float] = []
     gen_token_ids: List[int] = []
 
+    # v3 capture structures — indexed per-step, per-layer-name.
+    gen_captures_by_step: List[Dict[str, Dict[str, np.ndarray]]] = []
+    gen_layer_indices_by_step: List[Dict[str, int]] = []
+    h_prev_source_log: List[str] = []
+    step0_sanity: Dict[str, float] = {}
+
     # At the start, prev_probs comes from the last prefix position.
     prev_probs = prefix_probs[-1]
     # Current logits for choosing the first token come from prefix.
     current_logits_vec = prefix_logits_2d[-1].astype(np.float32)
 
-    for _ in range(max_new_tokens):
+    for step_idx in range(max_new_tokens):
         # 1. Choose next token from current logits.
         next_id = int(np.argmax(current_logits_vec))
 
@@ -644,13 +791,112 @@ def trace_sample(
         gen_surprises.append(surprise)
 
         # 5. Run forward with the updated context (includes the new token).
+        step_idx_to_name, step_canonical, step_paper_aliases = (
+            _targets_for_step(step_idx)
+        )
         step_input = np.array(token_ids, dtype=np.int32)[None, :]
-        step_logits, step_selected_hidden = _forward_with_hidden(step_input)
+        step_logits, step_selected_hidden = _forward_with_hidden(
+            step_input, step_idx_to_name
+        )
 
-        # 6. Capture hidden state at the LAST position (= generated token position).
+        # Alias paper-path names onto the canonical captures so the paper-path
+        # consumer loop below (and any v2 downstream reader) sees the same
+        # data under paper-path keys. No extra capture, just shared refs.
+        _idx_to_canonical_step = {
+            idx: name for name, idx in step_canonical.items()
+        }
+        for paper_name, idx in step_paper_aliases.items():
+            canonical_name = _idx_to_canonical_step.get(idx)
+            if (
+                canonical_name is not None
+                and canonical_name in step_selected_hidden
+            ):
+                step_selected_hidden.setdefault(
+                    paper_name, step_selected_hidden[canonical_name]
+                )
+
+        # 6. Capture h_t (position T) for paper-path layers and build the v3
+        #    two-position capture when enabled.
         for lname in layer_indices:
             act = step_selected_hidden[lname]
             gen_hidden[lname].append(act[0, -1].astype(np.float32))
+
+        if v3_capture:
+            step_captures: Dict[str, Dict[str, np.ndarray]] = {}
+            # Iterate canonical names only — paper-path aliases share data via
+            # step_selected_hidden but do NOT get their own parquet row (one
+            # row per physical layer index, under its canonical name).
+            for lname, _li in step_canonical.items():
+                act = step_selected_hidden[lname]
+                h_t = act[0, -1].astype(np.float32)
+                h_prev_causal = act[0, -2].astype(np.float32)
+                # H4 write-once guard: duplicate layer keys within one step
+                # are a capture-store bug, not a silent overwrite. Use
+                # `raise` (not `assert`) so the check survives `python -O`.
+                if lname in step_captures:
+                    raise RuntimeError(
+                        f"H4 dict-collision: step {step_idx}, layer '{lname}' "
+                        f"(idx {_li}) already present in step_captures"
+                    )
+                step_captures[lname] = {
+                    "h_t": h_t,
+                    "h_prev_causal": h_prev_causal,
+                }
+            gen_captures_by_step.append(step_captures)
+            gen_layer_indices_by_step.append(dict(step_canonical))
+            h_prev_source_log.append(
+                "prefix_last" if step_idx == 0 else "gen_prev"
+            )
+
+            # Step-0 sanity gate at the final layer: Δh / ||h_t|| < ratio.
+            # Guards the paper's step-0 h_prev inflation bug.
+            if step_idx == 0:
+                final_name = None
+                if "final" in step_captures:
+                    final_name = "final"
+                else:
+                    # Fall back to the highest-index canonical name. Under 3b
+                    # this is layer_NN where NN = n_layers - 1 at every-layer
+                    # steps, which is the same physical layer as "final".
+                    final_name = max(
+                        step_canonical, key=lambda n: step_canonical[n]
+                    )
+                h_t_final = step_captures[final_name]["h_t"]
+                h_prev_causal_final = step_captures[final_name]["h_prev_causal"]
+                h_prev_prefix_final = last_prefix_hidden.get(final_name)
+                ht_norm = float(np.linalg.norm(h_t_final) + 1e-30)
+                dh_causal = float(
+                    np.linalg.norm(h_t_final - h_prev_causal_final)
+                )
+                ratio = dh_causal / ht_norm
+                step0_sanity = {
+                    "layer_name": final_name,
+                    "layer_index": float(step_canonical[final_name]),
+                    "h_t_norm": ht_norm,
+                    "dh_causal_norm": dh_causal,
+                    "dh_over_ht": ratio,
+                    "max_ratio_allowed": float(h_prev_sanity_max_ratio),
+                }
+                if h_prev_prefix_final is not None:
+                    step0_sanity["dh_prefix_norm"] = float(
+                        np.linalg.norm(h_t_final - h_prev_prefix_final)
+                    )
+                    # Under causal attention, position T-1 of the extended pass
+                    # must approximately equal the last prefix hidden for the
+                    # same layer. 4-bit quantized MLX forwards drift more than
+                    # fp32 would, so we compare via relative L2 distance with
+                    # a loose threshold rather than `np.allclose` elementwise.
+                    diff = h_prev_causal_final - h_prev_prefix_final
+                    ref_norm = float(np.linalg.norm(h_prev_prefix_final)) + 1e-30
+                    rel_l2 = float(np.linalg.norm(diff) / ref_norm)
+                    step0_sanity["causal_vs_prefix_rel_l2"] = rel_l2
+                    step0_sanity["causal_matches_prefix_last"] = float(rel_l2 < 1e-2)
+                if ratio >= h_prev_sanity_max_ratio or not np.isfinite(ratio):
+                    raise RuntimeError(
+                        f"step-0 h_prev sanity failed at layer '{final_name}': "
+                        f"||Δh||/||h_t|| = {ratio:.3f} (max {h_prev_sanity_max_ratio:.3f}). "
+                        f"This is the paper's step-0 inflation bug — refusing to proceed."
+                    )
 
         # 7. Capture logits/probs for this step and next iteration.
         step_logits_vec = step_logits[0, -1].astype(np.float32)
@@ -673,6 +919,13 @@ def trace_sample(
         "gen_surprises": gen_surprises,
         "gen_token_ids": gen_token_ids,
         "generated_text": generated_text,
+        # v3 capture outputs (populated only when v3_capture=True).
+        "gen_captures_by_step": gen_captures_by_step,
+        "gen_layer_indices_by_step": gen_layer_indices_by_step,
+        "h_prev_source_log": h_prev_source_log,
+        "step0_sanity": step0_sanity,
+        "v3_capture": bool(v3_capture),
+        "n_layers": n_layers,
     }
 
 
@@ -752,6 +1005,71 @@ class PRIComputer:
         mean_proj = float(np.sum(p_t * z))
         return float(np.sqrt(max(d2 - mean_proj**2, 1e-10)))
 
+    def null_ratio_and_energy(
+        self,
+        dh: np.ndarray,
+        p_t: np.ndarray,
+        rank_values: Iterable[int],
+    ) -> Dict[str, float]:
+        """
+        For each r in rank_values, emit:
+          null_ratio_rank{r}     = ||dh - V_top V_topᵀ dh|| / ||dh||
+          fisher_energy_rank{r}  = Σ_{i≤r} σ_i² / Σ_i σ_i²
+        V_top = top-r right singular vectors of sqrt(p_t)·W_u restricted to
+        the top-`support` probability rows (same truncation as fim_lowrank).
+        Note: null is measured relative to that truncated support, not the
+        full vocab — null_ratio > 0 can reflect either within-support modes
+        beyond rank r OR directions outside the row-span entirely.
+        SVD is shared across all requested ranks.
+        """
+        out: Dict[str, float] = {}
+        rank_list = [int(r) for r in rank_values]
+        if not rank_list:
+            return out
+
+        dh_norm_sq = float(np.dot(dh, dh))
+        if dh_norm_sq <= 0.0:
+            for r in rank_list:
+                out[f"null_ratio_rank{r}"] = 0.0
+                out[f"fisher_energy_rank{r}"] = 0.0
+            return out
+        dh_norm = float(np.sqrt(dh_norm_sq))
+
+        max_rank = max(rank_list)
+        support = int(min(max(256, max_rank * 16), p_t.shape[0]))
+        idx = np.argpartition(-p_t, kth=support - 1)[:support]
+        p_s = p_t[idx]
+        W_s = self.output_projection.get_rows(idx)
+
+        nan_out = {
+            **{f"null_ratio_rank{r}": float("nan") for r in rank_list},
+            **{f"fisher_energy_rank{r}": float("nan") for r in rank_list},
+        }
+        if W_s is None or W_s.ndim != 2:
+            return nan_out
+
+        A = (np.sqrt(p_s + 1e-10)[:, None]) * W_s
+        try:
+            _, S, Vt = np.linalg.svd(A, full_matrices=False)
+        except np.linalg.LinAlgError:
+            return nan_out
+
+        s_sq = S**2
+        total_energy = float(np.sum(s_sq)) + 1e-10
+        proj = Vt @ dh
+        cum_proj_sq = np.cumsum(proj**2)
+        cum_energy = np.cumsum(s_sq)
+        max_available = Vt.shape[0]
+
+        for r in rank_list:
+            r_eff = int(min(r, max_available))
+            top_proj_sq = float(cum_proj_sq[r_eff - 1]) if r_eff > 0 else 0.0
+            null_sq = max(dh_norm_sq - top_proj_sq, 0.0)
+            out[f"null_ratio_rank{r}"] = float(np.sqrt(null_sq) / dh_norm)
+            out[f"fisher_energy_rank{r}"] = float(cum_energy[r_eff - 1] / total_energy) if r_eff > 0 else 0.0
+
+        return out
+
     @staticmethod
     def pri_v1(S_t: float, delta_h: float, alpha: float) -> float:
         return S_t * (1.0 + alpha * delta_h)
@@ -769,6 +1087,7 @@ class PRIComputer:
         alpha: float,
         topk_values: Iterable[int],
         lowrank_values: Iterable[int],
+        v3_rank_values: Iterable[int] = (),
     ) -> Dict[str, float]:
         cos_d = self.cosine_dist(h_t, h_prev)
         l2_d = self.l2_dist(h_t, h_prev)
@@ -807,6 +1126,11 @@ class PRIComputer:
             d = self.fim_lowrank(dh, z, p_t, rank=int(rank))
             out[f"d_F_lowrank{rank}"] = d
             out[f"pri_v2_lowrank{rank}"] = self.pri_v2(S_t, d, alpha)
+
+        v3_list = list(v3_rank_values)
+        if v3_list:
+            v3_out = self.null_ratio_and_energy(dh, p_t, v3_list)
+            out.update(v3_out)
 
         return out
 
@@ -1201,6 +1525,7 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                             alpha,
                             topk_values=config.topk_values,
                             lowrank_values=config.lowrank_values,
+                            v3_rank_values=config.v3_rank_values,
                         )
 
                         if (
