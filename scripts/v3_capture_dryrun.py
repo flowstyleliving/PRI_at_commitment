@@ -497,9 +497,10 @@ def check_model(
         errors=b_schema,
     )
 
-    # B7 dict_collision — the H4 guard lives at pri_v2_mlx_pipeline.py:764
-    # and raises AssertionError on duplicate-key write. If we reached here, it
-    # did not fire across every (step × layer) write of this run. Pass.
+    # B7 dict_collision — the H4 guard lives in pri_v2_mlx_pipeline.py
+    # (trace_sample, step_captures write-once check) and raises RuntimeError
+    # on duplicate-key write. If we reached here, it did not fire across
+    # every (step × layer) write of this run. Pass.
     # (An H4 violation would have surfaced as an exception caught upstream.)
 
     bundle_results = {
@@ -643,13 +644,17 @@ def main() -> int:
                 run_id=run_id,
                 git_sha=git_sha,
             )
-        except AssertionError as exc:
+        except RuntimeError as exc:
+            # H4 step_captures write-once guard was converted from `assert`
+            # to `raise RuntimeError` (pri_v2_mlx_pipeline.py) so the check
+            # survives `python -O`. Catch RuntimeError here, inspect the
+            # message for the H4 marker, and attribute to B7 dict_collision.
             msg = f"{exc}"
             is_h4 = "H4 dict-collision" in msg
             rec = {
                 "model": model_name,
                 "passed": False,
-                "errors": [f"AssertionError: {msg}"],
+                "errors": [f"RuntimeError: {msg}"],
                 "bundle_results": {
                     "dict_collision": {
                         "passed": False,
