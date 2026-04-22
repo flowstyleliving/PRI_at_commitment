@@ -468,27 +468,31 @@ class QwenAdapter(ModelAdapter):
     def forward_prefix_with_collection(self, input_ids: mx.array) -> mx.array:
         """
         Qwen-specific forward pass with hidden state collection.
+        Covers Qwen 2.5 (float16) and Qwen3 (bfloat16) — mask is built after
+        embedding so it matches the activation dtype.
         """
         # Reset collector for this token step
         self.collector.start()
         if self.acr_collector is not None:
             self.acr_collector.start()
             self._prev_acr_input = None
-        
+
         # Normalize input shape
         if input_ids.ndim == 1:
             input_ids = input_ids[None, :]
-        
-        seq_len = input_ids.shape[1]
-        mask = self._make_causal_mask(seq_len)
-        
-        # Embed tokens
+
+        # Embed tokens first, THEN build mask so its dtype matches x. A
+        # hardcoded float16 mask breaks scaled_dot_product_attention under
+        # bfloat16 activations (Qwen3-8B-4bit); _make_attention_mask reads
+        # the dtype off x.
         x = self.embed_tokens(input_ids)
-        
+        cache = [None] * len(self.layers)
+        mask = self._make_attention_mask(x, cache[0])
+
         # Pass through transformer blocks
-        for layer_idx, layer in enumerate(self.layers):
-            x = self._forward_layer_with_optional_acr(layer_idx, layer, x, mask=mask)
-            
+        for layer_idx, (layer, c) in enumerate(zip(self.layers, cache)):
+            x = self._forward_layer_with_optional_acr(layer_idx, layer, x, mask=mask, cache=c)
+
             # Record hidden state
             last_token_hidden = self._extract_last_token_hidden(x)
             self.collector.record(layer_idx, last_token_hidden)

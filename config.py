@@ -56,6 +56,18 @@ MODEL_CONFIGS = [
         "display_name": "Gemma 3 4B IT",
         "model_type": "gemma3",
     },
+    {
+        "name": "qwen3_8b",
+        "path": "mlx-community/Qwen3-8B-4bit",
+        "display_name": "Qwen3 8B",
+        "model_type": "qwen3",
+    },
+    {
+        "name": "phi_3.5_mini",
+        "path": "mlx-community/Phi-3.5-mini-instruct-4bit",
+        "display_name": "Phi-3.5 Mini Instruct",
+        "model_type": "phi3",
+    },
 ]
 
 
