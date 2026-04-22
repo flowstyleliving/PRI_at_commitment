@@ -539,6 +539,14 @@ def load_model(
     print(f"\n  Loading model: {model_name}")
     model, tokenizer = mlx_load(model_name)
 
+    # Multimodal wrapper reach-through (e.g. gemma3.Model for Gemma 3 4B+):
+    # the outer class holds the text decoder under `.language_model` with no
+    # top-level `.model` attr. find_layers / OutputProjection / trace_sample
+    # all assume a standard `.model.*` layout, so reach through here once —
+    # every downstream caller gets a uniformly-shaped model.
+    if hasattr(model, "language_model") and not hasattr(model, "model"):
+        model = model.language_model
+
     all_layers = find_layers(model)
     layer_indices = get_layer_indices(len(all_layers), cfg.layers_to_probe)
     projection = OutputProjection(model)
