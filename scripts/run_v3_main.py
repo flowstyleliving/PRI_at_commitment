@@ -96,6 +96,33 @@ def main() -> int:
     parser.add_argument(
         "--seed", type=int, default=42, help="random seed (default 42)"
     )
+    parser.add_argument(
+        "--skip-gate",
+        action="store_true",
+        help="bypass the behavioral gate (sets pilot_threshold=0.0). Use when"
+             " models have already been verified via smoke_test_model.py --gate"
+             " — avoids re-verifying reasoning-tuned models whose phrasing can"
+             " push check_answer below the 0.80 threshold in rare cases.",
+    )
+    parser.add_argument(
+        "--gate-verbose",
+        action="store_true",
+        help="print per-sample gate diagnostic (expected vs parsed + output "
+             "preview). Useful to diagnose gate failures on reasoning models.",
+    )
+    parser.add_argument(
+        "--pilot-threshold",
+        type=float,
+        default=None,
+        help="override control-accuracy gate threshold (default from Config: "
+             "0.80). Lower for models with legitimately mixed reasoning output.",
+    )
+    parser.add_argument(
+        "--gate-max-tokens",
+        type=int,
+        default=None,
+        help="override gate generation budget (default from Config: 256).",
+    )
     args = parser.parse_args()
 
     out_dir = experiment_run_dir(EXPERIMENT_SLUG)
@@ -123,6 +150,18 @@ def main() -> int:
     # already emits via v3_rank_values + PRIComputer.
     cfg.v3_capture = bool(args.v3_capture)
 
+    # Gate controls. --skip-gate short-circuits by forcing pilot_threshold=0.0
+    # (every run passes); --pilot-threshold lets you dial a lower bar (e.g. 0.6
+    # for reasoning models with legitimately mixed output). --gate-max-tokens
+    # overrides the Config default (256 matches smoke's working budget).
+    cfg.gate_verbose = bool(args.gate_verbose)
+    if args.skip_gate:
+        cfg.pilot_threshold = 0.0
+    elif args.pilot_threshold is not None:
+        cfg.pilot_threshold = float(args.pilot_threshold)
+    if args.gate_max_tokens is not None:
+        cfg.gate_max_new_tokens = int(args.gate_max_tokens)
+
     print("=" * 72)
     print(f"v3 main run — scope={args.scope} ({len(cfg.models)} models)")
     print(f"  n_per_cell={cfg.n_samples_per_cell}  "
@@ -131,6 +170,12 @@ def main() -> int:
           f"lowrank={cfg.lowrank_values}")
     print(f"  v3_rank_values={cfg.v3_rank_values}")
     print(f"  v3_capture={cfg.v3_capture}  max_new_tokens={cfg.max_new_tokens}")
+    print(
+        f"  gate: threshold={cfg.pilot_threshold:.0%}  "
+        f"max_new_tokens={cfg.gate_max_new_tokens}  "
+        f"verbose={cfg.gate_verbose}"
+        + ("  (bypassed via --skip-gate)" if args.skip_gate else "")
+    )
     print(f"  save_dir={cfg.save_dir}")
     print("=" * 72)
 

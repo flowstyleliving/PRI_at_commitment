@@ -76,11 +76,17 @@ class Config:
 
     # Generation
     max_new_tokens: int = 30
-    # Reasoning-tuned models (Gemma 3, Qwen3) emit multi-paragraph analyses
-    # before their YES/NO token; the behavioral gate needs a larger budget
-    # so check_answer can find it. Non-reasoning primaries (Llama/Mistral/
-    # Qwen 2.5) answer directly and finish inside any reasonable budget.
-    gate_max_new_tokens: int = 128
+    # Reasoning-tuned models (Gemma 3, Qwen3, Phi-3.5) emit multi-paragraph
+    # analyses before their YES/NO token; the gate needs a larger budget so
+    # check_answer can find it. 256 matches the smoke_test_model.py --gate
+    # default that passed 4/4 on all 4 extended models this morning. Non-
+    # reasoning primaries (Llama / Mistral / Qwen 2.5) answer inside the
+    # first few tokens; the larger budget just costs a few seconds each.
+    gate_max_new_tokens: int = 256
+    # Print per-sample gate diagnostic (sample_id, expected, parsed, correct,
+    # output preview). Defaults off; main-run launcher flips on for debugging
+    # gate failures on reasoning-tuned models.
+    gate_verbose: bool = False
     n_trace_dumps: int = 5  # per condition (control/contradiction), per model
 
     # PRI parameters
@@ -1402,10 +1408,16 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
         )
         print(
             f"  Behavioral gate: {len(controls)} control samples "
-            f"(max_new_tokens={gate_tokens})"
+            f"(max_new_tokens={gate_tokens}, threshold={config.pilot_threshold:.0%})"
         )
+        if config.gate_verbose:
+            print(
+                f"    (gate_verbose=True — per-sample parse diagnostic below)"
+            )
         n_correct = 0
         for _, row in controls.iterrows():
+            sample_id = row["sample_id"]
+            expected = str(row["correct_value"]).strip().upper()
             try:
                 trace = trace_sample(
                     model,
@@ -1415,17 +1427,46 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     output_projection,
                     gate_tokens,
                 )
-                if check_answer(trace["generated_text"], row["correct_value"]):
+                generated = trace["generated_text"]
+                correct = check_answer(generated, row["correct_value"])
+                if correct:
                     n_correct += 1
+                if config.gate_verbose:
+                    # Extract the LAST YES/NO token the parser would see, for
+                    # explicit reporting of why a sample passed or failed.
+                    parsed = "NONE"
+                    text_clean = re.sub(
+                        r"<\|[^|>]+?\|>", " ", str(generated or "").strip()
+                    )
+                    for match in re.finditer(r"[A-Za-z]+", text_clean):
+                        tok = match.group(0).upper()
+                        if tok in {"YES", "NO"}:
+                            parsed = tok
+                    preview = (
+                        str(generated or "")
+                        .replace("\n", " ")
+                        .strip()[:120]
+                    )
+                    mark = "OK" if correct else "MISS"
+                    print(
+                        f"    [gate] id={sample_id} exp={expected} "
+                        f"parsed={parsed} {mark} "
+                        f"out='{preview}'"
+                    )
             except Exception as exc:
-                print(f"    Gate sample error (id={row['sample_id']}): {exc}")
+                print(f"    Gate sample error (id={sample_id}): {exc}")
 
         gate_acc = n_correct / max(len(controls), 1)
-        print(f"    Control accuracy: {gate_acc:.0%}")
+        print(f"    Control accuracy: {gate_acc:.0%} ({n_correct}/{len(controls)})")
         if gate_acc < config.pilot_threshold:
             print(
                 f"    Gate failed (need >= {config.pilot_threshold:.0%}). Skipping model."
             )
+            if not config.gate_verbose:
+                print(
+                    f"    (rerun with cfg.gate_verbose=True — or launcher "
+                    f"--gate-verbose — to see why each sample failed)"
+                )
             del model, tokenizer, output_projection, pri_comp
             gc.collect()
             clear_mlx_cache()
