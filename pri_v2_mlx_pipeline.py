@@ -76,6 +76,11 @@ class Config:
 
     # Generation
     max_new_tokens: int = 30
+    # Reasoning-tuned models (Gemma 3, Qwen3) emit multi-paragraph analyses
+    # before their YES/NO token; the behavioral gate needs a larger budget
+    # so check_answer can find it. Non-reasoning primaries (Llama/Mistral/
+    # Qwen 2.5) answer directly and finish inside any reasonable budget.
+    gate_max_new_tokens: int = 128
     n_trace_dumps: int = 5  # per condition (control/contradiction), per model
 
     # PRI parameters
@@ -1380,7 +1385,13 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
         if len(controls) < config.pilot_n:
             controls = dataset[~dataset.contradiction].head(config.pilot_n)
 
-        print(f"  Behavioral gate: {len(controls)} control samples")
+        gate_tokens = max(
+            config.max_new_tokens, config.gate_max_new_tokens
+        )
+        print(
+            f"  Behavioral gate: {len(controls)} control samples "
+            f"(max_new_tokens={gate_tokens})"
+        )
         n_correct = 0
         for _, row in controls.iterrows():
             try:
@@ -1390,7 +1401,7 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     row["prompt"],
                     layer_indices,
                     output_projection,
-                    config.max_new_tokens,
+                    gate_tokens,
                 )
                 if check_answer(trace["generated_text"], row["correct_value"]):
                     n_correct += 1
