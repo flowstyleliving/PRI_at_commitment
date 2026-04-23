@@ -42,13 +42,25 @@ PRIMARIES = [
     "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
     "mlx-community/Qwen2.5-7B-Instruct-4bit",
 ]
-EXTENDED = [
+GEMMAS = [
     "mlx-community/gemma-3-1b-it-4bit",
     "mlx-community/gemma-3-4b-it-4bit",
+]
+NON_GEMMA_EXTENDED = [
     "mlx-community/Qwen3-8B-4bit",
     "mlx-community/Phi-3.5-mini-instruct-4bit",
 ]
-SCOPES = {"primaries": PRIMARIES, "extended": EXTENDED, "all": PRIMARIES + EXTENDED}
+EXTENDED = GEMMAS + NON_GEMMA_EXTENDED
+# Gemma-isolated scopes let a Gemma-specific failure (bf16, interleaved SWA,
+# embed scale, multimodal wrapper) quarantine without killing the rest of the
+# run. "non_gemmas" = primaries + Qwen3 + Phi-3.5; "gemmas" = Gemma 1B + 4B.
+SCOPES = {
+    "primaries": PRIMARIES,
+    "extended": EXTENDED,
+    "gemmas": GEMMAS,
+    "non_gemmas": PRIMARIES + NON_GEMMA_EXTENDED,
+    "all": PRIMARIES + EXTENDED,
+}
 
 EXPERIMENT_SLUG = "v3-main-run"
 
