@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-PRI v2 x SUP Experiment Pipeline (MLX)
-Predictive Rupture Index — FIM-Pullback Upgrade on Apple Silicon
+PRI v3 x SUP Experiment Pipeline (MLX)
+Predictive Rupture Index — FIM-Pullback + Null-Ratio on Apple Silicon
+===============================================================================
+Computes v1 (cosine), v2 (FIM-pullback d_F variants), and v3 (null_ratio /
+fisher_energy) metrics in a single sweep. The module name
+`pri_v2_mlx_pipeline` is retained for import stability across the repo.
 ===============================================================================
 Author: Michael Seo R. Kitti (adapted for mlx-lm pipeline)
 Date:   March 2026
@@ -939,7 +943,7 @@ def trace_sample(
 
 
 class PRIComputer:
-    """Computes PRI v1 and PRI v2 variants."""
+    """Computes PRI v1, v2, and v3 variants."""
 
     def __init__(self, output_projection: OutputProjection):
         self.output_projection = output_projection
@@ -1292,7 +1296,7 @@ def check_answer(generated: str, expected_value: str) -> bool:
 
 
 def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    print_header("PRI v2 x SUP EXPERIMENT PIPELINE (MLX)")
+    print_header("PRI v3 x SUP EXPERIMENT PIPELINE (MLX)")
     os.makedirs(config.save_dir, exist_ok=True)
 
     print_header("SECTION 1: DATA GENERATION")
