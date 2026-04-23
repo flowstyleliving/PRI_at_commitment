@@ -133,8 +133,17 @@ def main() -> int:
     print(f"  v3_capture={cfg.v3_capture}  max_new_tokens={cfg.max_new_tokens}")
     print(f"  save_dir={cfg.save_dir}")
     print("=" * 72)
-    for m in cfg.models:
-        print(f"  - {m}")
+
+    # Prominent, numbered queue so you know exactly what's on deck before
+    # run_experiment's own banner drowns it out mid-run.
+    print()
+    print("=" * 72)
+    print(f"  MODEL QUEUE ({len(cfg.models)} total, processed in this order)")
+    print("=" * 72)
+    width = len(str(len(cfg.models)))
+    for i, m in enumerate(cfg.models, 1):
+        print(f"  [{i:>{width}}/{len(cfg.models)}] {m}")
+    print("=" * 72)
     print()
 
     results_df, _ = pipeline.run_experiment(cfg)
