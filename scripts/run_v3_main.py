@@ -58,6 +58,7 @@ SCOPES = {
     "primaries": PRIMARIES,
     "extended": EXTENDED,
     "gemmas": GEMMAS,
+    "non_gemma_extended": NON_GEMMA_EXTENDED,
     "non_gemmas": PRIMARIES + NON_GEMMA_EXTENDED,
     "all": PRIMARIES + EXTENDED,
 }
