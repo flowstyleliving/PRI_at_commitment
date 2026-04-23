@@ -1287,7 +1287,16 @@ def bootstrap_auc_diff(
 
 
 def check_answer(generated: str, expected_value: str) -> bool:
-    """Extract the first explicit YES/NO token from generated text."""
+    """Extract the LAST explicit YES/NO token from generated text.
+
+    Reasoning-tuned models (Gemma 3, Qwen3) routinely emit outputs like
+    "No contradiction found, therefore YES" — first-match parsers flip the
+    decision on the leading "No" and mark a correct YES answer as wrong.
+    Symptom seen mid-v3-main-run 2026-04-23: Gemma 1B gate scored 10% on 20
+    control samples at a 128-token budget (parser-flip, not model failure).
+    Last-match picks the model's final verdict and is identical to
+    first-match for direct-answer primaries (single YES/NO token output).
+    """
     if generated is None:
         return False
     expected = str(expected_value).strip().upper()
@@ -1295,10 +1304,13 @@ def check_answer(generated: str, expected_value: str) -> bool:
         return expected.lower() in str(generated).lower()
 
     text = re.sub(r"<\|[^|>]+?\|>", " ", str(generated).strip())
+    last_token: Optional[str] = None
     for match in re.finditer(r"[A-Za-z]+", text):
         token = match.group(0).upper()
         if token in {"YES", "NO"}:
-            return token == expected
+            last_token = token
+    if last_token is not None:
+        return last_token == expected
 
     # Fallback for uncommon tokenization patterns.
     low = text.lower()
