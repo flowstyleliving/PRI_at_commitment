@@ -475,7 +475,10 @@ class OutputProjection:
             out = self.layer.as_linear(h)
         else:
             out = self.layer(h)
-        return np.array(out)[0, 0].astype(np.float32)
+        # to_numpy handles bfloat16 via mx.float32 cast before np.array —
+        # bare np.array(bf16_mx) raises PEP 3118 buffer errors on Gemma 4B
+        # / Qwen3-8B.
+        return to_numpy(out)[0, 0].astype(np.float32)
 
     def get_rows(self, indices: np.ndarray) -> Optional[np.ndarray]:
         idx = np.asarray(indices, dtype=np.int32)
@@ -491,15 +494,17 @@ class OutputProjection:
 
         idx_mx = mx.array(idx)
         if scales is not None:
-            # Quantized layer: dequantize only selected rows.
+            # Quantized layer: dequantize only selected rows. Dequantize
+            # output inherits the model's native dtype — bfloat16 on Gemma
+            # 3-4B / Qwen3-8B, so route through to_numpy (bf16-safe).
             w_rows = mx.take(w, idx_mx, axis=0)
             s_rows = mx.take(scales, idx_mx, axis=0)
             b_rows = mx.take(biases, idx_mx, axis=0) if biases is not None else None
             rows = mx.dequantize(w_rows, s_rows, b_rows)
-            return np.array(rows).astype(np.float32)
+            return to_numpy(rows).astype(np.float32)
 
         rows = mx.take(w, idx_mx, axis=0)
-        rows_np = np.array(rows).astype(np.float32)
+        rows_np = to_numpy(rows).astype(np.float32)
         if rows_np.ndim == 2:
             return rows_np
         return None
