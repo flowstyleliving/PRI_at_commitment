@@ -62,6 +62,25 @@ Each axis is an independent scope so you can run, skip, or re-run any phase with
 
 Prefer running Phase 1 first and verifying it clean before launching Phase 2 or Phase 3 — that way a Gemma-side adapter regression or a Qwen3 anomaly cannot contaminate the sealed-gate data. A convenience alias `--scope v3_1_main` combines Phase 1 + Phase 2 in one launch if you want primaries + Qwen3 without the manual sequencing.
 
+### Overnight run — all three phases, unattended
+
+For an overnight launch that runs all three phases in sequence with the right isolation semantics (Phase 1 fail-stop; Phase 2 and 3 best-effort-independent), use the bundled shell script:
+
+```bash
+# Foreground (progress visible in the terminal):
+bash scripts/run_v3_1_overnight.sh
+
+# Background / detached (close the terminal, let the display sleep):
+nohup bash scripts/run_v3_1_overnight.sh >/dev/null 2>&1 &
+```
+
+The script:
+- Runs `caffeinate` to prevent macOS sleep for the duration.
+- Logs merged stdout + stderr to `logs/v3_1_<timestamp>.log`.
+- Touches `logs/v3_1_<timestamp>.done` on completion with a per-phase PASS/FAIL summary.
+- Exits non-zero only if Phase 1 (the sealed-gate run) fails. Phase 2 / 3 failures are logged but don't fail the run.
+- Uses the same sealed parameters (seed 20260423, rank 1 via Config defaults, n=50/cell, 80% gate threshold). Does NOT pass `--skip-gate` — the no-silent-override rule is enforced.
+
 Artifacts land under `experiments/v3-main-run/<YYYY-MM-DD>/run-NN/`. E17b capture is on by default; pass `--no-e17b` to disable. Behavioral gate defaults to 80% control accuracy at n=20; `--skip-gate` bypasses for already-verified checkpoints (use sparingly — see Pre-reg discipline below).
 
 ### Legacy v2 run
