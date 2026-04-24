@@ -108,6 +108,12 @@ class Config:
         default_factory=lambda: ["final", "three_quarters", "mid", "quarter"]
     )
     v3_all_layers_for_first_n_steps: int = 12
+    # E17b: HARP-style static raw-W_u null_ratio emitted alongside the
+    # Fisher-weighted null_ratio. One-time model-load cost (raw SVD cached on
+    # OutputProjection); per-sample cost is a matvec. Default True so v3.1
+    # runs produce the E17b head-to-head without extra flags; flip off for
+    # legacy v2 reproductions or memory-constrained environments.
+    v3_capture_raw: bool = True
     # Sanity gate: ||Δh_step0|| / ||h_t_step0|| must be < this at the final layer.
     # Guards the paper's step-0 h_prev inflation bug (paper AUROCs 0.998/0.994/0.980
     # were artefacts of an undefined h_prev at step 0).
@@ -222,6 +228,7 @@ def checkpoint_signature(config: Config, model_name: str) -> Dict[str, Any]:
         "topk_values": [int(x) for x in config.topk_values],
         "lowrank_values": [int(x) for x in config.lowrank_values],
         "v3_rank_values": [int(x) for x in config.v3_rank_values],
+        "v3_capture_raw": bool(config.v3_capture_raw),
         "layers_to_probe": list(config.layers_to_probe),
     }
 
@@ -424,6 +431,15 @@ class OutputProjection:
         self.model = model
         self.layer = None
         self.mode = ""
+        # Raw-W_u top-k right singular vectors cache for E17b (HARP-style
+        # static decomposition; no sqrt(p_t) weighting). Populated lazily via
+        # raw_right_singular_vectors(); static per model. Tuple layout:
+        # (cached_k, Vt_top[k,d], S_top[k], total_sigma_sq_all_d). The last
+        # element is the sum of σ² over ALL d eigenvalues of W_uᵀ W_u (not
+        # just the top-k we keep as a basis) — the correct denominator for
+        # `raw_energy_rank{r}` so the cumulative-energy fraction is
+        # interpretable against HARP's 95%-cutoff convention.
+        self._raw_svd_cache: Optional[Tuple[int, np.ndarray, np.ndarray, float]] = None
 
         if hasattr(model, "lm_head"):
             self.layer = model.lm_head
@@ -519,6 +535,69 @@ class OutputProjection:
         if rows_np.ndim == 2:
             return rows_np
         return None
+
+    def raw_right_singular_vectors(
+        self,
+        max_rank: int,
+        batch: int = 4096,
+    ) -> Optional[Tuple[np.ndarray, np.ndarray, float]]:
+        """
+        Top-max_rank right singular vectors of the raw output projection W_u
+        (no sqrt(p_t) weighting). HARP's static subspace basis. Cached per
+        projection instance; computed once per model via chunked
+        `W_uᵀ W_u` accumulation + symmetric eigendecomposition (robust on
+        Mac mini M4; avoids materializing V×d into memory for 152k-row
+        Qwen / 128k-row Llama lm_heads).
+
+        Returns `(Vt_top, S_top, total_sigma_sq_all_d)` where:
+          - Vt_top has shape (max_rank, d)
+          - S_top has shape (max_rank,)  (S_top[i] = sqrt(λ_i))
+          - total_sigma_sq_all_d = sum of σ² over ALL d eigenvalues of W_uᵀ W_u
+            (not only the top-max_rank kept as basis). Used as the denominator
+            for `raw_energy_rank{r}` so the cumulative-energy fraction is
+            interpretable against HARP's 95% cutoff. Returns None if W_u rows
+            cannot be fetched.
+        """
+        d = int(self.hidden_size)
+        V = int(self.vocab_size)
+        k = int(min(max_rank, d))
+        if k <= 0 or d <= 0 or V <= 0:
+            return None
+
+        if self._raw_svd_cache is not None:
+            cached_k, Vt_c, S_c, total_c = self._raw_svd_cache
+            if cached_k >= k:
+                return Vt_c[:k].copy(), S_c[:k].copy(), float(total_c)
+
+        # Accumulate W_uᵀ W_u in chunks so we never hold the full V×d matrix.
+        # float64 accumulation keeps the numerically small tail singular
+        # values clean — eigenvalues of W_uᵀ W_u span many orders of magnitude.
+        WtW = np.zeros((d, d), dtype=np.float64)
+        for start in range(0, V, batch):
+            stop = min(start + batch, V)
+            idx = np.arange(start, stop, dtype=np.int32)
+            rows = self.get_rows(idx)
+            if rows is None or rows.ndim != 2 or rows.shape[1] != d:
+                return None
+            rows64 = rows.astype(np.float64, copy=False)
+            WtW += rows64.T @ rows64
+
+        try:
+            # eigh returns ascending eigenvalues; reverse to descending.
+            eigvals, eigvecs = np.linalg.eigh(WtW)
+        except np.linalg.LinAlgError:
+            return None
+        eigvals = eigvals[::-1]
+        eigvecs = eigvecs[:, ::-1]
+
+        # Top-k right singular vectors = top-k eigenvectors of W_uᵀ W_u.
+        # Vt rows are right singular vectors; conform to SVD convention.
+        Vt_top = eigvecs[:, :k].T.astype(np.float64, copy=False)
+        S_top = np.sqrt(np.clip(eigvals[:k], 0.0, None))
+        total_sigma_sq = float(np.sum(np.clip(eigvals, 0.0, None)))
+
+        self._raw_svd_cache = (k, Vt_top, S_top, total_sigma_sq)
+        return Vt_top.copy(), S_top.copy(), total_sigma_sq
 
 
 def encode_text(tokenizer: Any, text: str) -> List[int]:
@@ -1029,6 +1108,82 @@ class PRIComputer:
         mean_proj = float(np.sum(p_t * z))
         return float(np.sqrt(max(d2 - mean_proj**2, 1e-10)))
 
+    def null_ratio_raw_and_energy(
+        self,
+        dh: np.ndarray,
+        rank_values: Iterable[int],
+    ) -> Dict[str, float]:
+        """
+        E17b — HARP-style raw-W_u null_ratio. For each r in rank_values:
+          null_ratio_raw_rank{r}  = ||dh - V_raw_top V_raw_topᵀ dh|| / ||dh||
+          raw_energy_rank{r}      = Σ_{i≤r} σ_raw_i² / Σ_i σ_raw_i²
+
+        V_raw_top = top-r right singular vectors of the *raw* output
+        projection W_u (no sqrt(p_t) weighting). Static per model — the SVD
+        basis is computed once at model load via
+        `OutputProjection.raw_right_singular_vectors(max_rank)` and cached.
+        Per-sample cost here is one matrix-vector multiply against the
+        cached basis.
+
+        Directly comparable to `null_ratio_and_energy()` at the same ranks:
+        identical dh, identical analysis plane, different SVD basis (static
+        raw W_u vs per-sample Fisher-weighted sqrt(p_t)·W_u). The E17b
+        head-to-head is:
+          AUROC(null_ratio_rank{r}) − AUROC(null_ratio_raw_rank{r})
+        with non-overlap bootstrap CI on Qwen (pri-v3-plan.md §E17b).
+
+        Returns {} if the raw SVD basis is not available (e.g. failed W_u
+        row fetch). Callers should treat missing keys as missing data, not
+        zeros.
+        """
+        out: Dict[str, float] = {}
+        rank_list = [int(r) for r in rank_values]
+        if not rank_list:
+            return out
+        max_rank = max(rank_list)
+
+        basis = self.output_projection.raw_right_singular_vectors(max_rank)
+        if basis is None:
+            # Raw SVD unavailable for this model — emit NaN so downstream
+            # can tell "not computed" from "computed and zero."
+            return {
+                **{f"null_ratio_raw_rank{r}": float("nan") for r in rank_list},
+                **{f"raw_energy_rank{r}": float("nan") for r in rank_list},
+            }
+        Vt_raw, S_raw, total_sigma_sq = basis  # (k,d), (k,), scalar over all d
+
+        dh_norm_sq = float(np.dot(dh, dh))
+        if dh_norm_sq <= 0.0:
+            for r in rank_list:
+                out[f"null_ratio_raw_rank{r}"] = 0.0
+                out[f"raw_energy_rank{r}"] = 0.0
+            return out
+        dh_norm = float(np.sqrt(dh_norm_sq))
+
+        # Project dh onto the raw right singular basis; cum-sum energy per rank.
+        proj = Vt_raw @ dh.astype(np.float64)  # (max_rank,)
+        cum_proj_sq = np.cumsum(proj**2)
+        s_raw_sq = S_raw**2
+        # Denominator = sum over ALL d eigenvalues of W_uᵀ W_u (not just top-k).
+        # Cache ships this via raw_right_singular_vectors; keeps the cumulative
+        # energy fraction interpretable vs HARP's 95%-cutoff convention.
+        total_raw_energy = float(total_sigma_sq) + 1e-10
+        cum_raw_energy = np.cumsum(s_raw_sq)
+        max_available = Vt_raw.shape[0]
+
+        for r in rank_list:
+            r_eff = int(min(r, max_available))
+            top_proj_sq = float(cum_proj_sq[r_eff - 1]) if r_eff > 0 else 0.0
+            null_sq = max(dh_norm_sq - top_proj_sq, 0.0)
+            out[f"null_ratio_raw_rank{r}"] = float(np.sqrt(null_sq) / dh_norm)
+            out[f"raw_energy_rank{r}"] = (
+                float(cum_raw_energy[r_eff - 1] / total_raw_energy)
+                if r_eff > 0
+                else 0.0
+            )
+
+        return out
+
     def null_ratio_and_energy(
         self,
         dh: np.ndarray,
@@ -1112,6 +1267,7 @@ class PRIComputer:
         topk_values: Iterable[int],
         lowrank_values: Iterable[int],
         v3_rank_values: Iterable[int] = (),
+        v3_capture_raw: bool = False,
     ) -> Dict[str, float]:
         cos_d = self.cosine_dist(h_t, h_prev)
         l2_d = self.l2_dist(h_t, h_prev)
@@ -1155,6 +1311,13 @@ class PRIComputer:
         if v3_list:
             v3_out = self.null_ratio_and_energy(dh, p_t, v3_list)
             out.update(v3_out)
+            if v3_capture_raw:
+                # E17b head-to-head: HARP-style static raw-W_u null_ratio
+                # at the same rank sweep. Same dh, same analysis plane;
+                # different SVD basis. Basis is cached per model via
+                # OutputProjection.raw_right_singular_vectors.
+                v3_raw_out = self.null_ratio_raw_and_energy(dh, v3_list)
+                out.update(v3_raw_out)
 
         return out
 
@@ -1364,6 +1527,32 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
         model, tokenizer, output_projection, layer_indices = load_model(model_name)
         pri_comp = PRIComputer(output_projection)
+
+        # E17b: precompute raw-W_u top-k right singular vectors once per model
+        # so per-sample compute_step just reads the cache. max_rank matches the
+        # v3 rank sweep; one-time cost is O(V·d²) in chunked matmul + O(d³)
+        # eigh, typically 5–30s per model on Mac mini M4. Abort v3_capture_raw
+        # for this model (not globally) if the SVD path fails — pipeline
+        # continues with Fisher-only v3 columns.
+        if config.v3_capture_raw and config.v3_rank_values:
+            raw_max_rank = max(int(r) for r in config.v3_rank_values)
+            raw_basis = output_projection.raw_right_singular_vectors(raw_max_rank)
+            if raw_basis is None:
+                print(
+                    f"  WARN: raw-W_u SVD unavailable for {model_name}; "
+                    f"E17b null_ratio_raw_rank* columns will be NaN."
+                )
+            else:
+                Vt_raw, S_raw, total_sigma_sq = raw_basis
+                top_energy = (
+                    float(np.sum(S_raw**2) / (total_sigma_sq + 1e-10))
+                    if S_raw.size > 0 and total_sigma_sq > 0
+                    else 0.0
+                )
+                print(
+                    f"  E17b raw-W_u SVD cached (k={Vt_raw.shape[0]}, d={Vt_raw.shape[1]}, "
+                    f"top-{raw_max_rank} energy={top_energy:.3%} of full d-eigenvalue sum)."
+                )
 
         ckpt_base = os.path.join(config.save_dir, f"{short}_checkpoint")
         ckpt_meta = checkpoint_meta_path(ckpt_base)
@@ -1607,6 +1796,7 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                             topk_values=config.topk_values,
                             lowrank_values=config.lowrank_values,
                             v3_rank_values=config.v3_rank_values,
+                            v3_capture_raw=config.v3_capture_raw,
                         )
 
                         if (

@@ -61,6 +61,19 @@ SCOPES = {
     "non_gemma_extended": NON_GEMMA_EXTENDED,
     "non_gemmas": PRIMARIES + NON_GEMMA_EXTENDED,
     "all": PRIMARIES + EXTENDED,
+    # v3.1-main-run scope (2026-04-24 pre-reg amendment): primaries + Qwen3 only.
+    # Excludes Phi-3.5-mini (gate-fails at n=20 per 2026-04-23 evidence; not
+    # worth the 2-3 min gate-skip cost) and Gemma 3-1B / 3-4B (full run_experiment
+    # path not yet proven end-to-end on a Gemma checkpoint with v3_capture_raw=True;
+    # isolating to a separate v3_1_gemmas launch keeps the main gate run clean if
+    # a Gemma-specific adapter bug trips the raw-W_u SVD path).
+    "v3_1_main": PRIMARIES + [
+        "mlx-community/Qwen3-8B-4bit",
+    ],
+    # v3.1-gemmas companion scope: Gemma 1B + 4B only. Run AFTER v3_1_main
+    # completes so the sealed-gate data is already checkpointed and cannot be
+    # contaminated by a Gemma-side adapter regression.
+    "v3_1_gemmas": GEMMAS,
 }
 
 EXPERIMENT_SLUG = "v3-main-run"
@@ -86,6 +99,14 @@ def main() -> int:
         "--v3-capture",
         action="store_true",
         help="every-layer capture for E21 depth data (confirmatory doesn't need it)",
+    )
+    parser.add_argument(
+        "--no-e17b",
+        action="store_true",
+        help="disable E17b HARP-style raw-W_u null_ratio capture. Default is ON — "
+             "emits null_ratio_raw_rank{r} and raw_energy_rank{r} columns alongside "
+             "the Fisher-weighted v3 columns for the same rank sweep. One-time "
+             "model-load cost (~5–30s per model); per-sample cost is a matvec.",
     )
     parser.add_argument(
         "--max-gen-tokens",
@@ -149,6 +170,11 @@ def main() -> int:
     # E17/E17b/E18/E19 operate on final-layer null_ratio which the v2 path
     # already emits via v3_rank_values + PRIComputer.
     cfg.v3_capture = bool(args.v3_capture)
+    # E17b capture — default ON so v3.1 runs produce the head-to-head
+    # against HARP's static raw-W_u subspace. See pri-v3-plan.md §E17b for
+    # the falsification criterion (AUROC(null_bare) − AUROC(null_raw) ≥ 0.02
+    # with non-overlap CI on Qwen).
+    cfg.v3_capture_raw = not bool(args.no_e17b)
 
     # Gate controls. --skip-gate short-circuits by forcing pilot_threshold=0.0
     # (every run passes); --pilot-threshold lets you dial a lower bar (e.g. 0.6
@@ -169,7 +195,8 @@ def main() -> int:
     print(f"  alpha={cfg.alpha_values}  topk={cfg.topk_values}  "
           f"lowrank={cfg.lowrank_values}")
     print(f"  v3_rank_values={cfg.v3_rank_values}")
-    print(f"  v3_capture={cfg.v3_capture}  max_new_tokens={cfg.max_new_tokens}")
+    print(f"  v3_capture={cfg.v3_capture}  v3_capture_raw (E17b)={cfg.v3_capture_raw}  "
+          f"max_new_tokens={cfg.max_new_tokens}")
     print(
         f"  gate: threshold={cfg.pilot_threshold:.0%}  "
         f"max_new_tokens={cfg.gate_max_new_tokens}  "
