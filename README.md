@@ -75,11 +75,11 @@ nohup bash scripts/run_v3_1_overnight.sh >/dev/null 2>&1 &
 ```
 
 The script:
-- Runs `caffeinate` to prevent macOS sleep for the duration.
 - Logs merged stdout + stderr to `logs/v3_1_<timestamp>.log`.
 - Touches `logs/v3_1_<timestamp>.done` on completion with a per-phase PASS/FAIL summary.
 - Exits non-zero only if Phase 1 (the sealed-gate run) fails. Phase 2 / 3 failures are logged but don't fail the run.
 - Uses the same sealed parameters (seed 20260423, rank 1 via Config defaults, n=50/cell, 80% gate threshold). Does NOT pass `--skip-gate` — the no-silent-override rule is enforced.
+- Does NOT call `caffeinate`. Disable macOS sleep at the system level before launching (System Settings → Lock Screen / Battery → "Prevent automatic sleeping..."), or wrap the command with `caffeinate -disu bash scripts/run_v3_1_overnight.sh` if you prefer the launcher to handle it.
 
 Artifacts land under `experiments/v3-main-run/<YYYY-MM-DD>/run-NN/`. E17b capture is on by default; pass `--no-e17b` to disable. Behavioral gate defaults to 80% control accuracy at n=20; `--skip-gate` bypasses for already-verified checkpoints (use sparingly — see Pre-reg discipline below).
 

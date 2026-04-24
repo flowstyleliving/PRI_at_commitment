@@ -2,6 +2,10 @@
 #
 # v3.1 overnight launcher — three-phase sealed-gate + extended companions.
 #
+# Sleep prevention is left to macOS system settings (disable auto-sleep in
+# System Settings → Battery / Lock Screen before launching). Wrap the command
+# in `caffeinate -disu` if you'd rather the launcher handle it.
+#
 # Design:
 #   Phase 1 (v3_1_primaries)  — MUST succeed; sealed E18 + E17b gate authority.
 #                               If this fails, the whole script exits non-zero
@@ -60,17 +64,10 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
-# Prevent macOS sleep while the pipeline runs. caffeinate backgrounds itself
-# and we reap it at exit (traps handle abnormal exits too). Without this a
-# Mac mini M4 can suspend during low-CPU SVD waits.
-caffeinate -disu &
-CAF_PID=$!
-cleanup() {
-  if [[ -n "${CAF_PID:-}" ]] && kill -0 "$CAF_PID" 2>/dev/null; then
-    kill "$CAF_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT INT TERM
+# Sleep prevention is assumed to be handled at the macOS level (System
+# Settings → Lock Screen / Battery → "Prevent automatic sleeping..."). If
+# you're running this on a machine where that isn't set, either enable it
+# before launching or wrap this command in `caffeinate -disu bash ...`.
 
 banner() {
   local msg="$1"
@@ -118,7 +115,6 @@ banner "v3.1 OVERNIGHT LAUNCH — $TS"
   echo "max_gen:     $MAX_GEN_TOKENS"
   echo "log:         $LOG"
   echo "sentinel:    $DONE"
-  echo "caffeinate:  PID $CAF_PID"
   echo "python:      $(.venv/bin/python --version 2>&1)"
   echo "git head:    $(git rev-parse HEAD 2>/dev/null || echo 'not-a-git-repo')"
   echo "git branch:  $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
