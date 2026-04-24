@@ -61,19 +61,35 @@ SCOPES = {
     "non_gemma_extended": NON_GEMMA_EXTENDED,
     "non_gemmas": PRIMARIES + NON_GEMMA_EXTENDED,
     "all": PRIMARIES + EXTENDED,
-    # v3.1-main-run scope (2026-04-24 pre-reg amendment): primaries + Qwen3 only.
-    # Excludes Phi-3.5-mini (gate-fails at n=20 per 2026-04-23 evidence; not
-    # worth the 2-3 min gate-skip cost) and Gemma 3-1B / 3-4B (full run_experiment
-    # path not yet proven end-to-end on a Gemma checkpoint with v3_capture_raw=True;
-    # isolating to a separate v3_1_gemmas launch keeps the main gate run clean if
-    # a Gemma-specific adapter bug trips the raw-W_u SVD path).
+    # v3.1 three-phase launch (amended 2026-04-24): each axis as its own scope
+    # so any phase can be run / skipped / re-run independently without touching
+    # the others' checkpoints. Sealed gate authority stays with v3_1_primaries.
+    #
+    # v3_1_primaries  — Phase 1 — 3 primaries alone. Sealed E18 + E17b authority;
+    #                   pass/fail verdict lives here. ~60-80 min on Mac mini M4.
+    "v3_1_primaries": PRIMARIES,
+    # v3_1_qwen3      — Phase 2 (optional) — Qwen3-8B alone. Cross-generation
+    #                   within the Qwen family (Qwen 2.5 → Qwen 3); same seed so
+    #                   puzzle draws match Phase 1. ~15-20 min. Fresh Qwen3 data
+    #                   with E17b columns at pinned rank 1 — complements the
+    #                   2026-04-23 main-run capture (which has no raw-W_u SVD).
+    "v3_1_qwen3": [
+        "mlx-community/Qwen3-8B-4bit",
+    ],
+    # v3_1_gemmas     — Phase 3 (optional) — Gemma 3-1B + Gemma 3-4B. Within-
+    #                   family scale axis held fixed at architecture. Isolated
+    #                   from Phase 1 because the full run_experiment loop with
+    #                   v3_capture_raw=True has never executed end-to-end on a
+    #                   Gemma checkpoint (Prereq 4 dryrun validated only
+    #                   trace_sample + SVD at n=4/cell). ~40-60 min.
+    "v3_1_gemmas": GEMMAS,
+    # v3_1_main       — convenience alias: primaries + Qwen3 as a single run.
+    #                   Preserved for backward compat with the 2026-04-24 plan
+    #                   amendment; equivalent to running v3_1_primaries followed
+    #                   by v3_1_qwen3 but in one launch. Gemma still isolated.
     "v3_1_main": PRIMARIES + [
         "mlx-community/Qwen3-8B-4bit",
     ],
-    # v3.1-gemmas companion scope: Gemma 1B + 4B only. Run AFTER v3_1_main
-    # completes so the sealed-gate data is already checkpointed and cannot be
-    # contaminated by a Gemma-side adapter regression.
-    "v3_1_gemmas": GEMMAS,
 }
 
 EXPERIMENT_SLUG = "v3-main-run"
