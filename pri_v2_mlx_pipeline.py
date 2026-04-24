@@ -1661,6 +1661,23 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
             if strata
             else eligible.head(config.pilot_n)
         )
+        # Stratum-underrun guard (Greptile 2026-04-24 P2): if a particular
+        # chain_length has fewer eligible samples than its per-stratum quota
+        # (edge case: checkpoint-resume that exhausted cl=5 samples while
+        # leaving cl=2 ones), pd.concat returns fewer than pilot_n rows. The
+        # accuracy denominator is still len(controls) so the threshold math
+        # stays correct, but the confidence at a smaller n is wider — and
+        # the drop must not be silent.
+        if len(controls) < config.pilot_n:
+            per_cl_actual = {
+                cl: int((controls["chain_length"] == cl).sum())
+                for cl in config.chain_lengths
+            } if config.chain_lengths else {}
+            print(
+                f"  WARN: gate stratum underrun — {len(controls)}/{config.pilot_n} "
+                f"control samples available (per-cl: {per_cl_actual}). "
+                f"Threshold math unchanged; CI widens at smaller n."
+            )
 
         gate_tokens = max(
             config.max_new_tokens, config.gate_max_new_tokens

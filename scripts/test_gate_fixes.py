@@ -166,18 +166,48 @@ def test_parser_tier2_trailing_yes_overrides_mid_no() -> None:
 
 
 def test_parser_tier2_trailing_yes_with_punctuation() -> None:
-    """Trailing-line match tolerates trailing period, markdown, quotes."""
+    """Trailing-line match tolerates trailing period, markdown, quotes.
+
+    Note on `"Final: YES!"`-style labels: Tier 2's fullmatch pattern
+    intentionally does NOT accept letter-prefixed lines (the class is
+    `[\\s\\*\"'\\.\\!\\?\\-\\:\\(\\)]*`, no letters), so `"Final: YES"` falls
+    through to Tier 3's last-match-anywhere. Tested separately in
+    test_parser_tier3_label_verdict_falls_through_cleanly below. The
+    cases here are genuine Tier 2 hits only.
+    """
     cases = [
         "some reasoning... NO wait... \n**YES**",
         "reasoning...\n\"yes.\"",
-        "reasoning... NO. \nFinal: YES!",
+        "reasoning... NO. \nYES!",
         "reasoning\n- YES",
+        "reasoning\n(YES)",
     ]
     for c in cases:
         if not check_answer(c, "YES"):
             _fail(f"Tier 2 should tolerate trailing punctuation / markdown around YES: {c!r}")
             return
     _ok("Tier 2: trailing bare YES tolerates markdown, quotes, punctuation")
+
+
+def test_parser_tier3_label_verdict_falls_through_cleanly() -> None:
+    """`"Final: YES!"` or `"Verdict: NO."` letter-prefixed labels are NOT
+    Tier 2 matches (fullmatch pattern allows only punctuation before the
+    token) — they intentionally fall through to Tier 3 (last-match
+    anywhere), which correctly picks up the verdict. Greptile flagged this
+    gap in the 2026-04-24 review; documented here as expected behavior.
+
+    If someone later extends Tier 2 to accept letter-prefixed labels,
+    update this test to move the cases back to Tier 2 and note the
+    behavior change in the function docstring."""
+    for text, expected in [
+        ("reasoning...\nFinal: YES!", "YES"),
+        ("reasoning...\nVerdict: NO.", "NO"),
+        ("some chain-walk\nConclusion: yes", "YES"),
+    ]:
+        if not check_answer(text, expected):
+            _fail(f"Tier 3 should catch letter-prefixed label verdict {text!r} → {expected}")
+            return
+    _ok("Tier 3: letter-prefixed 'Label: VERDICT' outputs fall through cleanly")
 
 
 def test_parser_tier3_fallback_preserves_legacy_behavior() -> None:
@@ -257,6 +287,7 @@ def main() -> int:
     test_parser_tier2_trailing_yes_overrides_mid_no()
     test_parser_tier2_trailing_yes_with_punctuation()
     test_parser_tier3_fallback_preserves_legacy_behavior()
+    test_parser_tier3_label_verdict_falls_through_cleanly()
     test_parser_gemma_leading_no_no_longer_flips()
     test_parser_direct_answer_unchanged()
     test_parser_unrelated_text_falls_through()
