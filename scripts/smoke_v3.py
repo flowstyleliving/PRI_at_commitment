@@ -40,7 +40,7 @@ def main() -> int:
     cfg.v3_rank_values = [1, 2, 3, 4, 5, 8, 13, 16, 21, 32, 34, 55, 64]
     cfg.max_new_tokens = 4
     cfg.n_trace_dumps = 0
-    cfg.save_dir = os.path.join(ROOT, "pri_v2_results_smoke_v3")
+    cfg.save_dir = os.path.join(ROOT, "pri_smoke_v3_results")
     cfg.seed = 0
 
     results_df, _ = pipeline.run_experiment(cfg)

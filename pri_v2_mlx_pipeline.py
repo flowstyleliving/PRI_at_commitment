@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-PRI v2 x SUP Experiment Pipeline (MLX)
-Predictive Rupture Index — FIM-Pullback Upgrade on Apple Silicon
+PRI v3 x SUP Experiment Pipeline (MLX)
+Predictive Rupture Index — FIM-Pullback + Null-Ratio on Apple Silicon
+===============================================================================
+Computes v1 (cosine), v2 (FIM-pullback d_F variants), and v3 (null_ratio /
+fisher_energy) metrics in a single sweep. The module name
+`pri_v2_mlx_pipeline` is retained for import stability across the repo.
 ===============================================================================
 Author: Michael Seo R. Kitti (adapted for mlx-lm pipeline)
 Date:   March 2026
@@ -72,6 +76,17 @@ class Config:
 
     # Generation
     max_new_tokens: int = 30
+    # Reasoning-tuned models (Gemma 3, Qwen3, Phi-3.5) emit multi-paragraph
+    # analyses before their YES/NO token; the gate needs a larger budget so
+    # check_answer can find it. 256 matches the smoke_test_model.py --gate
+    # default that passed 4/4 on all 4 extended models this morning. Non-
+    # reasoning primaries (Llama / Mistral / Qwen 2.5) answer inside the
+    # first few tokens; the larger budget just costs a few seconds each.
+    gate_max_new_tokens: int = 256
+    # Print per-sample gate diagnostic (sample_id, expected, parsed, correct,
+    # output preview). Defaults off; main-run launcher flips on for debugging
+    # gate failures on reasoning-tuned models.
+    gate_verbose: bool = False
     n_trace_dumps: int = 5  # per condition (control/contradiction), per model
 
     # PRI parameters
@@ -82,13 +97,23 @@ class Config:
     v3_rank_values: List[int] = field(default_factory=lambda: [1, 2, 3, 4, 5, 8, 13, 16, 21, 32, 34, 55, 64])
     layers_to_probe: List[str] = field(default_factory=lambda: ["final", "mid", "quarter"])
 
-    # v3 capture schedule (opt-in via v3_capture=True on trace_sample).
-    # For gen steps < v3_all_layers_for_first_n_steps, capture every transformer block.
-    # For later steps, fall back to probe_4_layers.
+    # v3 capture schedule. When v3_capture is True, trace_sample captures every
+    # transformer block for the first v3_all_layers_for_first_n_steps gen steps
+    # and falls back to probe_4_layers after. False (default) keeps the paper
+    # path (only layer_indices, last position) — sufficient for E17/E17b/E18/E19
+    # which only need final-layer null_ratio. Set True for E21 depth-profile
+    # data at the cost of larger traces.
+    v3_capture: bool = False
     probe_4_layers: List[str] = field(
         default_factory=lambda: ["final", "three_quarters", "mid", "quarter"]
     )
     v3_all_layers_for_first_n_steps: int = 12
+    # E17b: HARP-style static raw-W_u null_ratio emitted alongside the
+    # Fisher-weighted null_ratio. One-time model-load cost (raw SVD cached on
+    # OutputProjection); per-sample cost is a matvec. Default True so v3.1
+    # runs produce the E17b head-to-head without extra flags; flip off for
+    # legacy v2 reproductions or memory-constrained environments.
+    v3_capture_raw: bool = True
     # Sanity gate: ||Δh_step0|| / ||h_t_step0|| must be < this at the final layer.
     # Guards the paper's step-0 h_prev inflation bug (paper AUROCs 0.998/0.994/0.980
     # were artefacts of an undefined h_prev at step 0).
@@ -203,6 +228,7 @@ def checkpoint_signature(config: Config, model_name: str) -> Dict[str, Any]:
         "topk_values": [int(x) for x in config.topk_values],
         "lowrank_values": [int(x) for x in config.lowrank_values],
         "v3_rank_values": [int(x) for x in config.v3_rank_values],
+        "v3_capture_raw": bool(config.v3_capture_raw),
         "layers_to_probe": list(config.layers_to_probe),
     }
 
@@ -405,6 +431,15 @@ class OutputProjection:
         self.model = model
         self.layer = None
         self.mode = ""
+        # Raw-W_u top-k right singular vectors cache for E17b (HARP-style
+        # static decomposition; no sqrt(p_t) weighting). Populated lazily via
+        # raw_right_singular_vectors(); static per model. Tuple layout:
+        # (cached_k, Vt_top[k,d], S_top[k], total_sigma_sq_all_d). The last
+        # element is the sum of σ² over ALL d eigenvalues of W_uᵀ W_u (not
+        # just the top-k we keep as a basis) — the correct denominator for
+        # `raw_energy_rank{r}` so the cumulative-energy fraction is
+        # interpretable against HARP's 95%-cutoff convention.
+        self._raw_svd_cache: Optional[Tuple[int, np.ndarray, np.ndarray, float]] = None
 
         if hasattr(model, "lm_head"):
             self.layer = model.lm_head
@@ -467,7 +502,10 @@ class OutputProjection:
             out = self.layer.as_linear(h)
         else:
             out = self.layer(h)
-        return np.array(out)[0, 0].astype(np.float32)
+        # to_numpy handles bfloat16 via mx.float32 cast before np.array —
+        # bare np.array(bf16_mx) raises PEP 3118 buffer errors on Gemma 4B
+        # / Qwen3-8B.
+        return to_numpy(out)[0, 0].astype(np.float32)
 
     def get_rows(self, indices: np.ndarray) -> Optional[np.ndarray]:
         idx = np.asarray(indices, dtype=np.int32)
@@ -483,18 +521,83 @@ class OutputProjection:
 
         idx_mx = mx.array(idx)
         if scales is not None:
-            # Quantized layer: dequantize only selected rows.
+            # Quantized layer: dequantize only selected rows. Dequantize
+            # output inherits the model's native dtype — bfloat16 on Gemma
+            # 3-4B / Qwen3-8B, so route through to_numpy (bf16-safe).
             w_rows = mx.take(w, idx_mx, axis=0)
             s_rows = mx.take(scales, idx_mx, axis=0)
             b_rows = mx.take(biases, idx_mx, axis=0) if biases is not None else None
             rows = mx.dequantize(w_rows, s_rows, b_rows)
-            return np.array(rows).astype(np.float32)
+            return to_numpy(rows).astype(np.float32)
 
         rows = mx.take(w, idx_mx, axis=0)
-        rows_np = np.array(rows).astype(np.float32)
+        rows_np = to_numpy(rows).astype(np.float32)
         if rows_np.ndim == 2:
             return rows_np
         return None
+
+    def raw_right_singular_vectors(
+        self,
+        max_rank: int,
+        batch: int = 4096,
+    ) -> Optional[Tuple[np.ndarray, np.ndarray, float]]:
+        """
+        Top-max_rank right singular vectors of the raw output projection W_u
+        (no sqrt(p_t) weighting). HARP's static subspace basis. Cached per
+        projection instance; computed once per model via chunked
+        `W_uᵀ W_u` accumulation + symmetric eigendecomposition (robust on
+        Mac mini M4; avoids materializing V×d into memory for 152k-row
+        Qwen / 128k-row Llama lm_heads).
+
+        Returns `(Vt_top, S_top, total_sigma_sq_all_d)` where:
+          - Vt_top has shape (max_rank, d)
+          - S_top has shape (max_rank,)  (S_top[i] = sqrt(λ_i))
+          - total_sigma_sq_all_d = sum of σ² over ALL d eigenvalues of W_uᵀ W_u
+            (not only the top-max_rank kept as basis). Used as the denominator
+            for `raw_energy_rank{r}` so the cumulative-energy fraction is
+            interpretable against HARP's 95% cutoff. Returns None if W_u rows
+            cannot be fetched.
+        """
+        d = int(self.hidden_size)
+        V = int(self.vocab_size)
+        k = int(min(max_rank, d))
+        if k <= 0 or d <= 0 or V <= 0:
+            return None
+
+        if self._raw_svd_cache is not None:
+            cached_k, Vt_c, S_c, total_c = self._raw_svd_cache
+            if cached_k >= k:
+                return Vt_c[:k].copy(), S_c[:k].copy(), float(total_c)
+
+        # Accumulate W_uᵀ W_u in chunks so we never hold the full V×d matrix.
+        # float64 accumulation keeps the numerically small tail singular
+        # values clean — eigenvalues of W_uᵀ W_u span many orders of magnitude.
+        WtW = np.zeros((d, d), dtype=np.float64)
+        for start in range(0, V, batch):
+            stop = min(start + batch, V)
+            idx = np.arange(start, stop, dtype=np.int32)
+            rows = self.get_rows(idx)
+            if rows is None or rows.ndim != 2 or rows.shape[1] != d:
+                return None
+            rows64 = rows.astype(np.float64, copy=False)
+            WtW += rows64.T @ rows64
+
+        try:
+            # eigh returns ascending eigenvalues; reverse to descending.
+            eigvals, eigvecs = np.linalg.eigh(WtW)
+        except np.linalg.LinAlgError:
+            return None
+        eigvals = eigvals[::-1]
+        eigvecs = eigvecs[:, ::-1]
+
+        # Top-k right singular vectors = top-k eigenvectors of W_uᵀ W_u.
+        # Vt rows are right singular vectors; conform to SVD convention.
+        Vt_top = eigvecs[:, :k].T.astype(np.float64, copy=False)
+        S_top = np.sqrt(np.clip(eigvals[:k], 0.0, None))
+        total_sigma_sq = float(np.sum(np.clip(eigvals, 0.0, None)))
+
+        self._raw_svd_cache = (k, Vt_top, S_top, total_sigma_sq)
+        return Vt_top.copy(), S_top.copy(), total_sigma_sq
 
 
 def encode_text(tokenizer: Any, text: str) -> List[int]:
@@ -935,7 +1038,7 @@ def trace_sample(
 
 
 class PRIComputer:
-    """Computes PRI v1 and PRI v2 variants."""
+    """Computes PRI v1, v2, and v3 variants."""
 
     def __init__(self, output_projection: OutputProjection):
         self.output_projection = output_projection
@@ -1004,6 +1107,82 @@ class PRIComputer:
 
         mean_proj = float(np.sum(p_t * z))
         return float(np.sqrt(max(d2 - mean_proj**2, 1e-10)))
+
+    def null_ratio_raw_and_energy(
+        self,
+        dh: np.ndarray,
+        rank_values: Iterable[int],
+    ) -> Dict[str, float]:
+        """
+        E17b — HARP-style raw-W_u null_ratio. For each r in rank_values:
+          null_ratio_raw_rank{r}  = ||dh - V_raw_top V_raw_topᵀ dh|| / ||dh||
+          raw_energy_rank{r}      = Σ_{i≤r} σ_raw_i² / Σ_i σ_raw_i²
+
+        V_raw_top = top-r right singular vectors of the *raw* output
+        projection W_u (no sqrt(p_t) weighting). Static per model — the SVD
+        basis is computed once at model load via
+        `OutputProjection.raw_right_singular_vectors(max_rank)` and cached.
+        Per-sample cost here is one matrix-vector multiply against the
+        cached basis.
+
+        Directly comparable to `null_ratio_and_energy()` at the same ranks:
+        identical dh, identical analysis plane, different SVD basis (static
+        raw W_u vs per-sample Fisher-weighted sqrt(p_t)·W_u). The E17b
+        head-to-head is:
+          AUROC(null_ratio_rank{r}) − AUROC(null_ratio_raw_rank{r})
+        with non-overlap bootstrap CI on Qwen (pri-v3-plan.md §E17b).
+
+        Returns {} if the raw SVD basis is not available (e.g. failed W_u
+        row fetch). Callers should treat missing keys as missing data, not
+        zeros.
+        """
+        out: Dict[str, float] = {}
+        rank_list = [int(r) for r in rank_values]
+        if not rank_list:
+            return out
+        max_rank = max(rank_list)
+
+        basis = self.output_projection.raw_right_singular_vectors(max_rank)
+        if basis is None:
+            # Raw SVD unavailable for this model — emit NaN so downstream
+            # can tell "not computed" from "computed and zero."
+            return {
+                **{f"null_ratio_raw_rank{r}": float("nan") for r in rank_list},
+                **{f"raw_energy_rank{r}": float("nan") for r in rank_list},
+            }
+        Vt_raw, S_raw, total_sigma_sq = basis  # (k,d), (k,), scalar over all d
+
+        dh_norm_sq = float(np.dot(dh, dh))
+        if dh_norm_sq <= 0.0:
+            for r in rank_list:
+                out[f"null_ratio_raw_rank{r}"] = 0.0
+                out[f"raw_energy_rank{r}"] = 0.0
+            return out
+        dh_norm = float(np.sqrt(dh_norm_sq))
+
+        # Project dh onto the raw right singular basis; cum-sum energy per rank.
+        proj = Vt_raw @ dh.astype(np.float64)  # (max_rank,)
+        cum_proj_sq = np.cumsum(proj**2)
+        s_raw_sq = S_raw**2
+        # Denominator = sum over ALL d eigenvalues of W_uᵀ W_u (not just top-k).
+        # Cache ships this via raw_right_singular_vectors; keeps the cumulative
+        # energy fraction interpretable vs HARP's 95%-cutoff convention.
+        total_raw_energy = float(total_sigma_sq) + 1e-10
+        cum_raw_energy = np.cumsum(s_raw_sq)
+        max_available = Vt_raw.shape[0]
+
+        for r in rank_list:
+            r_eff = int(min(r, max_available))
+            top_proj_sq = float(cum_proj_sq[r_eff - 1]) if r_eff > 0 else 0.0
+            null_sq = max(dh_norm_sq - top_proj_sq, 0.0)
+            out[f"null_ratio_raw_rank{r}"] = float(np.sqrt(null_sq) / dh_norm)
+            out[f"raw_energy_rank{r}"] = (
+                float(cum_raw_energy[r_eff - 1] / total_raw_energy)
+                if r_eff > 0
+                else 0.0
+            )
+
+        return out
 
     def null_ratio_and_energy(
         self,
@@ -1088,6 +1267,7 @@ class PRIComputer:
         topk_values: Iterable[int],
         lowrank_values: Iterable[int],
         v3_rank_values: Iterable[int] = (),
+        v3_capture_raw: bool = False,
     ) -> Dict[str, float]:
         cos_d = self.cosine_dist(h_t, h_prev)
         l2_d = self.l2_dist(h_t, h_prev)
@@ -1131,6 +1311,13 @@ class PRIComputer:
         if v3_list:
             v3_out = self.null_ratio_and_energy(dh, p_t, v3_list)
             out.update(v3_out)
+            if v3_capture_raw:
+                # E17b head-to-head: HARP-style static raw-W_u null_ratio
+                # at the same rank sweep. Same dh, same analysis plane;
+                # different SVD basis. Basis is cached per model via
+                # OutputProjection.raw_right_singular_vectors.
+                v3_raw_out = self.null_ratio_raw_and_energy(dh, v3_list)
+                out.update(v3_raw_out)
 
         return out
 
@@ -1269,7 +1456,16 @@ def bootstrap_auc_diff(
 
 
 def check_answer(generated: str, expected_value: str) -> bool:
-    """Extract the first explicit YES/NO token from generated text."""
+    """Extract the LAST explicit YES/NO token from generated text.
+
+    Reasoning-tuned models (Gemma 3, Qwen3) routinely emit outputs like
+    "No contradiction found, therefore YES" — first-match parsers flip the
+    decision on the leading "No" and mark a correct YES answer as wrong.
+    Symptom seen mid-v3-main-run 2026-04-23: Gemma 1B gate scored 10% on 20
+    control samples at a 128-token budget (parser-flip, not model failure).
+    Last-match picks the model's final verdict and is identical to
+    first-match for direct-answer primaries (single YES/NO token output).
+    """
     if generated is None:
         return False
     expected = str(expected_value).strip().upper()
@@ -1277,10 +1473,13 @@ def check_answer(generated: str, expected_value: str) -> bool:
         return expected.lower() in str(generated).lower()
 
     text = re.sub(r"<\|[^|>]+?\|>", " ", str(generated).strip())
+    last_token: Optional[str] = None
     for match in re.finditer(r"[A-Za-z]+", text):
         token = match.group(0).upper()
         if token in {"YES", "NO"}:
-            return token == expected
+            last_token = token
+    if last_token is not None:
+        return last_token == expected
 
     # Fallback for uncommon tokenization patterns.
     low = text.lower()
@@ -1288,7 +1487,7 @@ def check_answer(generated: str, expected_value: str) -> bool:
 
 
 def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    print_header("PRI v2 x SUP EXPERIMENT PIPELINE (MLX)")
+    print_header("PRI v3 x SUP EXPERIMENT PIPELINE (MLX)")
     os.makedirs(config.save_dir, exist_ok=True)
 
     print_header("SECTION 1: DATA GENERATION")
@@ -1329,6 +1528,32 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
         model, tokenizer, output_projection, layer_indices = load_model(model_name)
         pri_comp = PRIComputer(output_projection)
 
+        # E17b: precompute raw-W_u top-k right singular vectors once per model
+        # so per-sample compute_step just reads the cache. max_rank matches the
+        # v3 rank sweep; one-time cost is O(V·d²) in chunked matmul + O(d³)
+        # eigh, typically 5–30s per model on Mac mini M4. Abort v3_capture_raw
+        # for this model (not globally) if the SVD path fails — pipeline
+        # continues with Fisher-only v3 columns.
+        if config.v3_capture_raw and config.v3_rank_values:
+            raw_max_rank = max(int(r) for r in config.v3_rank_values)
+            raw_basis = output_projection.raw_right_singular_vectors(raw_max_rank)
+            if raw_basis is None:
+                print(
+                    f"  WARN: raw-W_u SVD unavailable for {model_name}; "
+                    f"E17b null_ratio_raw_rank* columns will be NaN."
+                )
+            else:
+                Vt_raw, S_raw, total_sigma_sq = raw_basis
+                top_energy = (
+                    float(np.sum(S_raw**2) / (total_sigma_sq + 1e-10))
+                    if S_raw.size > 0 and total_sigma_sq > 0
+                    else 0.0
+                )
+                print(
+                    f"  E17b raw-W_u SVD cached (k={Vt_raw.shape[0]}, d={Vt_raw.shape[1]}, "
+                    f"top-{raw_max_rank} energy={top_energy:.3%} of full d-eigenvalue sum)."
+                )
+
         ckpt_base = os.path.join(config.save_dir, f"{short}_checkpoint")
         ckpt_meta = checkpoint_meta_path(ckpt_base)
         expected_sig = checkpoint_signature(config, model_name)
@@ -1367,9 +1592,21 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
         if len(controls) < config.pilot_n:
             controls = dataset[~dataset.contradiction].head(config.pilot_n)
 
-        print(f"  Behavioral gate: {len(controls)} control samples")
+        gate_tokens = max(
+            config.max_new_tokens, config.gate_max_new_tokens
+        )
+        print(
+            f"  Behavioral gate: {len(controls)} control samples "
+            f"(max_new_tokens={gate_tokens}, threshold={config.pilot_threshold:.0%})"
+        )
+        if config.gate_verbose:
+            print(
+                f"    (gate_verbose=True — per-sample parse diagnostic below)"
+            )
         n_correct = 0
         for _, row in controls.iterrows():
+            sample_id = row["sample_id"]
+            expected = str(row["correct_value"]).strip().upper()
             try:
                 trace = trace_sample(
                     model,
@@ -1377,19 +1614,48 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     row["prompt"],
                     layer_indices,
                     output_projection,
-                    config.max_new_tokens,
+                    gate_tokens,
                 )
-                if check_answer(trace["generated_text"], row["correct_value"]):
+                generated = trace["generated_text"]
+                correct = check_answer(generated, row["correct_value"])
+                if correct:
                     n_correct += 1
+                if config.gate_verbose:
+                    # Extract the LAST YES/NO token the parser would see, for
+                    # explicit reporting of why a sample passed or failed.
+                    parsed = "NONE"
+                    text_clean = re.sub(
+                        r"<\|[^|>]+?\|>", " ", str(generated or "").strip()
+                    )
+                    for match in re.finditer(r"[A-Za-z]+", text_clean):
+                        tok = match.group(0).upper()
+                        if tok in {"YES", "NO"}:
+                            parsed = tok
+                    preview = (
+                        str(generated or "")
+                        .replace("\n", " ")
+                        .strip()[:120]
+                    )
+                    mark = "OK" if correct else "MISS"
+                    print(
+                        f"    [gate] id={sample_id} exp={expected} "
+                        f"parsed={parsed} {mark} "
+                        f"out='{preview}'"
+                    )
             except Exception as exc:
-                print(f"    Gate sample error (id={row['sample_id']}): {exc}")
+                print(f"    Gate sample error (id={sample_id}): {exc}")
 
         gate_acc = n_correct / max(len(controls), 1)
-        print(f"    Control accuracy: {gate_acc:.0%}")
+        print(f"    Control accuracy: {gate_acc:.0%} ({n_correct}/{len(controls)})")
         if gate_acc < config.pilot_threshold:
             print(
                 f"    Gate failed (need >= {config.pilot_threshold:.0%}). Skipping model."
             )
+            if not config.gate_verbose:
+                print(
+                    f"    (rerun with cfg.gate_verbose=True — or launcher "
+                    f"--gate-verbose — to see why each sample failed)"
+                )
             del model, tokenizer, output_projection, pri_comp
             gc.collect()
             clear_mlx_cache()
@@ -1435,6 +1701,10 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     layer_indices,
                     output_projection,
                     config.max_new_tokens,
+                    v3_capture=config.v3_capture,
+                    v3_all_for_first_n_steps=config.v3_all_layers_for_first_n_steps,
+                    v3_probe_fallback=config.probe_4_layers,
+                    h_prev_sanity_max_ratio=config.h_prev_sanity_max_ratio,
                 )
             except Exception as exc:
                 print(f"    Sample {row['sample_id']} failed: {exc}")
@@ -1526,6 +1796,7 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                             topk_values=config.topk_values,
                             lowrank_values=config.lowrank_values,
                             v3_rank_values=config.v3_rank_values,
+                            v3_capture_raw=config.v3_capture_raw,
                         )
 
                         if (
