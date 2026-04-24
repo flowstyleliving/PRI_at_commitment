@@ -28,27 +28,39 @@ python -m pip install -r requirements.txt
 # hf auth login
 ```
 
-### v3.1 main run — two-phase lean launch
+### v3.1 main run — three-phase lean launch
 
-Phase 1 is the sealed-gate run (primaries + Qwen3 cross-generation companion). Phase 2 is the Gemma within-family-scale companion, run only after Phase 1 verifies clean.
+Each axis is an independent scope so you can run, skip, or re-run any phase without touching the others' checkpoints. Sealed E18 + E17b gate authority lives in Phase 1.
 
 ```bash
-# Phase 1 — sealed E18 / E17b authority on 3 primaries; Qwen3 descriptive breadth.
-# ~80-100 min on Mac mini M4.
+# Phase 1 — sealed gate, primaries only. The verdict lands here.
+# ~60-80 min on Mac mini M4.
 .venv/bin/python scripts/run_v3_main.py \
-  --scope v3_1_main \
+  --scope v3_1_primaries \
   --n-per-cell 50 \
   --seed 20260423 \
   --max-gen-tokens 14
 
-# Phase 2 — Gemma 1B + 4B companion (within-family scale axis).
-# Same seed → identical puzzle draws. ~40-60 min.
+# Phase 2 (optional) — cross-generation companion: Qwen3-8B alone.
+# Same seed → puzzle draws match Phase 1. ~15-20 min.
+# Skip entirely if the 2026-04-23 Qwen3 data is sufficient for your framing.
+.venv/bin/python scripts/run_v3_main.py \
+  --scope v3_1_qwen3 \
+  --n-per-cell 50 \
+  --seed 20260423 \
+  --max-gen-tokens 14
+
+# Phase 3 (optional) — within-family-scale companion: Gemma 1B + 4B.
+# Isolated because the full run_experiment loop with v3_capture_raw=True
+# has never executed end-to-end on a Gemma checkpoint. ~40-60 min.
 .venv/bin/python scripts/run_v3_main.py \
   --scope v3_1_gemmas \
   --n-per-cell 50 \
   --seed 20260423 \
   --max-gen-tokens 14
 ```
+
+Prefer running Phase 1 first and verifying it clean before launching Phase 2 or Phase 3 — that way a Gemma-side adapter regression or a Qwen3 anomaly cannot contaminate the sealed-gate data. A convenience alias `--scope v3_1_main` combines Phase 1 + Phase 2 in one launch if you want primaries + Qwen3 without the manual sequencing.
 
 Artifacts land under `experiments/v3-main-run/<YYYY-MM-DD>/run-NN/`. E17b capture is on by default; pass `--no-e17b` to disable. Behavioral gate defaults to 80% control accuracy at n=20; `--skip-gate` bypasses for already-verified checkpoints (use sparingly — see Pre-reg discipline below).
 
