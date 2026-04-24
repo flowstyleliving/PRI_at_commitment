@@ -1456,15 +1456,29 @@ def bootstrap_auc_diff(
 
 
 def check_answer(generated: str, expected_value: str) -> bool:
-    """Extract the LAST explicit YES/NO token from generated text.
+    """Extract the model's final YES/NO verdict from generated text.
 
-    Reasoning-tuned models (Gemma 3, Qwen3) routinely emit outputs like
-    "No contradiction found, therefore YES" — first-match parsers flip the
-    decision on the leading "No" and mark a correct YES answer as wrong.
-    Symptom seen mid-v3-main-run 2026-04-23: Gemma 1B gate scored 10% on 20
-    control samples at a 128-token budget (parser-flip, not model failure).
-    Last-match picks the model's final verdict and is identical to
-    first-match for direct-answer primaries (single YES/NO token output).
+    Three-tier parser (2026-04-24 fix — addresses v3.1 cl=5 control-gate
+    fails where reasoning-tuned primaries walked the premise chain before
+    answering and emitted mid-CoT "NO" tokens that the previous last-match
+    heuristic caught as the verdict):
+
+      Tier 1: explicit "Answer: YES|NO" (the worked-example format taught
+              by the prompt). Strongest signal; wins if present anywhere
+              in the output regardless of surrounding CoT reasoning.
+      Tier 2: trailing-line YES|NO — the last non-empty line of the output
+              is just a bare YES/NO (optionally padded by trivial
+              punctuation / whitespace / markdown). Catches direct-answer
+              models whose final line is "YES." even if mid-CoT said "NO".
+      Tier 3: last-match-anywhere (the previous behavior). Safety net for
+              outputs that don't match Tiers 1 or 2.
+
+    History note: the first version was first-match; flipped to last-match
+    2026-04-23 after Gemma 1B scored 10% on 20 controls because of a
+    leading "No contradiction found" phrase. Last-match fixed that but
+    introduced a new failure on cl=5 reasoning-chain outputs (seed 20260423
+    preflight: Llama 65%, Qwen 2.5 65%, Gemma 1B 70%). Tier 1 + 2 resolve
+    both failure modes without reintroducing the first-match bug.
     """
     if generated is None:
         return False
@@ -1473,6 +1487,33 @@ def check_answer(generated: str, expected_value: str) -> bool:
         return expected.lower() in str(generated).lower()
 
     text = re.sub(r"<\|[^|>]+?\|>", " ", str(generated).strip())
+
+    # Tier 1: explicit "Answer: X" (matches the worked-example format).
+    # Case-insensitive; tolerates colon / equals / whitespace after
+    # "Answer"; the match must be at a line boundary, after a period, or
+    # after an opening delimiter so mid-sentence "…my answer: yes, the
+    # cat is happy…" style phrasings don't over-fire. If multiple
+    # "Answer: X" statements appear (rare), take the LAST — that's the
+    # model's final verdict.
+    last_answer_tier = None
+    for m in re.finditer(
+        r"(?:(?:^|\n)\s*|[\.\:]\s+)answer\s*[:=]?\s*[\"']?(YES|NO)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        last_answer_tier = m.group(1).upper()
+    if last_answer_tier is not None:
+        return last_answer_tier == expected
+
+    # Tier 2: trailing-line bare YES/NO. Scan from the last non-empty line
+    # upward; first line that is just YES or NO (with trivial surrounding
+    # punctuation / markdown) decides.
+    for ln in reversed([l.strip() for l in text.splitlines() if l.strip()]):
+        m = re.fullmatch(r"[\s\*\"'\.\!\?\-\:\(\)]*(YES|NO)[\s\*\"'\.\!\?\-\:\(\)]*", ln, re.IGNORECASE)
+        if m:
+            return m.group(1).upper() == expected
+
+    # Tier 3: last-match anywhere (legacy behavior preserved as safety net).
     last_token: Optional[str] = None
     for match in re.finditer(r"[A-Za-z]+", text):
         token = match.group(0).upper()
@@ -1481,7 +1522,7 @@ def check_answer(generated: str, expected_value: str) -> bool:
     if last_token is not None:
         return last_token == expected
 
-    # Fallback for uncommon tokenization patterns.
+    # Final fallback for uncommon tokenization patterns.
     low = text.lower()
     return expected.lower() in low
 
@@ -1586,11 +1627,40 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                 if os.path.exists(ckpt_meta):
                     os.remove(ckpt_meta)
 
-        # Behavioral gate on unprocessed control samples
-        controls = dataset[~dataset.contradiction]
-        controls = controls[~controls["sample_id"].isin(processed_sample_ids)].head(config.pilot_n)
-        if len(controls) < config.pilot_n:
-            controls = dataset[~dataset.contradiction].head(config.pilot_n)
+        # Behavioral gate on unprocessed control samples — stratified across
+        # chain_lengths so the n=pilot_n preflight does not inherit the
+        # dataset's post-shuffle head-ordering skew. Filed 2026-04-24 after
+        # v3.1 main run saw Llama 3B / Qwen 2.5 7B / Gemma 3-1B gate-fail at
+        # 65–70% on seed 20260423, which drew 11 cl=5 / 9 cl=2 into the
+        # preflight (the 11/9 skew forces reasoning-tuned models through long
+        # chain-walks, and mid-CoT "NO" tokens get caught by the last-match
+        # parser). Seed 42 historical had 6 cl=5 / 14 cl=2 and the same
+        # models scored 100%/98%/100% at n=200. Stratification guarantees the
+        # preflight is seed-invariant along the chain_length axis and removes
+        # the shuffle-skew failure mode entirely.
+        all_controls = dataset[~dataset.contradiction]
+        eligible = all_controls[~all_controls["sample_id"].isin(processed_sample_ids)]
+        if len(eligible) < config.pilot_n:
+            # Resume edge case: if most samples were already processed, drop
+            # the already-processed exclusion so the gate still runs against
+            # a balanced set. Rare — only triggers on a partial-checkpoint
+            # resume where fewer than pilot_n controls remain unseen.
+            eligible = all_controls
+        cl_list = list(config.chain_lengths) if config.chain_lengths else [None]
+        per_cl = config.pilot_n // len(cl_list)
+        extra = config.pilot_n - per_cl * len(cl_list)
+        strata = []
+        for i, cl in enumerate(cl_list):
+            quota = per_cl + (1 if i < extra else 0)
+            if cl is None:
+                strata.append(eligible.head(quota))
+            else:
+                strata.append(eligible[eligible.chain_length == cl].head(quota))
+        controls = (
+            pd.concat(strata, ignore_index=False).head(config.pilot_n)
+            if strata
+            else eligible.head(config.pilot_n)
+        )
 
         gate_tokens = max(
             config.max_new_tokens, config.gate_max_new_tokens
