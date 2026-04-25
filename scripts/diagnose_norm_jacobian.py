@@ -295,6 +295,7 @@ def main() -> int:
     rdf = pd.DataFrame(results)
     model_tag = MODEL_NAME.split("/")[-1]
     out_path = Path(__file__).resolve().parent.parent / "experiments" / "v3-main-run" / "2026-04-24" / f"norm_diagnostic_{model_tag}.csv"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     rdf.to_csv(out_path, index=False)
     print(f"\nWrote {out_path}\n")
 
