@@ -42,7 +42,7 @@ from sklearn.metrics import roc_auc_score
 
 try:
     import mlx.core as mx
-    from mlx_lm import load as mlx_load
+    from mlx_lm import load as mlx_load, generate as mlx_generate
 except Exception as exc:  # pragma: no cover
     raise RuntimeError(
         "mlx-lm and mlx are required. Install with: pip install mlx-lm"
@@ -660,7 +660,15 @@ def get_eos_token_id(tokenizer: Any) -> Optional[int]:
 
 def load_model(
     model_name: str,
+    config: Optional["Config"] = None,
 ) -> Tuple[Any, Any, OutputProjection, Dict[str, int]]:
+    # Historic signature took only model_name and read `cfg.layers_to_probe`
+    # from the module-level default Config — which silently ignored per-run
+    # overrides (caught 2026-04-24 when --layers final printed a correct
+    # banner but probed all three layers anyway). Config is now explicit;
+    # falls back to the module-level default if the caller didn't thread
+    # it through, preserving backward compat.
+    active_cfg = config if config is not None else cfg
     print(f"\n  Loading model: {model_name}")
     model, tokenizer = mlx_load(model_name)
 
@@ -673,7 +681,7 @@ def load_model(
         model = model.language_model
 
     all_layers = find_layers(model)
-    layer_indices = get_layer_indices(len(all_layers), cfg.layers_to_probe)
+    layer_indices = get_layer_indices(len(all_layers), active_cfg.layers_to_probe)
     projection = OutputProjection(model)
 
     print(
@@ -1674,7 +1682,7 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                 )
             continue
 
-        model, tokenizer, output_projection, layer_indices = load_model(model_name)
+        model, tokenizer, output_projection, layer_indices = load_model(model_name, config)
         # Extract final-RMSNorm γ for the post-norm null_ratio path. Gives
         # PRIComputer access to the same normalization that the model applies
         # before W_u, so it can emit *_post_rank{r} columns (geometry-correct
@@ -1809,20 +1817,27 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
             print(
                 f"    (gate_verbose=True — per-sample parse diagnostic below)"
             )
+        # Gate generation uses mlx_lm.generate (text-only path) instead of
+        # trace_sample to avoid materializing prefix_probs / gen_logits /
+        # gen_probs / gen_hidden on every gate sample. At Llama 3B V=128256,
+        # trace_sample allocates ~250 MB/sample × 20 samples ≈ 5 GB transient,
+        # filling the macOS compressor and collapsing MLX buffer-cache reuse
+        # (diagnosed 2026-04-24 via codex adversarial review). Mistral 7B at
+        # V=32000 was unaffected (~62 MB/sample), which is why this bug only
+        # surfaced on larger-vocab primaries. The gate only needs generated
+        # text — trace payload is pure overhead.
         n_correct = 0
         for _, row in controls.iterrows():
             sample_id = row["sample_id"]
             expected = str(row["correct_value"]).strip().upper()
             try:
-                trace = trace_sample(
+                generated = mlx_generate(
                     model,
                     tokenizer,
                     row["prompt"],
-                    layer_indices,
-                    output_projection,
-                    gate_tokens,
+                    max_tokens=gate_tokens,
+                    verbose=False,
                 )
-                generated = trace["generated_text"]
                 correct = check_answer(generated, row["correct_value"])
                 if correct:
                     n_correct += 1
