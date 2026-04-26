@@ -397,6 +397,28 @@ def get_layer_indices(n_layers: int, targets: List[str]) -> Dict[str, int]:
     return {name: mapping[name] for name in targets if name in mapping}
 
 
+def _extract_final_rmsnorm_gamma(model: Any) -> Optional[np.ndarray]:
+    """Pull the final-RMSNorm γ vector off an mlx-lm model.
+
+    Llama / Mistral / Qwen-family models all expose the final norm at
+    `model.model.norm` (or `model.norm` for unwrapped variants), with the
+    learned per-channel scale at `.weight`. Returns float32 numpy array,
+    or None if no recognizable norm layer is found.
+    """
+    core = model.model if hasattr(model, "model") else model
+    norm = None
+    if hasattr(core, "norm"):
+        norm = core.norm
+    elif hasattr(core, "final_layernorm"):
+        norm = core.final_layernorm
+    if norm is None or not hasattr(norm, "weight"):
+        return None
+    try:
+        return to_numpy(norm.weight).astype(np.float32)
+    except Exception:
+        return None
+
+
 def get_all_layer_indices(n_layers: int) -> Dict[str, int]:
     """For v3 every-layer capture. Names are zero-padded for stable lexicographic sort."""
     width = max(2, len(str(max(n_layers - 1, 0))))
@@ -1040,8 +1062,33 @@ def trace_sample(
 class PRIComputer:
     """Computes PRI v1, v2, and v3 variants."""
 
-    def __init__(self, output_projection: OutputProjection):
+    def __init__(
+        self,
+        output_projection: OutputProjection,
+        final_norm_gamma: Optional[np.ndarray] = None,
+    ):
         self.output_projection = output_projection
+        # Final-RMSNorm γ vector. When set, compute_step also emits a parallel
+        # set of *_post_rank{r} null_ratio columns computed under the correct
+        # post-norm-Δh / post-norm-basis geometry. The legacy *_rank{r} columns
+        # remain (pre-norm Δh on post-norm basis — known mismatch, kept for
+        # backward compatibility and forensic comparison against pre-2026-04-26
+        # parquets). Sealed E17b should read from the *_post_rank{r} columns.
+        self.final_norm_gamma: Optional[np.ndarray] = (
+            final_norm_gamma.astype(np.float32)
+            if final_norm_gamma is not None
+            else None
+        )
+
+    @staticmethod
+    def rmsnorm(h: np.ndarray, gamma: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+        """Apply RMSNorm: y = γ ⊙ h / sqrt(mean(h²) + eps).
+
+        Matches the convention used by Llama, Mistral, and Qwen-family final
+        norms. Operating on a single 1D hidden vector (no batch axis).
+        """
+        rms = float(np.sqrt(np.mean(h.astype(np.float64) ** 2) + eps))
+        return (h / rms) * gamma
 
     @staticmethod
     def cosine_dist(h_t: np.ndarray, h_prev: np.ndarray) -> float:
@@ -1112,6 +1159,7 @@ class PRIComputer:
         self,
         dh: np.ndarray,
         rank_values: Iterable[int],
+        dh_post: Optional[np.ndarray] = None,
     ) -> Dict[str, float]:
         """
         E17b — HARP-style raw-W_u null_ratio. For each r in rank_values:
@@ -1146,10 +1194,13 @@ class PRIComputer:
         if basis is None:
             # Raw SVD unavailable for this model — emit NaN so downstream
             # can tell "not computed" from "computed and zero."
-            return {
+            nan_out = {
                 **{f"null_ratio_raw_rank{r}": float("nan") for r in rank_list},
                 **{f"raw_energy_rank{r}": float("nan") for r in rank_list},
             }
+            if dh_post is not None:
+                nan_out.update({f"null_ratio_raw_post_rank{r}": float("nan") for r in rank_list})
+            return nan_out
         Vt_raw, S_raw, total_sigma_sq = basis  # (k,d), (k,), scalar over all d
 
         dh_norm_sq = float(np.dot(dh, dh))
@@ -1157,6 +1208,8 @@ class PRIComputer:
             for r in rank_list:
                 out[f"null_ratio_raw_rank{r}"] = 0.0
                 out[f"raw_energy_rank{r}"] = 0.0
+                if dh_post is not None:
+                    out[f"null_ratio_raw_post_rank{r}"] = 0.0
             return out
         dh_norm = float(np.sqrt(dh_norm_sq))
 
@@ -1182,6 +1235,21 @@ class PRIComputer:
                 else 0.0
             )
 
+        if dh_post is not None:
+            dh_post_norm_sq = float(np.dot(dh_post, dh_post))
+            if dh_post_norm_sq <= 0.0:
+                for r in rank_list:
+                    out[f"null_ratio_raw_post_rank{r}"] = 0.0
+            else:
+                dh_post_norm = float(np.sqrt(dh_post_norm_sq))
+                proj_post = Vt_raw @ dh_post.astype(np.float64)
+                cum_proj_post_sq = np.cumsum(proj_post**2)
+                for r in rank_list:
+                    r_eff = int(min(r, max_available))
+                    top_post_sq = float(cum_proj_post_sq[r_eff - 1]) if r_eff > 0 else 0.0
+                    null_post_sq = max(dh_post_norm_sq - top_post_sq, 0.0)
+                    out[f"null_ratio_raw_post_rank{r}"] = float(np.sqrt(null_post_sq) / dh_post_norm)
+
         return out
 
     def null_ratio_and_energy(
@@ -1189,6 +1257,7 @@ class PRIComputer:
         dh: np.ndarray,
         p_t: np.ndarray,
         rank_values: Iterable[int],
+        dh_post: Optional[np.ndarray] = None,
     ) -> Dict[str, float]:
         """
         For each r in rank_values, emit:
@@ -1200,6 +1269,14 @@ class PRIComputer:
         full vocab — null_ratio > 0 can reflect either within-support modes
         beyond rank r OR directions outside the row-span entirely.
         SVD is shared across all requested ranks.
+
+        When `dh_post` is supplied (post-RMSNorm Δh, in the same h-space as
+        the basis), additionally emits the geometry-consistent parallel
+        columns null_ratio_post_rank{r}. The legacy null_ratio_rank{r}
+        columns project pre-norm Δh onto the post-norm basis — a known
+        coordinate-mismatch retained for backward compatibility against
+        run-05 parquets and pre-2026-04-26 sealed-gate outputs. Sealed E17b
+        should read from the *_post_rank{r} columns when available.
         """
         out: Dict[str, float] = {}
         rank_list = [int(r) for r in rank_values]
@@ -1211,6 +1288,8 @@ class PRIComputer:
             for r in rank_list:
                 out[f"null_ratio_rank{r}"] = 0.0
                 out[f"fisher_energy_rank{r}"] = 0.0
+                if dh_post is not None:
+                    out[f"null_ratio_post_rank{r}"] = 0.0
             return out
         dh_norm = float(np.sqrt(dh_norm_sq))
 
@@ -1224,6 +1303,8 @@ class PRIComputer:
             **{f"null_ratio_rank{r}": float("nan") for r in rank_list},
             **{f"fisher_energy_rank{r}": float("nan") for r in rank_list},
         }
+        if dh_post is not None:
+            nan_out.update({f"null_ratio_post_rank{r}": float("nan") for r in rank_list})
         if W_s is None or W_s.ndim != 2:
             return nan_out
 
@@ -1246,6 +1327,21 @@ class PRIComputer:
             null_sq = max(dh_norm_sq - top_proj_sq, 0.0)
             out[f"null_ratio_rank{r}"] = float(np.sqrt(null_sq) / dh_norm)
             out[f"fisher_energy_rank{r}"] = float(cum_energy[r_eff - 1] / total_energy) if r_eff > 0 else 0.0
+
+        if dh_post is not None:
+            dh_post_norm_sq = float(np.dot(dh_post, dh_post))
+            if dh_post_norm_sq <= 0.0:
+                for r in rank_list:
+                    out[f"null_ratio_post_rank{r}"] = 0.0
+            else:
+                dh_post_norm = float(np.sqrt(dh_post_norm_sq))
+                proj_post = Vt @ dh_post
+                cum_proj_post_sq = np.cumsum(proj_post**2)
+                for r in rank_list:
+                    r_eff = int(min(r, max_available))
+                    top_post_sq = float(cum_proj_post_sq[r_eff - 1]) if r_eff > 0 else 0.0
+                    null_post_sq = max(dh_post_norm_sq - top_post_sq, 0.0)
+                    out[f"null_ratio_post_rank{r}"] = float(np.sqrt(null_post_sq) / dh_post_norm)
 
         return out
 
@@ -1272,6 +1368,18 @@ class PRIComputer:
         cos_d = self.cosine_dist(h_t, h_prev)
         l2_d = self.l2_dist(h_t, h_prev)
         dh = h_t - h_prev
+        # When final-RMSNorm γ is wired in, also compute Δh in post-norm
+        # h-space (the same coordinate system as the SVD basis built from
+        # sqrt(p_t)·W_u). The legacy `dh` above is in pre-norm h-space; its
+        # projection onto the post-norm basis is a coordinate mismatch we
+        # keep emitting under the original column names for backward
+        # compatibility, but sealed E17b should consume *_post_rank{r}.
+        if self.final_norm_gamma is not None:
+            h_t_post = self.rmsnorm(h_t, self.final_norm_gamma)
+            h_prev_post = self.rmsnorm(h_prev, self.final_norm_gamma)
+            dh_post = h_t_post - h_prev_post
+        else:
+            dh_post = None
         z = self._project(dh)
 
         # Defensive guard for rare tokenizer/model mismatches.
@@ -1309,14 +1417,14 @@ class PRIComputer:
 
         v3_list = list(v3_rank_values)
         if v3_list:
-            v3_out = self.null_ratio_and_energy(dh, p_t, v3_list)
+            v3_out = self.null_ratio_and_energy(dh, p_t, v3_list, dh_post=dh_post)
             out.update(v3_out)
             if v3_capture_raw:
                 # E17b head-to-head: HARP-style static raw-W_u null_ratio
                 # at the same rank sweep. Same dh, same analysis plane;
                 # different SVD basis. Basis is cached per model via
                 # OutputProjection.raw_right_singular_vectors.
-                v3_raw_out = self.null_ratio_raw_and_energy(dh, v3_list)
+                v3_raw_out = self.null_ratio_raw_and_energy(dh, v3_list, dh_post=dh_post)
                 out.update(v3_raw_out)
 
         return out
@@ -1567,7 +1675,18 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
             continue
 
         model, tokenizer, output_projection, layer_indices = load_model(model_name)
-        pri_comp = PRIComputer(output_projection)
+        # Extract final-RMSNorm γ for the post-norm null_ratio path. Gives
+        # PRIComputer access to the same normalization that the model applies
+        # before W_u, so it can emit *_post_rank{r} columns (geometry-correct
+        # E17b head-to-head) alongside the legacy *_rank{r} columns. Failure
+        # to extract γ is non-fatal — pipeline degrades to legacy-only.
+        final_norm_gamma = _extract_final_rmsnorm_gamma(model)
+        if final_norm_gamma is None:
+            print(
+                f"  [WARN] Could not extract final RMSNorm γ for {model_name}; "
+                "post-norm null_ratio columns will not be emitted for this model."
+            )
+        pri_comp = PRIComputer(output_projection, final_norm_gamma=final_norm_gamma)
 
         # E17b: precompute raw-W_u top-k right singular vectors once per model
         # so per-sample compute_step just reads the cache. max_rank matches the
