@@ -89,6 +89,16 @@ SCOPES = {
     "v3_1_qwen25_only": [
         "mlx-community/Qwen2.5-7B-Instruct-4bit",
     ],
+    # v3_1_phi_only   — single-primary scope for re-validating Phi-3.5-mini
+    # under the v3.1 gate fixes (PR #7 stratified preflight + 3-tier parser,
+    # plus operational --gate-max-tokens 12 from 2026-04-24). Phi was
+    # excluded from the 2026-04-23 sealed run after gate-failing at
+    # 12/20=60% under the original parser + 256-token gate budget.
+    # Recovery here lifts Phi from "excluded" to descriptive companion;
+    # a clean fail confirms the model-specific finding. Not a sealed primary.
+    "v3_1_phi_only": [
+        "mlx-community/Phi-3.5-mini-instruct-4bit",
+    ],
     # v3_1_gemmas     — Phase 3 (optional) — Gemma 3-1B + Gemma 3-4B. Within-
     #                   family scale axis held fixed at architecture. Isolated
     #                   from Phase 1 because the full run_experiment loop with
@@ -96,6 +106,17 @@ SCOPES = {
     #                   Gemma checkpoint (Prereq 4 dryrun validated only
     #                   trace_sample + SVD at n=4/cell). ~40-60 min.
     "v3_1_gemmas": GEMMAS,
+    # v3_1_gemma4b_only — Phase 3 narrowed to Gemma 3-4B alone (2026-04-26).
+    #                   Gemma 1B was excluded after gate-fail at 11/20 = 55%
+    #                   on n=20 stratified controls (model-capability, not
+    #                   parser — defaults to "Answer: NO" on YES controls).
+    #                   Pipeline pre-validated end-to-end on both Gemmas at
+    #                   n=2/cell smoke (run-04) and n=10/cell pilot (run-05).
+    #                   Gemma 4B descriptive-only — cross-architecture point,
+    #                   not within-family scale (axis collapsed). ~25-30 min.
+    "v3_1_gemma4b_only": [
+        "mlx-community/gemma-3-4b-it-4bit",
+    ],
     # v3_1_main       — convenience alias: primaries + Qwen3 as a single run.
     #                   Preserved for backward compat with the 2026-04-24 plan
     #                   amendment; equivalent to running v3_1_primaries followed
