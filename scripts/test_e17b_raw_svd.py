@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E17b unit test — raw-W_u SVD cache + null_ratio_raw against numpy ground truth.
+"""E17b unit test — raw-W_u SVD cache + null_ratio_raw_post against numpy ground truth.
 
 Does NOT require MLX or a real model. Builds a stand-in OutputProjection that
 serves deterministic synthetic W_u rows, then verifies:
@@ -8,13 +8,20 @@ serves deterministic synthetic W_u rows, then verifies:
      vectors (up to sign) as `np.linalg.svd(W, full_matrices=False)`.
   2. Cached basis is orthonormal: V_raw @ V_raw^T ≈ I_k.
   3. Eigenvalues ↔ singular values squared: S_raw^2 matches σ^2 from SVD.
-  4. `null_ratio_raw_rank{r}` is in [0, 1] for any dh.
-  5. `null_ratio_raw_rank{r}` monotonically non-increasing in r (more informed
-     directions ⇒ less null content).
-  6. For dh aligned with V_1: null_ratio_raw_rank1 ≈ 0 (all in informed).
-  7. For dh orthogonal to V_top[:k]: null_ratio_raw_rank{k} ≈ 1 (all null).
+  4. `null_ratio_raw_post_rank{r}` is in [0, 1] for any dh_post.
+  5. `null_ratio_raw_post_rank{r}` monotonically non-increasing in r (more
+     informed directions ⇒ less null content).
+  6. For dh_post aligned with V_1: null_ratio_raw_post_rank1 ≈ 0 (all in informed).
+  7. For dh_post orthogonal to V_top[:k]: null_ratio_raw_post_rank{k} ≈ 1 (all null).
   8. `raw_energy_rank{r}` is non-decreasing and reaches 1.0 at r=d.
   9. Chunked accumulation (batch < V) matches unchunked (batch ≥ V).
+
+Updated 2026-04-26 after the legacy `null_ratio_raw_rank{r}` column path was
+deleted from the pipeline. The function now takes `dh_post` (post-RMSNorm
+residual stream difference) as a required positional argument and emits only
+the J_n-consistent `null_ratio_raw_post_rank{r}` family. Tests pass synthetic
+dh as dh_post — the math invariants are basis-properties of W_u, not geometry-
+properties of how dh is computed.
 
 Run with the venv python:
     .venv/bin/python scripts/test_e17b_raw_svd.py
@@ -114,16 +121,18 @@ def test_null_ratio_range_and_monotonicity() -> None:
 
     ranks = [1, 2, 4, 8, 16, 32, 64]
     for trial in range(5):
-        dh = rng.standard_normal(d).astype(np.float32)
-        out = pri.null_ratio_raw_and_energy(dh, ranks)
+        dh_post = rng.standard_normal(d).astype(np.float32)
+        out = pri.null_ratio_raw_and_energy(dh_post, ranks)
 
         # 4. Range.
         for r in ranks:
-            nr = out[f"null_ratio_raw_rank{r}"]
-            assert 0.0 - 1e-9 <= nr <= 1.0 + 1e-9, f"null_ratio_raw_rank{r}={nr} out of [0,1]"
+            nr = out[f"null_ratio_raw_post_rank{r}"]
+            assert 0.0 - 1e-9 <= nr <= 1.0 + 1e-9, (
+                f"null_ratio_raw_post_rank{r}={nr} out of [0,1]"
+            )
 
         # 5. Non-increasing in r.
-        seq = [out[f"null_ratio_raw_rank{r}"] for r in ranks]
+        seq = [out[f"null_ratio_raw_post_rank{r}"] for r in ranks]
         for i in range(len(seq) - 1):
             assert seq[i] + 1e-9 >= seq[i + 1], f"non-monotone null_ratio: {seq}"
 
@@ -155,22 +164,26 @@ def test_dh_aligned_and_orthogonal() -> None:
 
     Vt_raw, _, _ = proj.raw_right_singular_vectors(k)
 
-    # 6. dh aligned with V_1 → null_ratio_rank1 ≈ 0 (float32 cast limits us to
-    # ~1e-3 in practice; the method casts to float64 inside, but dh comes in
-    # float32 so the alignment projection leaks a tiny fraction).
-    dh_aligned = Vt_raw[0] * 3.14
-    out = pri.null_ratio_raw_and_energy(dh_aligned.astype(np.float32), [1, k])
-    assert out["null_ratio_raw_rank1"] < 1e-3, f"aligned dh null_ratio_rank1 = {out['null_ratio_raw_rank1']}"
+    # 6. dh_post aligned with V_1 → null_ratio_raw_post_rank1 ≈ 0 (float32
+    # cast limits us to ~1e-3 in practice; the method casts to float64 inside,
+    # but dh_post comes in float32 so the alignment projection leaks a tiny
+    # fraction).
+    dh_post_aligned = Vt_raw[0] * 3.14
+    out = pri.null_ratio_raw_and_energy(dh_post_aligned.astype(np.float32), [1, k])
+    assert out["null_ratio_raw_post_rank1"] < 1e-3, (
+        f"aligned dh_post null_ratio_raw_post_rank1 = {out['null_ratio_raw_post_rank1']}"
+    )
 
-    # 7. dh in null complement of V_top[:k] → null_ratio_rank{k} ≈ 1.
+    # 7. dh_post in null complement of V_top[:k] → null_ratio_raw_post_rank{k} ≈ 1.
     basis_top = Vt_raw  # (k, d)
     rand = rng.standard_normal(d)
     proj_onto_top = basis_top.T @ (basis_top @ rand)
-    dh_null = (rand - proj_onto_top).astype(np.float32)
-    dh_null /= np.linalg.norm(dh_null)
-    out = pri.null_ratio_raw_and_energy(dh_null, [k])
-    assert out[f"null_ratio_raw_rank{k}"] > 1.0 - 1e-4, (
-        f"orthogonal dh null_ratio_rank{k} = {out[f'null_ratio_raw_rank{k}']}"
+    dh_post_null = (rand - proj_onto_top).astype(np.float32)
+    dh_post_null /= np.linalg.norm(dh_post_null)
+    out = pri.null_ratio_raw_and_energy(dh_post_null, [k])
+    assert out[f"null_ratio_raw_post_rank{k}"] > 1.0 - 1e-4, (
+        f"orthogonal dh_post null_ratio_raw_post_rank{k} = "
+        f"{out[f'null_ratio_raw_post_rank{k}']}"
     )
 
     print("  [pass] dh-aligned → null≈0; dh-in-null-complement → null≈1")
@@ -202,13 +215,17 @@ def test_chunked_matches_unchunked() -> None:
 
 
 def test_compute_step_emits_both_null_ratios() -> None:
-    """compute_step should emit null_ratio_rank{r} AND null_ratio_raw_rank{r}
-    when v3_capture_raw=True and v3_rank_values is non-empty."""
+    """compute_step should emit null_ratio_post_rank{r} AND
+    null_ratio_raw_post_rank{r} when v3_capture_raw=True and v3_rank_values
+    is non-empty. After the 2026-04-26 cleanup, compute_step REQUIRES γ to
+    be wired in; pri.final_norm_gamma=None raises RuntimeError."""
     rng = np.random.default_rng(4)
     V, d = 1024, 16
     W = rng.standard_normal((V, d)).astype(np.float32)
     proj = StubOutputProjection(W)
-    pri = pipeline.PRIComputer(proj)
+    # Synthetic γ — values that look like a real RMSNorm scale.
+    gamma = (1.0 + 0.5 * rng.standard_normal(d)).astype(np.float32)
+    pri = pipeline.PRIComputer(proj, final_norm_gamma=gamma)
 
     # Override .project to bypass the real projection (needs MLX); the method
     # is only used for the v2 Fisher path, which requires z = W_u · dh via
@@ -232,13 +249,20 @@ def test_compute_step_emits_both_null_ratios() -> None:
     )
 
     for r in ranks:
-        assert f"null_ratio_rank{r}" in out, f"missing Fisher null_ratio_rank{r}"
-        assert f"null_ratio_raw_rank{r}" in out, f"missing raw null_ratio_raw_rank{r}"
+        assert f"null_ratio_post_rank{r}" in out, f"missing Fisher null_ratio_post_rank{r}"
+        assert f"null_ratio_raw_post_rank{r}" in out, f"missing raw null_ratio_raw_post_rank{r}"
         assert f"fisher_energy_rank{r}" in out, f"missing fisher_energy_rank{r}"
         assert f"raw_energy_rank{r}" in out, f"missing raw_energy_rank{r}"
         # Neither should be NaN for a finite-W setup.
-        assert np.isfinite(out[f"null_ratio_rank{r}"]), f"NaN Fisher null at r={r}"
-        assert np.isfinite(out[f"null_ratio_raw_rank{r}"]), f"NaN raw null at r={r}"
+        assert np.isfinite(out[f"null_ratio_post_rank{r}"]), f"NaN Fisher null at r={r}"
+        assert np.isfinite(out[f"null_ratio_raw_post_rank{r}"]), f"NaN raw null at r={r}"
+        # Legacy columns must NOT be present.
+        assert f"null_ratio_rank{r}" not in out, (
+            f"legacy null_ratio_rank{r} leaked into compute_step output"
+        )
+        assert f"null_ratio_raw_rank{r}" not in out, (
+            f"legacy null_ratio_raw_rank{r} leaked into compute_step output"
+        )
 
     # v3_capture_raw=False must NOT emit the raw columns.
     out_off = pri.compute_step(
@@ -247,12 +271,27 @@ def test_compute_step_emits_both_null_ratios() -> None:
         v3_rank_values=ranks, v3_capture_raw=False,
     )
     for r in ranks:
-        assert f"null_ratio_raw_rank{r}" not in out_off, (
+        assert f"null_ratio_raw_post_rank{r}" not in out_off, (
             f"raw null leaked when v3_capture_raw=False at r={r}"
         )
 
-    print("  [pass] compute_step emits both Fisher and raw columns when flag is on; "
-          "none when off")
+    # Hard-error if γ is None (legacy fallback was deleted).
+    pri_no_gamma = pipeline.PRIComputer(proj, final_norm_gamma=None)
+    pri_no_gamma._project = _np_project  # type: ignore[assignment]
+    try:
+        pri_no_gamma.compute_step(
+            h_t, h_prev, p_t, S_t=0.5, alpha=1.0,
+            topk_values=[], lowrank_values=[],
+            v3_rank_values=ranks, v3_capture_raw=True,
+        )
+        assert False, "compute_step should have raised RuntimeError on γ=None"
+    except RuntimeError as e:
+        assert "post-norm" in str(e).lower() or "final_norm_gamma" in str(e), (
+            f"unexpected RuntimeError message: {e}"
+        )
+
+    print("  [pass] compute_step emits Fisher+raw post-norm cols when flag is on; "
+          "none when off; raises on γ=None")
 
 
 def test_cache_reuse_returns_same_basis() -> None:

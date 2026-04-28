@@ -2,26 +2,30 @@
 """Score the sealed E18 + E17b gates on a v3.1 run directory.
 
 Sealed spec (pri-v3-plan.md §Magnitude-independence, 2026-04-18 + 2026-04-23
-rank-pin + 2026-04-24 three-phase amendment + 2026-04-26 J_n geometry fix):
+rank-pin + 2026-04-24 three-phase amendment + 2026-04-26 J_n geometry fix +
+2026-04-26 legacy-path deletion):
 - Analysis plane: final layer, gen_step == 1 (1-indexed commit step)
-- Residualization: null_ratio_rank1_resid = null_ratio_rank1 - OLS(~ d_F_lowrank32)
+- Residualization: null_ratio_post_rank1_resid = null_ratio_post_rank1 - OLS(~ d_F_lowrank32)
   via linear regression on d_F alone (NOT logistic). Robustness check at
   d_F_topk32.
 - Rank pinned at r = 1 (top-1 Fisher direction = commit direction).
-- Acceptance: AUROC(null_ratio_resid) >= 0.60 with non-overlap bootstrap 95%
-  CI vs 0.5 on 2-of-3 primaries. Direction pre-registered: higher ->
+- Acceptance: AUROC(null_ratio_post_resid) >= 0.60 with non-overlap bootstrap
+  95% CI vs 0.5 on 2-of-3 primaries. Direction pre-registered: higher ->
   contradiction.
 - Bootstrap: 1000 resamples, sample-level (not token-level).
 
 E17b head-to-head (pre-registered 2026-04-23, columns pinned 2026-04-26):
 - Sealed E17b reads from null_ratio_post_rank{r} and null_ratio_raw_post_rank{r}
-  (post-norm Δh on post-norm basis — geometry-consistent). Threshold:
+  ONLY (post-norm Δh on post-norm basis — J_n-consistent geometry). Threshold:
     AUROC(null_ratio_post_rank1) - AUROC(null_ratio_raw_post_rank1) >= 0.02,
     non-overlap 95% CI on Qwen 2.5 7B. Same analysis plane, 1000 sample-level
     resamples.
-- Legacy null_ratio_rank{r} columns (pre-norm Δh on post-norm basis — known
-  geometric mismatch) are still read when the post-norm columns are absent
-  (pre-2026-04-26 parquets). Use --columns {legacy,post,auto} to override.
+
+Legacy column path deleted 2026-04-26 (pre-registration enforcement gap fix).
+The analyzer now hard-errors if a parquet lacks `null_ratio_post_rank1`. Pre-
+2026-04-26 parquets (which only have the legacy `null_ratio_rank{r}` columns)
+are no longer readable by this analyzer — re-run the experiment against a
+post-PR#11 pipeline build.
 """
 
 from __future__ import annotations
@@ -47,48 +51,47 @@ PRIMARIES = [
     "Mistral-7B-Instruct-v0.3-4bit",
     "Qwen2.5-7B-Instruct-4bit",
 ]
+# Non-primary models in the v3.1 scope. Scored only when --include-extras is
+# passed; emitted under the `descriptive` key in the JSON payload, separate
+# from `per_model` (which is sealed-gate authority on primaries). Each extra
+# is descriptive-only by design — does NOT contribute to E18 PASS/FAIL count
+# or to the E17b sealed-Qwen2.5 head-to-head verdict. Adding new extras here
+# is non-sealed-affecting (operational scope decision, not analysis-plane).
+EXTRAS = [
+    "Qwen3-8B-4bit",
+    "Phi-3.5-mini-instruct-4bit",
+    "gemma-3-1b-it-4bit",
+    "gemma-3-4b-it-4bit",
+]
 QWEN25 = "Qwen2.5-7B-Instruct-4bit"
 
 
-def _column_names(geometry: str) -> dict:
-    """Return the null_ratio column-name templates for the chosen geometry.
+_COLUMN_NAMES = {
+    "fisher": "null_ratio_post_rank{r}",
+    "raw": "null_ratio_raw_post_rank{r}",
+    "label": "post-norm Δh / post-norm basis (J_n-consistent)",
+}
 
-    geometry ∈ {"legacy", "post"}.
-      legacy: null_ratio_rank{r} / null_ratio_raw_rank{r}
-              (pre-norm Δh on post-norm basis — known mismatch, pre-2026-04-26
-              parquets only carry these).
-      post:   null_ratio_post_rank{r} / null_ratio_raw_post_rank{r}
-              (post-norm Δh on post-norm basis — geometry-consistent; PR #11
-              and later parquets emit these alongside legacy).
+
+def _require_post_columns(df: pd.DataFrame, model_tag: str) -> None:
+    """Hard-error if the parquet lacks the J_n-corrected post-norm columns.
+
+    Replaces the pre-2026-04-26 `--columns {legacy,post,auto}` toggle. The
+    legacy path was deleted because its silent-fallback default ("auto" picks
+    legacy when post is absent) made it possible to produce a sealed-gate
+    verdict computed under the buggy geometry that looked identical to one
+    computed under the corrected geometry — see the pre-registration
+    enforcement gap writeup. Now the analyzer refuses to run on a pre-PR#11
+    parquet, surfacing the geometry mismatch loudly instead of quietly
+    re-using the buggy column family.
     """
-    if geometry == "post":
-        return {
-            "fisher": "null_ratio_post_rank{r}",
-            "raw": "null_ratio_raw_post_rank{r}",
-            "label": "post-norm Δh / post-norm basis (J_n-consistent)",
-        }
-    return {
-        "fisher": "null_ratio_rank{r}",
-        "raw": "null_ratio_raw_rank{r}",
-        "label": "pre-norm Δh / post-norm basis (legacy, geometric mismatch)",
-    }
-
-
-def _resolve_geometry(df: pd.DataFrame, requested: str) -> str:
-    """Resolve --columns auto/legacy/post against actually-present columns."""
-    has_post = "null_ratio_post_rank1" in df.columns
-    if requested == "post":
-        if not has_post:
-            raise SystemExit(
-                "ERROR: --columns post requested but null_ratio_post_rank1 not "
-                "found in parquet. Re-run pipeline against a fix/null-ratio-"
-                "post-norm-geometry build (PR #11) or use --columns legacy."
-            )
-        return "post"
-    if requested == "legacy":
-        return "legacy"
-    # auto
-    return "post" if has_post else "legacy"
+    if "null_ratio_post_rank1" not in df.columns:
+        raise SystemExit(
+            f"ERROR: {model_tag} parquet lacks `null_ratio_post_rank1` "
+            "(post-norm / J_n-consistent geometry). The legacy column "
+            "family was deleted 2026-04-26 — re-run the pipeline against "
+            "a post-PR#11 build before invoking the sealed-gate analyzer."
+        )
 
 
 def _residualize(y: np.ndarray, x: np.ndarray) -> np.ndarray:
@@ -202,15 +205,15 @@ def _paired_auc_delta_ci(
     }
 
 
-def _analyze_model(df: pd.DataFrame, tag: str, geometry: str = "legacy") -> dict:
-    cols = _column_names(geometry)
-    fisher_col_r1 = cols["fisher"].format(r=1)
-    fisher_col_r32 = cols["fisher"].format(r=32)
-    raw_col_r1 = cols["raw"].format(r=1)
+def _analyze_model(df: pd.DataFrame, tag: str) -> dict:
+    _require_post_columns(df, tag)
+    fisher_col_r1 = _COLUMN_NAMES["fisher"].format(r=1)
+    fisher_col_r32 = _COLUMN_NAMES["fisher"].format(r=32)
+    raw_col_r1 = _COLUMN_NAMES["raw"].format(r=1)
 
     df = df.copy()
 
-    # E18 primary: null_ratio_(post_)rank1 residualized against d_F_lowrank32
+    # E18 primary: null_ratio_post_rank1 residualized against d_F_lowrank32
     resid_col_lr = f"{fisher_col_r1}_resid_lowrank32"
     resid_col_tk = f"{fisher_col_r1}_resid_topk32"
     df[resid_col_lr] = _residualize(
@@ -222,7 +225,7 @@ def _analyze_model(df: pd.DataFrame, tag: str, geometry: str = "legacy") -> dict
         df["d_F_topk32"].to_numpy(),
     )
 
-    out: dict = {"model": tag, "n": int(len(df)), "geometry": geometry}
+    out: dict = {"model": tag, "n": int(len(df)), "geometry": "post"}
 
     # Sealed E18 (rank 1, d_F=lowrank32)
     out["E18_sealed_rank1_lowrank32"] = _score(df, resid_col_lr)
@@ -256,7 +259,7 @@ def _analyze_model(df: pd.DataFrame, tag: str, geometry: str = "legacy") -> dict
     # E18 rank sweep (diagnostic only; sealed reading is rank 1)
     rank_sweep = []
     for r in [1, 2, 3, 4, 5, 8, 13, 16, 21, 32, 34, 55, 64]:
-        col = cols["fisher"].format(r=r)
+        col = _COLUMN_NAMES["fisher"].format(r=r)
         if col not in df.columns:
             continue
         resid = _residualize(df[col].to_numpy(), df["d_F_lowrank32"].to_numpy())
@@ -278,20 +281,6 @@ def main() -> int:
     parser.add_argument("--run-dir", required=True, help="run-NN dir with *_results.parquet")
     parser.add_argument("--out", default=None, help="output JSON path (default: run-dir/sealed_gate.json)")
     parser.add_argument("--seed", type=int, default=20260423)
-    parser.add_argument(
-        "--columns",
-        choices=["legacy", "post", "auto"],
-        default="auto",
-        help=(
-            "which null_ratio column family to read. "
-            "'post' = null_ratio_post_rank{r} / null_ratio_raw_post_rank{r} "
-            "(post-norm Δh on post-norm basis — sealed E17b spec, 2026-04-26 amendment). "
-            "'legacy' = null_ratio_rank{r} / null_ratio_raw_rank{r} "
-            "(pre-norm Δh on post-norm basis — known geometric mismatch, retained "
-            "for forensic comparison with run-05 and earlier parquets). "
-            "'auto' (default) = post if present, else legacy."
-        ),
-    )
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir)
@@ -301,9 +290,10 @@ def main() -> int:
 
     out_path = Path(args.out) if args.out else run_dir / "sealed_gate.json"
 
-    # Resolve geometry from the FIRST present primary's columns. All primaries in a
-    # given run use the same pipeline, so they'll have the same column families.
-    geometry: str | None = None
+    # Geometry is fixed at "post" — the J_n-corrected post-norm columns are the
+    # only ones the analyzer reads. Pre-2026-04-26 parquets (legacy columns
+    # only) are explicitly unsupported; _require_post_columns will raise per
+    # model with a clear re-run instruction.
     per_model: list[dict] = []
     missing: list[str] = []
     for tag in PRIMARIES:
@@ -311,19 +301,28 @@ def main() -> int:
         if df is None or df.empty:
             missing.append(tag)
             continue
-        if geometry is None:
-            geometry = _resolve_geometry(df, args.columns)
-        per_model.append(_analyze_model(df, tag, geometry=geometry))
-    if geometry is None:
-        geometry = args.columns if args.columns != "auto" else "legacy"
-    cols_label = _column_names(geometry)["label"]
+        per_model.append(_analyze_model(df, tag))
+
+    # Refuse to write a sealed_gate.json if no primary was scored — this
+    # closes the silent-failure mode that produced misleading run-06/run-08
+    # JSONs (analyzer wrote `geometry: legacy` because no primary was loaded).
+    if not per_model:
+        print(
+            f"ERROR: no primary models found in {run_dir}. Sealed verdict is "
+            "primary-only — refusing to write a misleading sealed_gate.json. "
+            f"Expected: {', '.join(PRIMARIES)}. Found in dir: "
+            f"{sorted(p.name for p in run_dir.glob('*_results.parquet'))}"
+        )
+        return 3
+
+    cols_label = _COLUMN_NAMES["label"]
 
     # Summary header
     print("=" * 84)
     print(f"SEALED E18 + E17b GATE — run_dir = {run_dir}")
     print(f"  rank=1  layer={SEALED_LAYER}  step={SEALED_STEP}  "
           f"bootstrap_n={SEALED_BOOTSTRAP_N}  seed={args.seed}")
-    print(f"  columns={geometry}  ({cols_label})")
+    print(f"  geometry=post  ({cols_label})")
     print("=" * 84)
     if missing:
         print(f"MISSING PRIMARIES (skipped): {', '.join(missing)}")
@@ -355,10 +354,10 @@ def main() -> int:
         ci_s = f"[{h2h['delta_ci'][0]:.3f}, {h2h['delta_ci'][1]:.3f}]"
         e17b_pass = h2h["delta"] >= 0.02 and h2h["delta_ci"][0] > 0.0
         print("E17b (Qwen 2.5):")
-        print(f"  null_ratio_rank1      : {h2h['auroc_a']:.4f} (sign {h2h['sign_a']})")
-        print(f"  null_ratio_raw_rank1  : {h2h['auroc_b']:.4f} (sign {h2h['sign_b']})")
-        print(f"  delta                 : {h2h['delta']:+.4f}  95% CI {ci_s}")
-        print(f"  E17b gate             : {'PASS' if e17b_pass else 'FAIL'}  "
+        print(f"  null_ratio_post_rank1     : {h2h['auroc_a']:.4f} (sign {h2h['sign_a']})")
+        print(f"  null_ratio_raw_post_rank1 : {h2h['auroc_b']:.4f} (sign {h2h['sign_b']})")
+        print(f"  delta                     : {h2h['delta']:+.4f}  95% CI {ci_s}")
+        print(f"  E17b gate                 : {'PASS' if e17b_pass else 'FAIL'}  "
               f"(need delta>=0.02 w/ CI>0)")
         print()
 
@@ -386,10 +385,10 @@ def main() -> int:
             "threshold": SEALED_THRESHOLD,
             "d_F": "lowrank32",
             "residualization": "linear",
-            "geometry": geometry,
+            "geometry": "post",
             "columns_label": cols_label,
-            "fisher_col_template": _column_names(geometry)["fisher"],
-            "raw_col_template": _column_names(geometry)["raw"],
+            "fisher_col_template": _COLUMN_NAMES["fisher"],
+            "raw_col_template": _COLUMN_NAMES["raw"],
         },
         "seed": args.seed,
         "per_model": per_model,
