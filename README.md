@@ -4,15 +4,23 @@
 
 **v3 active line.** PRI v3 decomposes the hidden-state jump `Δh = h_t − h_prev` at commitment into a **direction** observable (`null_ratio`, the fraction of `Δh` that lies outside the top-r right singular vectors of `sqrt(p_t) · W_u`) rather than v2's magnitude scalar `d_F`. The hypothesis: contradictions push `Δh` *off* the commit direction, independent of how far it moved.
 
-**Current status (2026-04-24).** Sealed E18 test passes 3/3 primaries at rank 1 on the 2026-04-23 main run with non-overlapping bootstrap CIs — Llama 3.2 3B 0.8593 [0.806, 0.908], Mistral 7B 0.8638 [0.814, 0.910], Qwen 2.5 7B 0.7274 [0.656, 0.795]. The sealed E19 interpretation gate (`null_gated = d_F · null_ratio` beats both null_bare and `v2_lowrank32` by non-overlap CI) is **FALSIFIED** on all 4 tested models — multiplicative interaction carries no signal beyond its components. Rank was not pinned in the original sealed block; v3.1 pre-registers rank 1 + seed 20260423 and replicates on fresh puzzles before any external claim.
+**HARP** (Hu et al. 2025, [arXiv:2509.11536](https://arxiv.org/abs/2509.11536)) is the static-`W_u`-SVD baseline this repo tests Fisher pullback against. It decomposes the unembedding matrix once per model and uses the orthogonal complement of the top-r right singular vectors as a fixed "reasoning subspace" for hallucination detection. Fisher pullback is the natural per-sample generalization: same SVD machinery, but on `√p_t · W_u` (the unembedding re-weighted by the current token distribution), so the basis is locally tailored to where THIS prompt's prediction is sensitive instead of model-global.
 
-**E17b companion.** The pipeline emits HARP-style raw-`W_u` null_ratio (`null_ratio_raw_rank{r}` + `raw_energy_rank{r}`) alongside the Fisher-weighted version, at the same rank sweep, so the head-to-head is `AUROC(null_ratio_rank1) − AUROC(null_ratio_raw_rank1)` on identical samples. The E17b sealed gate is on Qwen 2.5 with non-overlap 95% CI, margin ≥ 0.02.
+**Current status (2026-04-27).** Sealed E18 test **passes 3/3 primaries at rank 1** on the 2026-04-26/27 main run at n=600 per model under J_n-corrected post-norm geometry — Llama 3.2 3B 0.8713 [0.842, 0.896], Mistral 7B 0.8707 [0.845, 0.897], Qwen 2.5 7B 0.6468 [0.603, 0.691]. Sealed E17b head-to-head **passes on Qwen 2.5** with Fisher decisive: Δ AUROC = +0.157 [+0.125, +0.190] — Fisher 0.8967 (sign +1) vs Raw 0.7396 (sign −1), clearing the sealed +0.02 bar by 7.9×. The sealed E19 interpretation gate (`null_gated = d_F · null_ratio` beats both null_bare and `v2_lowrank32` by non-overlap CI) remains **FALSIFIED** on all 4 tested models — multiplicative interaction carries no signal beyond its components.
+
+**Cross-architecture (n=600, 6 models, 13 ranks).** At sealed rank=1, three architectures favor Fisher (Llama 3.2 3B, Qwen 2.5 7B, Gemma 3-4B) and three favor Raw (Mistral 7B, Qwen3 8B, Phi-3.5-mini); vendor and parameter-count are not predictive. The 6×13×2 model × rank × chain-length landscape exposes three motifs: (1) **Phi-3.5** is stable Raw across all 13 ranks (the canonical "HARP works as advertised" case, Raw_post_rank1 = 0.999); (2) **Gemma 4B** has a sharp within-model rank flip Fisher → Raw at r=2→r=3 robust to chain length; (3) **Mistral 7B** has a chain-length × rank Simpson's-paradox at sealed r=1 and at r=32, with cross-stratum spread Δ_cross = −0.575 at r=32 (the largest in the 156-cell landscape).
+
+**E17b companion.** The pipeline emits HARP-style raw-`W_u` null_ratio (`null_ratio_raw_post_rank{r}` + `raw_energy_rank{r}`) alongside the Fisher-weighted version, at the same rank sweep, so the head-to-head is `AUROC(null_ratio_post_rank1) − AUROC(null_ratio_raw_post_rank1)` on identical samples. Both columns use J_n-corrected post-norm geometry — the legacy pre-norm column path was deleted 2026-04-26. The E17b sealed gate is on Qwen 2.5 with non-overlap 95% CI, margin ≥ 0.02.
+
+**J_n geometry correction.** A coordinate-mismatch in the Fisher pullback — the pre-2026-04-26 pipeline projected raw pre-norm `Δh = h_t − h_prev` onto a basis derived from `√p_t · W_u` that lives in post-norm h-space — was identified, fixed, and the legacy code path deleted on 2026-04-26. Sealed E17b on Qwen 2.5 flipped from −0.166 (FAIL, Raw decisive) to +0.157 (PASS, Fisher decisive) under correction. Sealed E18 is unaffected because residualization against `d_F_lowrank32` (computed in the same buggy frame) absorbs the bias. Pre-registered _spec_ unchanged across the correction; only the implementation was revised.
+
+**Workshop draft.** A workshop submission draft of the v3.1 results lives in the parent vault at `wiki/paper/draft.md` (status `[DRAFT]`, dated 2026-04-27). Frozen pre-reg snapshot: `PRI_V3_PRE_REGISTRATION_PLAN.md` at the repo root.
 
 ---
 
 ## 🎯 What PRI measures, in one paragraph
 
-For each generated token, take the hidden state right before (`h_prev`) and right after (`h_t`) the commitment. Their difference `Δh` points in some direction of hidden-state space. Project it onto the **top-r right singular vectors of `sqrt(p_t) · W_u`** (the output head, weighted by the current token distribution). Those top-r directions are the **commit directions** — moving the hidden state along them changes the output probability the most. Ordinary generation moves `Δh` along the commit direction. Contradiction-commitment tokens move `Δh` *off* the commit direction, into the null complement. `null_ratio_rank1` is the clean form: how much of `Δh` lives off the single most decisive commit axis. v3's bet is that this number separates contradictions from controls *independent* of how big `Δh` is.
+For each generated token, take the hidden state right before (`h_prev`) and right after (`h_t`) the commitment. Apply the model's final RMSNorm to both, take their difference `Δh_post = h_t_post − h_prev_post` (post-RMSNorm — the J_n-corrected geometry the unembedding `W_u` was trained against). Project it onto the **top-r right singular vectors of `sqrt(p_t) · W_u`** (the output head, weighted by the current token distribution). Those top-r directions are the **commit directions** — moving the hidden state along them changes the output probability the most. Ordinary generation moves `Δh_post` along the commit direction. Contradiction-commitment tokens move `Δh_post` *off* the commit direction, into the null complement. `null_ratio_post_rank1` is the clean form: how much of `Δh_post` lives off the single most decisive commit axis. v3's bet is that this number separates contradictions from controls *independent* of how far `Δh_post` moved.
 
 ## 🚀 Quick start
 
@@ -28,39 +36,48 @@ python -m pip install -r requirements.txt
 # hf auth login
 ```
 
-### v3.1 main run — three-phase lean launch
+### v3.1 main run — phased launch (powered, n=150/cell → n=600/model)
 
 Each axis is an independent scope so you can run, skip, or re-run any phase without touching the others' checkpoints. Sealed E18 + E17b gate authority lives in Phase 1.
 
 ```bash
-# Phase 1 — sealed gate, primaries only. The verdict lands here.
-# ~60-80 min on Mac mini M4.
+# Phase 1 — sealed gate, primaries + Qwen3 (the powered v3.1 main run).
+# ~3-4 hours on Mac mini M4 at n=150/cell.
 .venv/bin/python scripts/run_v3_main.py \
-  --scope v3_1_primaries \
-  --n-per-cell 50 \
+  --scope v3_1_main \
+  --n-per-cell 150 \
   --seed 20260423 \
-  --max-gen-tokens 14
+  --max-gen-tokens 14 \
+  --gate-max-tokens 12 \
+  --layers final
 
-# Phase 2 (optional) — cross-generation companion: Qwen3-8B alone.
-# Same seed → puzzle draws match Phase 1. ~15-20 min.
-# Skip entirely if the 2026-04-23 Qwen3 data is sufficient for your framing.
+# Phase 2 — Phi-3.5-mini standalone (cross-vendor reasoning-tuned).
+# ~30-45 min. Excluded from primaries (gate-pass via --gate-max-tokens 12 only).
 .venv/bin/python scripts/run_v3_main.py \
-  --scope v3_1_qwen3 \
-  --n-per-cell 50 \
+  --scope v3_1_phi_only \
+  --n-per-cell 150 \
   --seed 20260423 \
-  --max-gen-tokens 14
+  --max-gen-tokens 14 \
+  --gate-max-tokens 12 \
+  --layers final
 
-# Phase 3 (optional) — within-family-scale companion: Gemma 1B + 4B.
-# Isolated because the full run_experiment loop with v3_capture_raw=True
-# has never executed end-to-end on a Gemma checkpoint. ~40-60 min.
+# Phase 3 — Gemma 3-4B standalone (within-family scale companion).
+# Gemma 3-1B was excluded after gate-failing at 11/20=55% (model capability,
+# not parser — defaults to "Answer: NO" on YES controls). ~30-45 min.
 .venv/bin/python scripts/run_v3_main.py \
-  --scope v3_1_gemmas \
-  --n-per-cell 50 \
+  --scope v3_1_gemma4b_only \
+  --n-per-cell 150 \
   --seed 20260423 \
-  --max-gen-tokens 14
+  --max-gen-tokens 14 \
+  --gate-max-tokens 12 \
+  --layers final
+
+# Sealed-gate analyzer (post-norm geometry only after 2026-04-26 cleanup):
+.venv/bin/python scripts/analyze_sealed_gate.py \
+  --run-dir experiments/v3-main-run/<DATE>/run-NN
 ```
 
-Prefer running Phase 1 first and verifying it clean before launching Phase 2 or Phase 3 — that way a Gemma-side adapter regression or a Qwen3 anomaly cannot contaminate the sealed-gate data. A convenience alias `--scope v3_1_main` combines Phase 1 + Phase 2 in one launch if you want primaries + Qwen3 without the manual sequencing.
+The 2026-04-26/27 powered runs land in `experiments/v3-main-run/2026-04-26/run-09/` (4 primaries + Qwen3) and `experiments/v3-main-run/2026-04-27/run-{01,02}/` (Phi-3.5-mini + Gemma 3-4B). Smaller per-cell counts (n=50, n=20) remain available via `--n-per-cell` overrides for smoke runs.
 
 ### Overnight run — all three phases, unattended
 
@@ -127,7 +144,7 @@ This repo operates on pre-registration. Sealed parameters for the confirmatory v
 
 **Sealed parameters for E17b (Fisher-vs-static-SVD head-to-head):**
 - Same analysis plane as E18
-- Test statistic: `AUROC(null_ratio_rank1) − AUROC(null_ratio_raw_rank1)` on Qwen 2.5
+- Test statistic: `AUROC(null_ratio_post_rank1) − AUROC(null_ratio_raw_post_rank1)` on Qwen 2.5 (post-norm geometry; legacy pre-norm path deleted 2026-04-26)
 - Acceptance: margin ≥ 0.02 with non-overlap 95% bootstrap CI
 - Falsification: if raw ≥ Fisher on Qwen 2.5 by any margin or CIs overlap, v3 collapses toward HARP's static formulation
 
@@ -135,22 +152,32 @@ This repo operates on pre-registration. Sealed parameters for the confirmatory v
 
 **What's been settled vs what's open:**
 - `[FALSIFIED]` E19 null_gated interpretation gate — sealed at `v2_lowrank32` rank, so rank 32 IS the sealed operating point here; failed on all 4 tested models in the 2026-04-23 main run. Final.
-- `[PRIMARY-PASS / rank 1]` E18 null-space discharge hypothesis — 3/3 primaries pass at rank 1 on 2026-04-23; v3.1 replicate required before external claim.
-- `[HYPOTHESIS / V3.1-READY]` E17b Fisher-vs-HARP head-to-head — capture shipped in pipeline, test pending on v3.1 data.
+- `[PASS / 3-of-3]` E18 null-space discharge hypothesis (sealed) — 3/3 primaries pass at rank 1 on the 2026-04-26/27 powered run (n=600/model, J_n-corrected post-norm geometry). Bootstrap CIs ~33% tighter than the n=200 prelim.
+- `[PASS / Qwen 2.5]` E17b Fisher-vs-HARP head-to-head (sealed) — Δ AUROC = +0.157 [+0.125, +0.190] on Qwen 2.5 7B at n=600, Fisher decisive. Replicates the corrected-geometry n=200 prelim within bootstrap noise.
+- `[DESCRIPTIVE]` Cross-architecture rank landscape — 6 models × 13 ranks × 2 chain-length strata = 156 cells. Three motifs documented (Phi stable Raw, Gemma 4B rank flip, Mistral chain-length × rank Simpson's-paradox). Not pre-registered; reported descriptively in §4.3 of the workshop draft.
 - `[OPEN]` Qwen3 8B weak signal at rank 1 final (AUROC ≈ 0.38 on 2026-04-23) and v2 collapse on Qwen3 (v2_lowrank32 ≈ 0.50 while surprise hits 0.96). Qwen-family diagnostic; not a v3 question.
-- `[DEFERRED]` Phi-3.5-mini behavioral gate fails at n=20 (12/20 = 60% control accuracy) — reasoning-tuned string-match artifact suspected; follow-up is a `--gate-verbose` diagnostic in a separate launch.
+- `[EXCLUDED]` Gemma 3-1B excluded from v3.1 after gate-failing at 11/20 = 55% under the post-PR#7 stratified-sampling and three-tier `check_answer` parser fixes. `--gate-verbose` confirmed model-capability rather than parser failure (defaults to `Answer: NO` on YES controls regardless of premises). Within-family scale axis collapses to a single point; left to v4.
+- `[INCLUDED VIA RESCUE]` Phi-3.5-mini gate-passes with `--gate-max-tokens 12` operational rescue (front-loads `Answer: YES` then continues with format-completion). Filed in pre-reg amendments.
+
+## v3 sealed vs baselines (n=600 powered, J_n-corrected)
+
+| Primary | surprise | PRI v1 cosine | PRI v2 topk32 | PRI v2 lowrank32 | v3 null_ratio_post_rank1 (sealed) |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Llama 3.2 3B | 0.6347 | 0.6224 | 0.7528 | 0.7500 | **0.8975** |
+| Mistral 7B | 0.5187 | 0.5309 | 0.6623 | 0.6618 | **0.7849** |
+| Qwen 2.5 7B | 0.8947 | 0.9155 | 0.7906 | 0.7948 | **0.8967** |
+
+v3 outperforms PRI v1 and v2 on Llama and Mistral by clear margins. On Qwen 2.5, surprise (0.8947) and PRI v1 cosine (0.9155) are competitive with the sealed v3 metric (0.8967) — see §5.1 of the workshop draft for the qualitative-commit-token discussion.
 
 ## Legacy v2 baseline
 
-Kept for reference and as the baseline to beat. Step-1 / final-layer / `alpha=1.0` on the original n=200/cell run (seed 42):
+Kept for reference. Step-1 / final-layer / `alpha=1.0` on the original n=200/cell run (seed 42):
 
 | Model | Control Acc. | Contradiction Acc. | Best Variant | AUROC |
 | --- | ---: | ---: | --- | ---: |
 | Llama-3.2-3B-Instruct-4bit | 1.00 | 1.00 | `pri_v2_topk32` | 0.7666 |
 | Mistral-7B-Instruct-v0.3-4bit | 1.00 | 1.00 | `pri_v2_topk32` | 0.6715 |
 | Qwen2.5-7B-Instruct-4bit | 0.98 | 1.00 | `pri_v2_lowrank32` | 0.7858 |
-
-v2 beats v1 (cosine) on all three primaries. v3 passes its sealed E18 test at rank 1 with stronger CIs than v2 on the same models; v3.1 replicates to confirm on fresh puzzles.
 
 ## Notes
 

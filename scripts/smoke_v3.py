@@ -5,7 +5,9 @@ Smoke test for v3 null_ratio / fisher_energy emission.
 Runs run_experiment with n_samples_per_cell=1, chain_lengths=[2], one model.
 Confirms:
   - pipeline executes end-to-end without exception
-  - parquet rows include null_ratio_rank{R} + fisher_energy_rank{R} columns
+  - parquet rows include null_ratio_post_rank{R} + fisher_energy_rank{R}
+    + null_ratio_raw_post_rank{R} columns (post-norm geometry only —
+    legacy *_rank{R} columns deleted 2026-04-26)
   - null_ratio values are finite and in [0, 1]
   - fisher_energy values are finite and in [0, 1]
 
@@ -46,12 +48,24 @@ def main() -> int:
     results_df, _ = pipeline.run_experiment(cfg)
 
     print("\n=== smoke-v3 assertions ===")
-    expected = [f"null_ratio_rank{r}" for r in cfg.v3_rank_values] + [
-        f"fisher_energy_rank{r}" for r in cfg.v3_rank_values
-    ]
+    expected = (
+        [f"null_ratio_post_rank{r}" for r in cfg.v3_rank_values]
+        + [f"fisher_energy_rank{r}" for r in cfg.v3_rank_values]
+    )
+    if cfg.v3_capture_raw:
+        expected += [f"null_ratio_raw_post_rank{r}" for r in cfg.v3_rank_values]
+        expected += [f"raw_energy_rank{r}" for r in cfg.v3_rank_values]
     missing = [c for c in expected if c not in results_df.columns]
     assert not missing, f"missing columns: {missing}"
-    print(f"all {len(expected)} v3 columns present")
+    print(f"all {len(expected)} v3 post-norm columns present")
+
+    # Legacy columns must be ABSENT — they were deleted 2026-04-26.
+    legacy = [f"null_ratio_rank{r}" for r in cfg.v3_rank_values] + [
+        f"null_ratio_raw_rank{r}" for r in cfg.v3_rank_values
+    ]
+    leaked = [c for c in legacy if c in results_df.columns]
+    assert not leaked, f"legacy columns leaked into parquet: {leaked}"
+    print(f"no legacy columns present (all {len(legacy)} confirmed absent)")
 
     for c in expected:
         vals = results_df[c].to_numpy()
@@ -63,7 +77,7 @@ def main() -> int:
     s1 = results_df[(results_df["gen_step"] == 1) & (results_df["layer"] == "final")]
     for r in cfg.v3_rank_values:
         print(
-            f"  rank {r}: null_ratio mean={s1[f'null_ratio_rank{r}'].mean():.3f} "
+            f"  rank {r}: null_ratio_post mean={s1[f'null_ratio_post_rank{r}'].mean():.3f} "
             f"fisher_energy mean={s1[f'fisher_energy_rank{r}'].mean():.3f}"
         )
 

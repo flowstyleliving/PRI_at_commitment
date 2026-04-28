@@ -42,7 +42,7 @@ from sklearn.metrics import roc_auc_score
 
 try:
     import mlx.core as mx
-    from mlx_lm import load as mlx_load
+    from mlx_lm import load as mlx_load, generate as mlx_generate
 except Exception as exc:  # pragma: no cover
     raise RuntimeError(
         "mlx-lm and mlx are required. Install with: pip install mlx-lm"
@@ -397,6 +397,48 @@ def get_layer_indices(n_layers: int, targets: List[str]) -> Dict[str, int]:
     return {name: mapping[name] for name in targets if name in mapping}
 
 
+def _extract_final_rmsnorm_gamma(model: Any) -> Optional[np.ndarray]:
+    """Pull the final-RMSNorm γ vector off an mlx-lm model.
+
+    Llama / Mistral / Qwen-family models all expose the final norm at
+    `model.model.norm` (or `model.norm` for unwrapped variants), with the
+    learned per-channel scale at `.weight`. Returns float32 numpy array,
+    or None if no recognizable norm layer is found.
+
+    Gemma 3 quirk: gemma3_text.RMSNorm applies `mx.fast.rms_norm(x, 1.0 +
+    self.weight, eps)` — the "+1" formulation — so the effective scale is
+    `1 + weight`. Detection uses `core.sliding_window_pattern`, the same
+    Gemma-3 signature that `model_adapters.post_embed_scale` and
+    `build_attention_masks` already key off. Without this branch, Δh_post
+    on Gemma would be multiplied by the raw weight (negative on some
+    channels) instead of `1 + weight`, silently corrupting every
+    null_ratio_*_post_rank{r} column emitted by the J_n fix.
+
+    Precision detail (Gemma 3-4B): weight is stored in bfloat16 on 4B (1B
+    is fp16). The "+1" must be applied at the weight's native dtype to
+    match what mx.fast.rms_norm sees at runtime — adding 1.0 after casting
+    to fp32 introduces ~0.4% rounding error per channel. Verified:
+    native-dtype-add → fp32 cast reproduces model's own forward to 7.6e-6
+    on Gemma 4B; fp32-add disagrees by 0.33 (3.6%).
+    """
+    core = model.model if hasattr(model, "model") else model
+    norm = None
+    if hasattr(core, "norm"):
+        norm = core.norm
+    elif hasattr(core, "final_layernorm"):
+        norm = core.final_layernorm
+    if norm is None or not hasattr(norm, "weight"):
+        return None
+    try:
+        weight_mx = norm.weight
+        if hasattr(core, "sliding_window_pattern"):
+            one = mx.array(1.0).astype(weight_mx.dtype)
+            weight_mx = one + weight_mx
+        return to_numpy(weight_mx).astype(np.float32)
+    except Exception:
+        return None
+
+
 def get_all_layer_indices(n_layers: int) -> Dict[str, int]:
     """For v3 every-layer capture. Names are zero-padded for stable lexicographic sort."""
     width = max(2, len(str(max(n_layers - 1, 0))))
@@ -638,7 +680,15 @@ def get_eos_token_id(tokenizer: Any) -> Optional[int]:
 
 def load_model(
     model_name: str,
+    config: Optional["Config"] = None,
 ) -> Tuple[Any, Any, OutputProjection, Dict[str, int]]:
+    # Historic signature took only model_name and read `cfg.layers_to_probe`
+    # from the module-level default Config — which silently ignored per-run
+    # overrides (caught 2026-04-24 when --layers final printed a correct
+    # banner but probed all three layers anyway). Config is now explicit;
+    # falls back to the module-level default if the caller didn't thread
+    # it through, preserving backward compat.
+    active_cfg = config if config is not None else cfg
     print(f"\n  Loading model: {model_name}")
     model, tokenizer = mlx_load(model_name)
 
@@ -651,7 +701,7 @@ def load_model(
         model = model.language_model
 
     all_layers = find_layers(model)
-    layer_indices = get_layer_indices(len(all_layers), cfg.layers_to_probe)
+    layer_indices = get_layer_indices(len(all_layers), active_cfg.layers_to_probe)
     projection = OutputProjection(model)
 
     print(
@@ -1040,8 +1090,35 @@ def trace_sample(
 class PRIComputer:
     """Computes PRI v1, v2, and v3 variants."""
 
-    def __init__(self, output_projection: OutputProjection):
+    def __init__(
+        self,
+        output_projection: OutputProjection,
+        final_norm_gamma: Optional[np.ndarray] = None,
+    ):
         self.output_projection = output_projection
+        # Final-RMSNorm γ vector. After the 2026-04-26 J_n-correction cleanup
+        # this is REQUIRED for compute_step (which raises if it's None) — the
+        # legacy pre-norm-Δh-on-post-norm-basis path was deleted along with
+        # the analyzer's `--columns legacy` flag. The constructor signature
+        # keeps Optional only so failed γ extraction can be caught upstream
+        # in run_experiment with a model-named error message; passing None
+        # here is fine, but the resulting PRIComputer can only do v1/v2
+        # metrics — null_ratio_*_post_rank{r} require γ.
+        self.final_norm_gamma: Optional[np.ndarray] = (
+            final_norm_gamma.astype(np.float32)
+            if final_norm_gamma is not None
+            else None
+        )
+
+    @staticmethod
+    def rmsnorm(h: np.ndarray, gamma: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+        """Apply RMSNorm: y = γ ⊙ h / sqrt(mean(h²) + eps).
+
+        Matches the convention used by Llama, Mistral, and Qwen-family final
+        norms. Operating on a single 1D hidden vector (no batch axis).
+        """
+        rms = float(np.sqrt(np.mean(h.astype(np.float64) ** 2) + eps))
+        return (h / rms) * gamma
 
     @staticmethod
     def cosine_dist(h_t: np.ndarray, h_prev: np.ndarray) -> float:
@@ -1110,31 +1187,40 @@ class PRIComputer:
 
     def null_ratio_raw_and_energy(
         self,
-        dh: np.ndarray,
+        dh_post: np.ndarray,
         rank_values: Iterable[int],
     ) -> Dict[str, float]:
         """
-        E17b — HARP-style raw-W_u null_ratio. For each r in rank_values:
-          null_ratio_raw_rank{r}  = ||dh - V_raw_top V_raw_topᵀ dh|| / ||dh||
-          raw_energy_rank{r}      = Σ_{i≤r} σ_raw_i² / Σ_i σ_raw_i²
+        E17b — HARP-style raw-W_u null_ratio in J_n-corrected post-norm
+        geometry. For each r in rank_values:
+          null_ratio_raw_post_rank{r}  = ||dh_post - V_raw_top V_raw_topᵀ dh_post|| / ||dh_post||
+          raw_energy_rank{r}           = Σ_{i≤r} σ_raw_i² / Σ_i σ_raw_i²
 
         V_raw_top = top-r right singular vectors of the *raw* output
-        projection W_u (no sqrt(p_t) weighting). Static per model — the SVD
-        basis is computed once at model load via
-        `OutputProjection.raw_right_singular_vectors(max_rank)` and cached.
-        Per-sample cost here is one matrix-vector multiply against the
-        cached basis.
+        projection W_u (no sqrt(p_t) weighting), which lives in post-norm
+        h-space. Static per model — the SVD basis is computed once at model
+        load via `OutputProjection.raw_right_singular_vectors(max_rank)`
+        and cached. Per-sample cost here is one matrix-vector multiply.
+
+        `dh_post` is REQUIRED — it is the post-RMSNorm residual stream
+        difference (= h_t_post − h_prev_post), in the same h-space as the
+        SVD basis. The legacy pre-norm Δh path was deleted 2026-04-26
+        along with the analyzer's `--columns legacy` flag (see
+        `wiki/results/v3.1-replicate.md` §Definitive 2026-04-26 verdict
+        and the pre-registration enforcement gap writeup). Callers MUST
+        pass dh_post in the J_n-consistent geometry; PRIComputer.compute_step
+        guarantees this by hard-requiring final_norm_gamma at construction.
 
         Directly comparable to `null_ratio_and_energy()` at the same ranks:
-        identical dh, identical analysis plane, different SVD basis (static
-        raw W_u vs per-sample Fisher-weighted sqrt(p_t)·W_u). The E17b
-        head-to-head is:
-          AUROC(null_ratio_rank{r}) − AUROC(null_ratio_raw_rank{r})
+        identical dh_post, identical analysis plane, different SVD basis
+        (static raw W_u vs per-sample Fisher-weighted sqrt(p_t)·W_u). The
+        E17b head-to-head is:
+          AUROC(null_ratio_post_rank{r}) − AUROC(null_ratio_raw_post_rank{r})
         with non-overlap bootstrap CI on Qwen (pri-v3-plan.md §E17b).
 
-        Returns {} if the raw SVD basis is not available (e.g. failed W_u
-        row fetch). Callers should treat missing keys as missing data, not
-        zeros.
+        Returns NaN-filled keys if the raw SVD basis is unavailable (e.g.
+        failed W_u row fetch). Callers should treat NaNs as missing data,
+        not zeros.
         """
         out: Dict[str, float] = {}
         rank_list = [int(r) for r in rank_values]
@@ -1147,69 +1233,78 @@ class PRIComputer:
             # Raw SVD unavailable for this model — emit NaN so downstream
             # can tell "not computed" from "computed and zero."
             return {
-                **{f"null_ratio_raw_rank{r}": float("nan") for r in rank_list},
+                **{f"null_ratio_raw_post_rank{r}": float("nan") for r in rank_list},
                 **{f"raw_energy_rank{r}": float("nan") for r in rank_list},
             }
         Vt_raw, S_raw, total_sigma_sq = basis  # (k,d), (k,), scalar over all d
-
-        dh_norm_sq = float(np.dot(dh, dh))
-        if dh_norm_sq <= 0.0:
-            for r in rank_list:
-                out[f"null_ratio_raw_rank{r}"] = 0.0
-                out[f"raw_energy_rank{r}"] = 0.0
-            return out
-        dh_norm = float(np.sqrt(dh_norm_sq))
-
-        # Project dh onto the raw right singular basis; cum-sum energy per rank.
-        proj = Vt_raw @ dh.astype(np.float64)  # (max_rank,)
-        cum_proj_sq = np.cumsum(proj**2)
+        max_available = Vt_raw.shape[0]
         s_raw_sq = S_raw**2
         # Denominator = sum over ALL d eigenvalues of W_uᵀ W_u (not just top-k).
         # Cache ships this via raw_right_singular_vectors; keeps the cumulative
         # energy fraction interpretable vs HARP's 95%-cutoff convention.
         total_raw_energy = float(total_sigma_sq) + 1e-10
         cum_raw_energy = np.cumsum(s_raw_sq)
-        max_available = Vt_raw.shape[0]
 
+        # Energy fractions are basis-only (no Δh dependence) — emit always.
         for r in rank_list:
             r_eff = int(min(r, max_available))
-            top_proj_sq = float(cum_proj_sq[r_eff - 1]) if r_eff > 0 else 0.0
-            null_sq = max(dh_norm_sq - top_proj_sq, 0.0)
-            out[f"null_ratio_raw_rank{r}"] = float(np.sqrt(null_sq) / dh_norm)
             out[f"raw_energy_rank{r}"] = (
-                float(cum_raw_energy[r_eff - 1] / total_raw_energy)
-                if r_eff > 0
-                else 0.0
+                float(cum_raw_energy[r_eff - 1] / total_raw_energy) if r_eff > 0 else 0.0
             )
+
+        dh_post_norm_sq = float(np.dot(dh_post, dh_post))
+        if dh_post_norm_sq <= 0.0:
+            for r in rank_list:
+                out[f"null_ratio_raw_post_rank{r}"] = 0.0
+            return out
+        dh_post_norm = float(np.sqrt(dh_post_norm_sq))
+        proj_post = Vt_raw @ dh_post.astype(np.float64)
+        cum_proj_post_sq = np.cumsum(proj_post**2)
+        for r in rank_list:
+            r_eff = int(min(r, max_available))
+            top_post_sq = float(cum_proj_post_sq[r_eff - 1]) if r_eff > 0 else 0.0
+            null_post_sq = max(dh_post_norm_sq - top_post_sq, 0.0)
+            out[f"null_ratio_raw_post_rank{r}"] = float(np.sqrt(null_post_sq) / dh_post_norm)
 
         return out
 
     def null_ratio_and_energy(
         self,
-        dh: np.ndarray,
+        dh_post: np.ndarray,
         p_t: np.ndarray,
         rank_values: Iterable[int],
     ) -> Dict[str, float]:
         """
         For each r in rank_values, emit:
-          null_ratio_rank{r}     = ||dh - V_top V_topᵀ dh|| / ||dh||
-          fisher_energy_rank{r}  = Σ_{i≤r} σ_i² / Σ_i σ_i²
+          null_ratio_post_rank{r} = ||dh_post - V_top V_topᵀ dh_post|| / ||dh_post||
+          fisher_energy_rank{r}   = Σ_{i≤r} σ_i² / Σ_i σ_i²
         V_top = top-r right singular vectors of sqrt(p_t)·W_u restricted to
         the top-`support` probability rows (same truncation as fim_lowrank).
-        Note: null is measured relative to that truncated support, not the
+        V_top lives in post-norm h-space (W_u acts on n(h), not h), so
+        `dh_post` must also be in post-norm h-space — the J_n-corrected
+        residual stream difference, computed by PRIComputer.compute_step
+        as h_t_post − h_prev_post via the model's own RMSNorm γ.
+
+        Note: null is measured relative to the truncated support, not the
         full vocab — null_ratio > 0 can reflect either within-support modes
         beyond rank r OR directions outside the row-span entirely.
         SVD is shared across all requested ranks.
+
+        `dh_post` is REQUIRED. The legacy pre-norm Δh path (which projected
+        h_t − h_prev onto the post-norm basis, a known coordinate mismatch)
+        was deleted 2026-04-26 along with the analyzer's `--columns legacy`
+        flag — see `wiki/results/v3.1-replicate.md` §Definitive 2026-04-26
+        verdict and the pre-registration enforcement gap writeup.
         """
         out: Dict[str, float] = {}
         rank_list = [int(r) for r in rank_values]
         if not rank_list:
             return out
 
-        dh_norm_sq = float(np.dot(dh, dh))
+        dh_norm_sq = float(np.dot(dh_post, dh_post))
         if dh_norm_sq <= 0.0:
             for r in rank_list:
-                out[f"null_ratio_rank{r}"] = 0.0
+                out[f"null_ratio_post_rank{r}"] = 0.0
                 out[f"fisher_energy_rank{r}"] = 0.0
             return out
         dh_norm = float(np.sqrt(dh_norm_sq))
@@ -1221,7 +1316,7 @@ class PRIComputer:
         W_s = self.output_projection.get_rows(idx)
 
         nan_out = {
-            **{f"null_ratio_rank{r}": float("nan") for r in rank_list},
+            **{f"null_ratio_post_rank{r}": float("nan") for r in rank_list},
             **{f"fisher_energy_rank{r}": float("nan") for r in rank_list},
         }
         if W_s is None or W_s.ndim != 2:
@@ -1235,7 +1330,7 @@ class PRIComputer:
 
         s_sq = S**2
         total_energy = float(np.sum(s_sq)) + 1e-10
-        proj = Vt @ dh
+        proj = Vt @ dh_post
         cum_proj_sq = np.cumsum(proj**2)
         cum_energy = np.cumsum(s_sq)
         max_available = Vt.shape[0]
@@ -1244,7 +1339,7 @@ class PRIComputer:
             r_eff = int(min(r, max_available))
             top_proj_sq = float(cum_proj_sq[r_eff - 1]) if r_eff > 0 else 0.0
             null_sq = max(dh_norm_sq - top_proj_sq, 0.0)
-            out[f"null_ratio_rank{r}"] = float(np.sqrt(null_sq) / dh_norm)
+            out[f"null_ratio_post_rank{r}"] = float(np.sqrt(null_sq) / dh_norm)
             out[f"fisher_energy_rank{r}"] = float(cum_energy[r_eff - 1] / total_energy) if r_eff > 0 else 0.0
 
         return out
@@ -1272,6 +1367,21 @@ class PRIComputer:
         cos_d = self.cosine_dist(h_t, h_prev)
         l2_d = self.l2_dist(h_t, h_prev)
         dh = h_t - h_prev
+        # J_n-corrected post-norm Δh (the geometry-consistent one used by all
+        # null_ratio_*_post_rank{r} columns). Hard-require final_norm_gamma:
+        # the legacy pre-norm-Δh-on-post-norm-basis path was deleted on
+        # 2026-04-26 along with the analyzer's `--columns legacy` flag, and
+        # the v2 (cosine, L2, d_F_*) metrics already use raw dh consistently.
+        if self.final_norm_gamma is None:
+            raise RuntimeError(
+                "PRIComputer was constructed without final_norm_gamma; "
+                "post-norm null_ratio columns are mandatory after the "
+                "2026-04-26 J_n-correction cleanup. Verify "
+                "_extract_final_rmsnorm_gamma succeeded for this model."
+            )
+        h_t_post = self.rmsnorm(h_t, self.final_norm_gamma)
+        h_prev_post = self.rmsnorm(h_prev, self.final_norm_gamma)
+        dh_post = h_t_post - h_prev_post
         z = self._project(dh)
 
         # Defensive guard for rare tokenizer/model mismatches.
@@ -1309,14 +1419,14 @@ class PRIComputer:
 
         v3_list = list(v3_rank_values)
         if v3_list:
-            v3_out = self.null_ratio_and_energy(dh, p_t, v3_list)
+            v3_out = self.null_ratio_and_energy(dh_post, p_t, v3_list)
             out.update(v3_out)
             if v3_capture_raw:
                 # E17b head-to-head: HARP-style static raw-W_u null_ratio
-                # at the same rank sweep. Same dh, same analysis plane;
+                # at the same rank sweep. Same dh_post, same analysis plane;
                 # different SVD basis. Basis is cached per model via
                 # OutputProjection.raw_right_singular_vectors.
-                v3_raw_out = self.null_ratio_raw_and_energy(dh, v3_list)
+                v3_raw_out = self.null_ratio_raw_and_energy(dh_post, v3_list)
                 out.update(v3_raw_out)
 
         return out
@@ -1566,8 +1676,26 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                 )
             continue
 
-        model, tokenizer, output_projection, layer_indices = load_model(model_name)
-        pri_comp = PRIComputer(output_projection)
+        model, tokenizer, output_projection, layer_indices = load_model(model_name, config)
+        # Extract final-RMSNorm γ for the J_n-corrected null_ratio path.
+        # PRIComputer needs the same normalization the model applies before
+        # W_u to emit geometry-consistent null_ratio_*_post_rank{r} columns.
+        # Hard-error on extraction failure: the legacy pre-norm-Δh fallback
+        # was deleted on 2026-04-26 (see wiki/results/v3.1-replicate.md
+        # §Definitive 2026-04-26 verdict + the pre-registration enforcement
+        # gap writeup). A model whose final norm we cannot resolve cannot
+        # produce sealed-spec metrics — skip it loudly rather than silently
+        # degrading to a buggy reading.
+        final_norm_gamma = _extract_final_rmsnorm_gamma(model)
+        if final_norm_gamma is None:
+            raise RuntimeError(
+                f"Could not extract final RMSNorm γ for {model_name}. "
+                "Post-norm null_ratio columns are mandatory after the "
+                "2026-04-26 cleanup. Add the model's norm class to "
+                "_extract_final_rmsnorm_gamma or skip this model in the "
+                "scope list."
+            )
+        pri_comp = PRIComputer(output_projection, final_norm_gamma=final_norm_gamma)
 
         # E17b: precompute raw-W_u top-k right singular vectors once per model
         # so per-sample compute_step just reads the cache. max_rank matches the
@@ -1690,20 +1818,27 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
             print(
                 f"    (gate_verbose=True — per-sample parse diagnostic below)"
             )
+        # Gate generation uses mlx_lm.generate (text-only path) instead of
+        # trace_sample to avoid materializing prefix_probs / gen_logits /
+        # gen_probs / gen_hidden on every gate sample. At Llama 3B V=128256,
+        # trace_sample allocates ~250 MB/sample × 20 samples ≈ 5 GB transient,
+        # filling the macOS compressor and collapsing MLX buffer-cache reuse
+        # (diagnosed 2026-04-24 via codex adversarial review). Mistral 7B at
+        # V=32000 was unaffected (~62 MB/sample), which is why this bug only
+        # surfaced on larger-vocab primaries. The gate only needs generated
+        # text — trace payload is pure overhead.
         n_correct = 0
         for _, row in controls.iterrows():
             sample_id = row["sample_id"]
             expected = str(row["correct_value"]).strip().upper()
             try:
-                trace = trace_sample(
+                generated = mlx_generate(
                     model,
                     tokenizer,
                     row["prompt"],
-                    layer_indices,
-                    output_projection,
-                    gate_tokens,
+                    max_tokens=gate_tokens,
+                    verbose=False,
                 )
-                generated = trace["generated_text"]
                 correct = check_answer(generated, row["correct_value"])
                 if correct:
                     n_correct += 1

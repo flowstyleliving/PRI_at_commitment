@@ -76,6 +76,29 @@ SCOPES = {
     "v3_1_qwen3": [
         "mlx-community/Qwen3-8B-4bit",
     ],
+    # v3_1_mistral_only / v3_1_qwen25_only — single-primary scopes for
+    # fresh-process per-model runs. Added 2026-04-24 after codex 2nd-rescue
+    # verdict: compressor state carried across models in the same process
+    # slows the later ones (observed 6× throughput drop on Mistral after
+    # Llama 3B gate-failed + cleanup in same process). Use these when you
+    # need to reset the MLX allocator between primaries. Not a sealed-gate
+    # re-specification — just a process-boundary tool.
+    "v3_1_mistral_only": [
+        "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+    ],
+    "v3_1_qwen25_only": [
+        "mlx-community/Qwen2.5-7B-Instruct-4bit",
+    ],
+    # v3_1_phi_only   — single-primary scope for re-validating Phi-3.5-mini
+    # under the v3.1 gate fixes (PR #7 stratified preflight + 3-tier parser,
+    # plus operational --gate-max-tokens 12 from 2026-04-24). Phi was
+    # excluded from the 2026-04-23 sealed run after gate-failing at
+    # 12/20=60% under the original parser + 256-token gate budget.
+    # Recovery here lifts Phi from "excluded" to descriptive companion;
+    # a clean fail confirms the model-specific finding. Not a sealed primary.
+    "v3_1_phi_only": [
+        "mlx-community/Phi-3.5-mini-instruct-4bit",
+    ],
     # v3_1_gemmas     — Phase 3 (optional) — Gemma 3-1B + Gemma 3-4B. Within-
     #                   family scale axis held fixed at architecture. Isolated
     #                   from Phase 1 because the full run_experiment loop with
@@ -83,6 +106,17 @@ SCOPES = {
     #                   Gemma checkpoint (Prereq 4 dryrun validated only
     #                   trace_sample + SVD at n=4/cell). ~40-60 min.
     "v3_1_gemmas": GEMMAS,
+    # v3_1_gemma4b_only — Phase 3 narrowed to Gemma 3-4B alone (2026-04-26).
+    #                   Gemma 1B was excluded after gate-fail at 11/20 = 55%
+    #                   on n=20 stratified controls (model-capability, not
+    #                   parser — defaults to "Answer: NO" on YES controls).
+    #                   Pipeline pre-validated end-to-end on both Gemmas at
+    #                   n=2/cell smoke (run-04) and n=10/cell pilot (run-05).
+    #                   Gemma 4B descriptive-only — cross-architecture point,
+    #                   not within-family scale (axis collapsed). ~25-30 min.
+    "v3_1_gemma4b_only": [
+        "mlx-community/gemma-3-4b-it-4bit",
+    ],
     # v3_1_main       — convenience alias: primaries + Qwen3 as a single run.
     #                   Preserved for backward compat with the 2026-04-24 plan
     #                   amendment; equivalent to running v3_1_primaries followed
@@ -129,6 +163,15 @@ def main() -> int:
         type=int,
         default=14,
         help="generation budget (default 14 — enough to cross into probe_4 regime)",
+    )
+    parser.add_argument(
+        "--layers",
+        nargs="+",
+        default=None,
+        help="override Config.layers_to_probe (default: final mid quarter). "
+             "Use `--layers final` for sealed-gate runs where only the final "
+             "layer is analyzed; drops main-run metric compute by ~3× "
+             "(skips mid+quarter layer iterations in the inner loop).",
     )
     parser.add_argument(
         "--seed", type=int, default=42, help="random seed (default 42)"
@@ -182,6 +225,21 @@ def main() -> int:
     cfg.seed = args.seed
     cfg.save_dir = str(out_dir)
 
+    # --layers override (2026-04-24): cuts main-run inner loop from 3 layers
+    # to 1 when the sealed analysis plane is final-layer only. Not a sealed
+    # re-specification — the sealed E18/E17b spec pins layer=final already;
+    # this just skips capturing mid/quarter data the sealed analyzer ignores.
+    # Keep None (default) to preserve full landscape data for diagnostics.
+    if args.layers is not None:
+        valid = {"final", "mid", "quarter"}
+        bad = [l for l in args.layers if l not in valid]
+        if bad:
+            raise SystemExit(
+                f"--layers got unknown value(s) {bad}; "
+                f"choose from {sorted(valid)}"
+            )
+        cfg.layers_to_probe = list(args.layers)
+
     # v3 capture schedule — default off. On only for E21 depth-profile work;
     # E17/E17b/E18/E19 operate on final-layer null_ratio which the v2 path
     # already emits via v3_rank_values + PRIComputer.
@@ -213,6 +271,7 @@ def main() -> int:
     print(f"  v3_rank_values={cfg.v3_rank_values}")
     print(f"  v3_capture={cfg.v3_capture}  v3_capture_raw (E17b)={cfg.v3_capture_raw}  "
           f"max_new_tokens={cfg.max_new_tokens}")
+    print(f"  layers_to_probe={cfg.layers_to_probe}")
     print(
         f"  gate: threshold={cfg.pilot_threshold:.0%}  "
         f"max_new_tokens={cfg.gate_max_new_tokens}  "
