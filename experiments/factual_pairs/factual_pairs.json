@@ -1,0 +1,542 @@
+[
+  {
+    "id": 0,
+    "category": "literature",
+    "question": "Who wrote the play 'Hamlet'?",
+    "correct_answer": "William Shakespeare",
+    "wrong_answer": "Charles Dickens",
+    "ctrl_prompt": "Question: Who wrote the play 'Hamlet'?\nProposed answer: William Shakespeare\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who wrote the play 'Hamlet'?\nProposed answer: Charles Dickens\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 1,
+    "category": "literature",
+    "question": "Who wrote 'The Great Gatsby'?",
+    "correct_answer": "F. Scott Fitzgerald",
+    "wrong_answer": "Ernest Hemingway",
+    "ctrl_prompt": "Question: Who wrote 'The Great Gatsby'?\nProposed answer: F. Scott Fitzgerald\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who wrote 'The Great Gatsby'?\nProposed answer: Ernest Hemingway\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 2,
+    "category": "literature",
+    "question": "Who wrote '1984'?",
+    "correct_answer": "George Orwell",
+    "wrong_answer": "Aldous Huxley",
+    "ctrl_prompt": "Question: Who wrote '1984'?\nProposed answer: George Orwell\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who wrote '1984'?\nProposed answer: Aldous Huxley\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 3,
+    "category": "literature",
+    "question": "Who wrote 'Pride and Prejudice'?",
+    "correct_answer": "Jane Austen",
+    "wrong_answer": "Charlotte Bront\u00eb",
+    "ctrl_prompt": "Question: Who wrote 'Pride and Prejudice'?\nProposed answer: Jane Austen\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who wrote 'Pride and Prejudice'?\nProposed answer: Charlotte Bront\u00eb\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 4,
+    "category": "literature",
+    "question": "Who wrote 'The Lord of the Rings'?",
+    "correct_answer": "J.R.R. Tolkien",
+    "wrong_answer": "C.S. Lewis",
+    "ctrl_prompt": "Question: Who wrote 'The Lord of the Rings'?\nProposed answer: J.R.R. Tolkien\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who wrote 'The Lord of the Rings'?\nProposed answer: C.S. Lewis\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 5,
+    "category": "literature",
+    "question": "Who wrote 'Crime and Punishment'?",
+    "correct_answer": "Fyodor Dostoevsky",
+    "wrong_answer": "Leo Tolstoy",
+    "ctrl_prompt": "Question: Who wrote 'Crime and Punishment'?\nProposed answer: Fyodor Dostoevsky\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who wrote 'Crime and Punishment'?\nProposed answer: Leo Tolstoy\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 6,
+    "category": "literature",
+    "question": "Who wrote 'One Hundred Years of Solitude'?",
+    "correct_answer": "Gabriel Garc\u00eda M\u00e1rquez",
+    "wrong_answer": "Mario Vargas Llosa",
+    "ctrl_prompt": "Question: Who wrote 'One Hundred Years of Solitude'?\nProposed answer: Gabriel Garc\u00eda M\u00e1rquez\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who wrote 'One Hundred Years of Solitude'?\nProposed answer: Mario Vargas Llosa\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 7,
+    "category": "literature",
+    "question": "Who wrote 'To Kill a Mockingbird'?",
+    "correct_answer": "Harper Lee",
+    "wrong_answer": "Truman Capote",
+    "ctrl_prompt": "Question: Who wrote 'To Kill a Mockingbird'?\nProposed answer: Harper Lee\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who wrote 'To Kill a Mockingbird'?\nProposed answer: Truman Capote\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 8,
+    "category": "literature",
+    "question": "Who wrote 'Moby-Dick'?",
+    "correct_answer": "Herman Melville",
+    "wrong_answer": "Nathaniel Hawthorne",
+    "ctrl_prompt": "Question: Who wrote 'Moby-Dick'?\nProposed answer: Herman Melville\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who wrote 'Moby-Dick'?\nProposed answer: Nathaniel Hawthorne\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 9,
+    "category": "literature",
+    "question": "Who wrote 'Beloved'?",
+    "correct_answer": "Toni Morrison",
+    "wrong_answer": "Alice Walker",
+    "ctrl_prompt": "Question: Who wrote 'Beloved'?\nProposed answer: Toni Morrison\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who wrote 'Beloved'?\nProposed answer: Alice Walker\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 10,
+    "category": "geography",
+    "question": "What is the capital of France?",
+    "correct_answer": "Paris",
+    "wrong_answer": "Lyon",
+    "ctrl_prompt": "Question: What is the capital of France?\nProposed answer: Paris\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the capital of France?\nProposed answer: Lyon\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 11,
+    "category": "geography",
+    "question": "What is the capital of Australia?",
+    "correct_answer": "Canberra",
+    "wrong_answer": "Sydney",
+    "ctrl_prompt": "Question: What is the capital of Australia?\nProposed answer: Canberra\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the capital of Australia?\nProposed answer: Sydney\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 12,
+    "category": "geography",
+    "question": "What is the capital of Brazil?",
+    "correct_answer": "Bras\u00edlia",
+    "wrong_answer": "Rio de Janeiro",
+    "ctrl_prompt": "Question: What is the capital of Brazil?\nProposed answer: Bras\u00edlia\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the capital of Brazil?\nProposed answer: Rio de Janeiro\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 13,
+    "category": "geography",
+    "question": "What is the capital of Canada?",
+    "correct_answer": "Ottawa",
+    "wrong_answer": "Toronto",
+    "ctrl_prompt": "Question: What is the capital of Canada?\nProposed answer: Ottawa\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the capital of Canada?\nProposed answer: Toronto\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 14,
+    "category": "geography",
+    "question": "What is the capital of Egypt?",
+    "correct_answer": "Cairo",
+    "wrong_answer": "Alexandria",
+    "ctrl_prompt": "Question: What is the capital of Egypt?\nProposed answer: Cairo\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the capital of Egypt?\nProposed answer: Alexandria\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 15,
+    "category": "geography",
+    "question": "What is the capital of South Korea?",
+    "correct_answer": "Seoul",
+    "wrong_answer": "Busan",
+    "ctrl_prompt": "Question: What is the capital of South Korea?\nProposed answer: Seoul\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the capital of South Korea?\nProposed answer: Busan\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 16,
+    "category": "geography",
+    "question": "What is the capital of Argentina?",
+    "correct_answer": "Buenos Aires",
+    "wrong_answer": "C\u00f3rdoba",
+    "ctrl_prompt": "Question: What is the capital of Argentina?\nProposed answer: Buenos Aires\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the capital of Argentina?\nProposed answer: C\u00f3rdoba\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 17,
+    "category": "geography",
+    "question": "What is the capital of Turkey?",
+    "correct_answer": "Ankara",
+    "wrong_answer": "Istanbul",
+    "ctrl_prompt": "Question: What is the capital of Turkey?\nProposed answer: Ankara\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the capital of Turkey?\nProposed answer: Istanbul\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 18,
+    "category": "geography",
+    "question": "What is the capital of Switzerland?",
+    "correct_answer": "Bern",
+    "wrong_answer": "Zurich",
+    "ctrl_prompt": "Question: What is the capital of Switzerland?\nProposed answer: Bern\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the capital of Switzerland?\nProposed answer: Zurich\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 19,
+    "category": "geography",
+    "question": "What is the capital of South Africa (executive)?",
+    "correct_answer": "Pretoria",
+    "wrong_answer": "Cape Town",
+    "ctrl_prompt": "Question: What is the capital of South Africa (executive)?\nProposed answer: Pretoria\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the capital of South Africa (executive)?\nProposed answer: Cape Town\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 20,
+    "category": "history",
+    "question": "Who was the first President of the United States?",
+    "correct_answer": "George Washington",
+    "wrong_answer": "Thomas Jefferson",
+    "ctrl_prompt": "Question: Who was the first President of the United States?\nProposed answer: George Washington\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who was the first President of the United States?\nProposed answer: Thomas Jefferson\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 21,
+    "category": "history",
+    "question": "Who painted the Mona Lisa?",
+    "correct_answer": "Leonardo da Vinci",
+    "wrong_answer": "Michelangelo",
+    "ctrl_prompt": "Question: Who painted the Mona Lisa?\nProposed answer: Leonardo da Vinci\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who painted the Mona Lisa?\nProposed answer: Michelangelo\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 22,
+    "category": "history",
+    "question": "Who composed the Fifth Symphony famous for its da-da-da-DUM motif?",
+    "correct_answer": "Ludwig van Beethoven",
+    "wrong_answer": "Wolfgang Amadeus Mozart",
+    "ctrl_prompt": "Question: Who composed the Fifth Symphony famous for its da-da-da-DUM motif?\nProposed answer: Ludwig van Beethoven\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who composed the Fifth Symphony famous for its da-da-da-DUM motif?\nProposed answer: Wolfgang Amadeus Mozart\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 23,
+    "category": "history",
+    "question": "Who developed the theory of general relativity?",
+    "correct_answer": "Albert Einstein",
+    "wrong_answer": "Isaac Newton",
+    "ctrl_prompt": "Question: Who developed the theory of general relativity?\nProposed answer: Albert Einstein\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who developed the theory of general relativity?\nProposed answer: Isaac Newton\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 24,
+    "category": "history",
+    "question": "Who was the first woman to win a Nobel Prize?",
+    "correct_answer": "Marie Curie",
+    "wrong_answer": "Rosalind Franklin",
+    "ctrl_prompt": "Question: Who was the first woman to win a Nobel Prize?\nProposed answer: Marie Curie\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who was the first woman to win a Nobel Prize?\nProposed answer: Rosalind Franklin\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 25,
+    "category": "history",
+    "question": "Who led non-violent civil disobedience against British rule in India?",
+    "correct_answer": "Mahatma Gandhi",
+    "wrong_answer": "Jawaharlal Nehru",
+    "ctrl_prompt": "Question: Who led non-violent civil disobedience against British rule in India?\nProposed answer: Mahatma Gandhi\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who led non-violent civil disobedience against British rule in India?\nProposed answer: Jawaharlal Nehru\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 26,
+    "category": "history",
+    "question": "Who was the first emperor of unified China?",
+    "correct_answer": "Qin Shi Huang",
+    "wrong_answer": "Han Wudi",
+    "ctrl_prompt": "Question: Who was the first emperor of unified China?\nProposed answer: Qin Shi Huang\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who was the first emperor of unified China?\nProposed answer: Han Wudi\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 27,
+    "category": "history",
+    "question": "Who painted 'The Starry Night'?",
+    "correct_answer": "Vincent van Gogh",
+    "wrong_answer": "Claude Monet",
+    "ctrl_prompt": "Question: Who painted 'The Starry Night'?\nProposed answer: Vincent van Gogh\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who painted 'The Starry Night'?\nProposed answer: Claude Monet\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 28,
+    "category": "history",
+    "question": "Who wrote 'The Origin of Species'?",
+    "correct_answer": "Charles Darwin",
+    "wrong_answer": "Alfred Russel Wallace",
+    "ctrl_prompt": "Question: Who wrote 'The Origin of Species'?\nProposed answer: Charles Darwin\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who wrote 'The Origin of Species'?\nProposed answer: Alfred Russel Wallace\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 29,
+    "category": "history",
+    "question": "Who was the longest-reigning British monarch as of 2024?",
+    "correct_answer": "Elizabeth II",
+    "wrong_answer": "Victoria",
+    "ctrl_prompt": "Question: Who was the longest-reigning British monarch as of 2024?\nProposed answer: Elizabeth II\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who was the longest-reigning British monarch as of 2024?\nProposed answer: Victoria\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 30,
+    "category": "science",
+    "question": "What is the chemical symbol for gold?",
+    "correct_answer": "Au",
+    "wrong_answer": "Ag",
+    "ctrl_prompt": "Question: What is the chemical symbol for gold?\nProposed answer: Au\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the chemical symbol for gold?\nProposed answer: Ag\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 31,
+    "category": "science",
+    "question": "What is the chemical symbol for sodium?",
+    "correct_answer": "Na",
+    "wrong_answer": "So",
+    "ctrl_prompt": "Question: What is the chemical symbol for sodium?\nProposed answer: Na\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the chemical symbol for sodium?\nProposed answer: So\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 32,
+    "category": "science",
+    "question": "What planet is known as the Red Planet?",
+    "correct_answer": "Mars",
+    "wrong_answer": "Jupiter",
+    "ctrl_prompt": "Question: What planet is known as the Red Planet?\nProposed answer: Mars\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What planet is known as the Red Planet?\nProposed answer: Jupiter\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 33,
+    "category": "science",
+    "question": "What is the largest planet in our solar system?",
+    "correct_answer": "Jupiter",
+    "wrong_answer": "Saturn",
+    "ctrl_prompt": "Question: What is the largest planet in our solar system?\nProposed answer: Jupiter\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the largest planet in our solar system?\nProposed answer: Saturn\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 34,
+    "category": "science",
+    "question": "What is the speed of light approximately (in meters per second)?",
+    "correct_answer": "300,000,000",
+    "wrong_answer": "150,000,000",
+    "ctrl_prompt": "Question: What is the speed of light approximately (in meters per second)?\nProposed answer: 300,000,000\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the speed of light approximately (in meters per second)?\nProposed answer: 150,000,000\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 35,
+    "category": "science",
+    "question": "What gas do plants primarily absorb during photosynthesis?",
+    "correct_answer": "Carbon dioxide",
+    "wrong_answer": "Oxygen",
+    "ctrl_prompt": "Question: What gas do plants primarily absorb during photosynthesis?\nProposed answer: Carbon dioxide\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What gas do plants primarily absorb during photosynthesis?\nProposed answer: Oxygen\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 36,
+    "category": "science",
+    "question": "What is the powerhouse of the cell?",
+    "correct_answer": "Mitochondria",
+    "wrong_answer": "Nucleus",
+    "ctrl_prompt": "Question: What is the powerhouse of the cell?\nProposed answer: Mitochondria\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the powerhouse of the cell?\nProposed answer: Nucleus\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 37,
+    "category": "science",
+    "question": "What is the most abundant gas in Earth's atmosphere?",
+    "correct_answer": "Nitrogen",
+    "wrong_answer": "Oxygen",
+    "ctrl_prompt": "Question: What is the most abundant gas in Earth's atmosphere?\nProposed answer: Nitrogen\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the most abundant gas in Earth's atmosphere?\nProposed answer: Oxygen\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 38,
+    "category": "science",
+    "question": "What is the hardest naturally occurring substance on Earth?",
+    "correct_answer": "Diamond",
+    "wrong_answer": "Quartz",
+    "ctrl_prompt": "Question: What is the hardest naturally occurring substance on Earth?\nProposed answer: Diamond\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the hardest naturally occurring substance on Earth?\nProposed answer: Quartz\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 39,
+    "category": "science",
+    "question": "Which element has the atomic number 1?",
+    "correct_answer": "Hydrogen",
+    "wrong_answer": "Helium",
+    "ctrl_prompt": "Question: Which element has the atomic number 1?\nProposed answer: Hydrogen\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Which element has the atomic number 1?\nProposed answer: Helium\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 40,
+    "category": "geography2",
+    "question": "What is the longest river in the world?",
+    "correct_answer": "Nile",
+    "wrong_answer": "Amazon",
+    "ctrl_prompt": "Question: What is the longest river in the world?\nProposed answer: Nile\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the longest river in the world?\nProposed answer: Amazon\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 41,
+    "category": "geography2",
+    "question": "What is the highest mountain in the world?",
+    "correct_answer": "Mount Everest",
+    "wrong_answer": "K2",
+    "ctrl_prompt": "Question: What is the highest mountain in the world?\nProposed answer: Mount Everest\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the highest mountain in the world?\nProposed answer: K2\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 42,
+    "category": "geography2",
+    "question": "What is the largest ocean on Earth?",
+    "correct_answer": "Pacific",
+    "wrong_answer": "Atlantic",
+    "ctrl_prompt": "Question: What is the largest ocean on Earth?\nProposed answer: Pacific\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the largest ocean on Earth?\nProposed answer: Atlantic\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 43,
+    "category": "geography2",
+    "question": "What desert is located in northern Africa?",
+    "correct_answer": "Sahara",
+    "wrong_answer": "Gobi",
+    "ctrl_prompt": "Question: What desert is located in northern Africa?\nProposed answer: Sahara\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What desert is located in northern Africa?\nProposed answer: Gobi\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 44,
+    "category": "geography2",
+    "question": "Which continent is the Sahara desert in?",
+    "correct_answer": "Africa",
+    "wrong_answer": "Asia",
+    "ctrl_prompt": "Question: Which continent is the Sahara desert in?\nProposed answer: Africa\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Which continent is the Sahara desert in?\nProposed answer: Asia\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 45,
+    "category": "geography2",
+    "question": "Which mountain range separates Europe from Asia?",
+    "correct_answer": "Ural",
+    "wrong_answer": "Caucasus",
+    "ctrl_prompt": "Question: Which mountain range separates Europe from Asia?\nProposed answer: Ural\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Which mountain range separates Europe from Asia?\nProposed answer: Caucasus\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 46,
+    "category": "geography2",
+    "question": "What is the smallest country by area in the world?",
+    "correct_answer": "Vatican City",
+    "wrong_answer": "Monaco",
+    "ctrl_prompt": "Question: What is the smallest country by area in the world?\nProposed answer: Vatican City\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: What is the smallest country by area in the world?\nProposed answer: Monaco\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 47,
+    "category": "geography2",
+    "question": "Which sea separates Europe from Africa?",
+    "correct_answer": "Mediterranean",
+    "wrong_answer": "Black Sea",
+    "ctrl_prompt": "Question: Which sea separates Europe from Africa?\nProposed answer: Mediterranean\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Which sea separates Europe from Africa?\nProposed answer: Black Sea\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 48,
+    "category": "geography2",
+    "question": "Which country has the most natural lakes?",
+    "correct_answer": "Canada",
+    "wrong_answer": "Russia",
+    "ctrl_prompt": "Question: Which country has the most natural lakes?\nProposed answer: Canada\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Which country has the most natural lakes?\nProposed answer: Russia\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 49,
+    "category": "geography2",
+    "question": "Mount Kilimanjaro is in which country?",
+    "correct_answer": "Tanzania",
+    "wrong_answer": "Kenya",
+    "ctrl_prompt": "Question: Mount Kilimanjaro is in which country?\nProposed answer: Tanzania\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Mount Kilimanjaro is in which country?\nProposed answer: Kenya\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 50,
+    "category": "companies",
+    "question": "Who founded Microsoft?",
+    "correct_answer": "Bill Gates",
+    "wrong_answer": "Steve Jobs",
+    "ctrl_prompt": "Question: Who founded Microsoft?\nProposed answer: Bill Gates\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who founded Microsoft?\nProposed answer: Steve Jobs\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 51,
+    "category": "companies",
+    "question": "Who founded Apple?",
+    "correct_answer": "Steve Jobs",
+    "wrong_answer": "Mark Zuckerberg",
+    "ctrl_prompt": "Question: Who founded Apple?\nProposed answer: Steve Jobs\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who founded Apple?\nProposed answer: Mark Zuckerberg\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 52,
+    "category": "companies",
+    "question": "Who founded Tesla Motors?",
+    "correct_answer": "Martin Eberhard",
+    "wrong_answer": "Elon Musk",
+    "ctrl_prompt": "Question: Who founded Tesla Motors?\nProposed answer: Martin Eberhard\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who founded Tesla Motors?\nProposed answer: Elon Musk\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 53,
+    "category": "companies",
+    "question": "Who founded Amazon?",
+    "correct_answer": "Jeff Bezos",
+    "wrong_answer": "Larry Page",
+    "ctrl_prompt": "Question: Who founded Amazon?\nProposed answer: Jeff Bezos\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who founded Amazon?\nProposed answer: Larry Page\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 54,
+    "category": "companies",
+    "question": "Who founded Facebook?",
+    "correct_answer": "Mark Zuckerberg",
+    "wrong_answer": "Jack Dorsey",
+    "ctrl_prompt": "Question: Who founded Facebook?\nProposed answer: Mark Zuckerberg\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who founded Facebook?\nProposed answer: Jack Dorsey\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 55,
+    "category": "companies",
+    "question": "Who founded SpaceX?",
+    "correct_answer": "Elon Musk",
+    "wrong_answer": "Jeff Bezos",
+    "ctrl_prompt": "Question: Who founded SpaceX?\nProposed answer: Elon Musk\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who founded SpaceX?\nProposed answer: Jeff Bezos\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 56,
+    "category": "companies",
+    "question": "Who founded the Ford Motor Company?",
+    "correct_answer": "Henry Ford",
+    "wrong_answer": "Walter Chrysler",
+    "ctrl_prompt": "Question: Who founded the Ford Motor Company?\nProposed answer: Henry Ford\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who founded the Ford Motor Company?\nProposed answer: Walter Chrysler\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 57,
+    "category": "companies",
+    "question": "Who co-founded Google with Sergey Brin?",
+    "correct_answer": "Larry Page",
+    "wrong_answer": "Eric Schmidt",
+    "ctrl_prompt": "Question: Who co-founded Google with Sergey Brin?\nProposed answer: Larry Page\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who co-founded Google with Sergey Brin?\nProposed answer: Eric Schmidt\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 58,
+    "category": "companies",
+    "question": "Who founded Twitter?",
+    "correct_answer": "Jack Dorsey",
+    "wrong_answer": "Evan Williams",
+    "ctrl_prompt": "Question: Who founded Twitter?\nProposed answer: Jack Dorsey\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who founded Twitter?\nProposed answer: Evan Williams\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  },
+  {
+    "id": 59,
+    "category": "companies",
+    "question": "Who founded IKEA?",
+    "correct_answer": "Ingvar Kamprad",
+    "wrong_answer": "Karl Lindgren",
+    "ctrl_prompt": "Question: Who founded IKEA?\nProposed answer: Ingvar Kamprad\nIs this answer correct? Reply YES or NO.\nAnswer:",
+    "contr_prompt": "Question: Who founded IKEA?\nProposed answer: Karl Lindgren\nIs this answer correct? Reply YES or NO.\nAnswer:"
+  }
+]

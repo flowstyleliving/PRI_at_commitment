@@ -1,0 +1,61 @@
+question_id,category,question,correct_answer,wrong_answer,correct_first_tok_id,wrong_first_tok_id,top1_token_id,top1_token_decoded,top1_prob,entropy,surprise_on_correct_first_tok,surprise_on_wrong_first_tok,log_p_correct_over_p_wrong,top1_is_correct_first,top1_is_wrong_first
+0,literature,Who wrote the play 'Hamlet'?,William Shakespeare,Charles Dickens,1,1,5014,William,0.7906790971755981,0.7783390283584595,26.149024963378906,26.149024963378906,0.0,False,False
+1,literature,Who wrote 'The Great Gatsby'?,F. Scott Fitzgerald,Ernest Hemingway,1,1,1169,F,0.90584397315979,0.4364309310913086,26.023662567138672,26.023662567138672,0.0,False,False
+2,literature,Who wrote '1984'?,George Orwell,Aldous Huxley,1,1,5931,George,0.9782137274742126,0.15210257470607758,27.254188537597656,27.254188537597656,0.0,False,False
+3,literature,Who wrote 'Pride and Prejudice'?,Jane Austen,Charlotte Brontë,1,1,11573,Jane,0.7328965663909912,1.0993181467056274,25.77383041381836,25.77383041381836,0.0,False,False
+4,literature,Who wrote 'The Lord of the Rings'?,J.R.R. Tolkien,C.S. Lewis,1,1,1243,J,0.9406247138977051,0.33273187279701233,26.68617057800293,26.68617057800293,0.0,False,False
+5,literature,Who wrote 'Crime and Punishment'?,Fyodor Dostoevsky,Leo Tolstoy,1,1,1169,F,0.7385213971138,0.930065393447876,26.230920791625977,26.230920791625977,0.0,False,False
+6,literature,Who wrote 'One Hundred Years of Solitude'?,Gabriel García Márquez,Mario Vargas Llosa,1,1,19572,Gabriel,0.8879253268241882,0.591205894947052,26.22159194946289,26.22159194946289,0.0,False,False
+7,literature,Who wrote 'To Kill a Mockingbird'?,Harper Lee,Truman Capote,1,1,24417,Harper,0.9657533764839172,0.20926059782505035,26.92486000061035,26.92486000061035,0.0,False,False
+8,literature,Who wrote 'Moby-Dick'?,Herman Melville,Nathaniel Hawthorne,1,1,1150,H,0.8317649960517883,0.7291415929794312,26.253093719482422,26.253093719482422,0.0,False,False
+9,literature,Who wrote 'Beloved'?,Toni Morrison,Alice Walker,1,1,1088,T,0.8865879774093628,0.5761476159095764,25.203737258911133,25.203737258911133,0.0,False,False
+10,geography,What is the capital of France?,Paris,Lyon,1,1,6233,Paris,0.7290300726890564,0.6402965784072876,27.235761642456055,27.235761642456055,0.0,False,False
+11,geography,What is the capital of Australia?,Canberra,Sydney,1,1,3186,Can,0.6048335433006287,0.8445496559143066,26.9165096282959,26.9165096282959,0.0,False,False
+12,geography,What is the capital of Brazil?,Brasília,Rio de Janeiro,1,1,1183,The,0.5185887217521667,1.0313301086425781,27.29004669189453,27.29004669189453,0.0,False,False
+13,geography,What is the capital of Canada?,Ottawa,Toronto,1,1,15750,Ott,0.9329113960266113,0.2670598030090332,27.426910400390625,27.426910400390625,0.0,False,False
+14,geography,What is the capital of Egypt?,Cairo,Alexandria,1,1,1183,The,0.5944872498512268,0.7835568189620972,26.982892990112305,26.982892990112305,0.0,False,False
+15,geography,What is the capital of South Korea?,Seoul,Busan,1,1,1859,Se,0.6579482555389404,0.6898054480552673,27.39402198791504,27.39402198791504,0.0,False,False
+16,geography,What is the capital of Argentina?,Buenos Aires,Córdoba,1,1,26630,Buenos,0.6611837148666382,0.688791036605835,27.237043380737305,27.237043380737305,0.0,False,False
+17,geography,What is the capital of Turkey?,Ankara,Istanbul,1,1,1862,An,0.5382496118545532,0.796964704990387,27.265018463134766,27.265018463134766,0.0,False,False
+18,geography,What is the capital of Switzerland?,Bern,Zurich,1,1,8330,Bern,0.9118460416793823,0.3562505841255188,27.07213592529297,27.07213592529297,0.0,False,False
+19,geography,What is the capital of South Africa (executive)?,Pretoria,Cape Town,1,1,1135,P,0.6315795183181763,0.9771472811698914,25.9043025970459,25.9043025970459,0.0,False,False
+20,history,Who was the first President of the United States?,George Washington,Thomas Jefferson,1,1,5931,George,0.8189719915390015,0.6946569085121155,26.754915237426758,26.754915237426758,0.0,False,False
+21,history,Who painted the Mona Lisa?,Leonardo da Vinci,Michelangelo,1,1,12383,Leon,0.8822251558303833,0.4717418849468231,26.521921157836914,26.521921157836914,0.0,False,False
+22,history,Who composed the Fifth Symphony famous for its da-da-da-DUM motif?,Ludwig van Beethoven,Wolfgang Amadeus Mozart,1,1,25396,Ludwig,0.9400899410247803,0.36312153935432434,25.754886627197266,25.754886627197266,0.0,False,False
+23,history,Who developed the theory of general relativity?,Albert Einstein,Isaac Newton,1,1,13328,Albert,0.9385663866996765,0.3003210425376892,26.589214324951172,26.589214324951172,0.0,False,False
+24,history,Who was the first woman to win a Nobel Prize?,Marie Curie,Rosalind Franklin,1,1,13731,Marie,0.8885027766227722,0.6848764419555664,24.570234298706055,24.570234298706055,0.0,False,False
+25,history,Who led non-violent civil disobedience against British rule in India?,Mahatma Gandhi,Jawaharlal Nehru,1,1,11715,Mah,0.8684036135673523,0.43170374631881714,27.53396224975586,27.53396224975586,0.0,False,False
+26,history,Who was the first emperor of unified China?,Qin Shi Huang,Han Wudi,1,1,1954,Q,0.8661277890205383,0.6158082485198975,26.4274845123291,26.4274845123291,0.0,False,False
+27,history,Who painted 'The Starry Night'?,Vincent van Gogh,Claude Monet,1,1,21171,Vincent,0.8912043571472168,0.501919150352478,27.129730224609375,27.129730224609375,0.0,False,False
+28,history,Who wrote 'The Origin of Species'?,Charles Darwin,Alfred Russel Wallace,1,1,7195,Charles,0.9502909779548645,0.28820645809173584,26.979005813598633,26.979005813598633,0.0,False,False
+29,history,Who was the longest-reigning British monarch as of 2024?,Elizabeth II,Victoria,1,1,10992,Queen,0.3941647410392761,1.6424890756607056,26.026838302612305,26.026838302612305,0.0,False,False
+30,science,What is the chemical symbol for gold?,Au,Ag,1,1,10547,Au,0.9649865627288818,0.1808261126279831,27.212547302246094,27.212547302246094,0.0,False,False
+31,science,What is the chemical symbol for sodium?,Na,So,1,1,7852,Na,0.9928882718086243,0.05328233912587166,27.596363067626953,27.596363067626953,0.0,False,False
+32,science,What planet is known as the Red Planet?,Mars,Jupiter,1,1,16566,Mars,0.9833580851554871,0.11951428651809692,27.352497100830078,27.352497100830078,0.0,False,False
+33,science,What is the largest planet in our solar system?,Jupiter,Saturn,1,1,1243,J,0.9036630988121033,0.3568274676799774,27.294347763061523,27.294347763061523,0.0,False,False
+34,science,What is the speed of light approximately (in meters per second)?,"300,000,000","150,000,000",1,1,29473,,0.45292022824287415,1.5078098773956299,25.777816772460938,25.777816772460938,0.0,False,False
+35,science,What gas do plants primarily absorb during photosynthesis?,Carbon dioxide,Oxygen,1,1,3132,Car,0.982429027557373,0.13224460184574127,27.36935806274414,27.36935806274414,0.0,False,False
+36,science,What is the powerhouse of the cell?,Mitochondria,Nucleus,1,1,1119,M,0.8134360313415527,0.5731916427612305,27.30852699279785,27.30852699279785,0.0,False,False
+37,science,What is the most abundant gas in Earth's atmosphere?,Nitrogen,Oxygen,1,1,1186,N,0.988899290561676,0.08964578807353973,27.181947708129883,27.181947708129883,0.0,False,False
+38,science,What is the hardest naturally occurring substance on Earth?,Diamond,Quartz,1,1,25959,Diamond,0.7072412371635437,1.1552724838256836,23.862098693847656,23.862098693847656,0.0,False,False
+39,science,Which element has the atomic number 1?,Hydrogen,Helium,1,1,1150,H,0.9935484528541565,0.04783005639910698,27.416494369506836,27.416494369506836,0.0,False,False
+40,geography2,What is the longest river in the world?,Nile,Amazon,1,1,1183,The,0.935621976852417,0.3204287588596344,27.103899002075195,27.103899002075195,0.0,False,False
+41,geography2,What is the highest mountain in the world?,Mount Everest,K2,1,1,8380,Mount,0.628629207611084,1.098197102546692,26.67939567565918,26.67939567565918,0.0,False,False
+42,geography2,What is the largest ocean on Earth?,Pacific,Atlantic,1,1,1183,The,0.7026720643043518,0.681265115737915,27.462987899780273,27.462987899780273,0.0,False,False
+43,geography2,What desert is located in northern Africa?,Sahara,Gobi,1,1,1086,S,0.5127940773963928,0.74651038646698,26.731592178344727,26.731592178344727,0.0,False,False
+44,geography2,Which continent is the Sahara desert in?,Africa,Asia,1,1,8478,Africa,0.9425563216209412,0.23823946714401245,27.603219985961914,27.603219985961914,0.0,False,False
+45,geography2,Which mountain range separates Europe from Asia?,Ural,Caucasus,1,1,1183,The,0.8978124260902405,0.4788725972175598,26.700254440307617,26.700254440307617,0.0,False,False
+46,geography2,What is the smallest country by area in the world?,Vatican City,Monaco,1,1,1318,V,0.6721979379653931,0.9782787561416626,23.325029373168945,23.325029373168945,0.0,False,False
+47,geography2,Which sea separates Europe from Africa?,Mediterranean,Black Sea,1,1,27616,Mediterranean,0.5033496618270874,0.803002119064331,26.85711097717285,26.85711097717285,0.0,False,False
+48,geography2,Which country has the most natural lakes?,Canada,Russia,1,1,6850,Canada,0.9299774765968323,0.44511622190475464,25.52485466003418,25.52485466003418,0.0,False,False
+49,geography2,Mount Kilimanjaro is in which country?,Tanzania,Kenya,1,1,8380,Mount,0.5232162475585938,0.7866158485412598,27.30087661743164,27.30087661743164,0.0,False,False
+50,companies,Who founded Microsoft?,Bill Gates,Steve Jobs,1,1,7270,Bill,0.7834233641624451,0.8186901807785034,26.73508071899414,26.73508071899414,0.0,False,False
+51,companies,Who founded Apple?,Steve Jobs,Mark Zuckerberg,1,1,11349,Steve,0.8045247197151184,0.7993622422218323,26.424442291259766,26.424442291259766,0.0,False,False
+52,companies,Who founded Tesla Motors?,Martin Eberhard,Elon Musk,1,1,26455,Tes,0.5071616768836975,1.2940549850463867,23.782386779785156,23.782386779785156,0.0,False,False
+53,companies,Who founded Amazon?,Jeff Bezos,Larry Page,1,1,9469,Amazon,0.7362053394317627,0.7043079137802124,26.79816246032715,26.79816246032715,0.0,False,False
+54,companies,Who founded Facebook?,Mark Zuckerberg,Jack Dorsey,1,1,4423,Mark,0.7648617029190063,0.7128108143806458,26.721467971801758,26.721467971801758,0.0,False,False
+55,companies,Who founded SpaceX?,Elon Musk,Jeff Bezos,1,1,2512,El,0.6508107781410217,0.7309839725494385,26.662817001342773,26.662817001342773,0.0,False,False
+56,companies,Who founded the Ford Motor Company?,Henry Ford,Walter Chrysler,1,1,7576,Henry,0.9216768741607666,0.42630869150161743,26.163347244262695,26.163347244262695,0.0,False,False
+57,companies,Who co-founded Google with Sergey Brin?,Larry Page,Eric Schmidt,1,1,20629,Larry,0.9921950101852417,0.07429910451173782,27.072772979736328,27.072772979736328,0.0,False,False
+58,companies,Who founded Twitter?,Jack Dorsey,Evan Williams,1,1,12458,Twitter,0.46213942766189575,1.4591524600982666,24.320640563964844,24.320640563964844,0.0,False,False
+59,companies,Who founded IKEA?,Ingvar Kamprad,Karl Lindgren,1,1,20616,Ing,0.7386676669120789,0.9144518971443176,23.440004348754883,23.440004348754883,0.0,False,False
