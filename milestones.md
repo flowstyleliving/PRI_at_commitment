@@ -2,6 +2,26 @@
 
 > Personal milestone log for the Furnace research arc — externally-facing, curated, reverse-chronological. Distinct from [log](log.md) (raw session notes) and [results/history](results/history.md) (append-only experimental log). Edit freely; jargon defined inline where it helps a non-specialist reader.
 
+<!--
+WRITING CONVENTION (invisible when rendered — keep entries to this shape):
+
+  ### YYYY-MM-DD — short headline (≤ 8 words ideally)
+  One paragraph, 2–4 sentences.
+    · Sentence 1: what shipped, in plain words. Lead with the takeaway.
+    · Middle: numbers / models / methods — densest part, but factual.
+    · Last: implication or open question.
+  → [optional cross-ref](path.md) at the very end.
+
+Rules:
+  • One topic per ### heading. If a date has two unrelated things, two entries.
+  • One paragraph default. Two only for genuinely two-act events (e.g. bug + retraction).
+  • Numbers up front, not buried behind setup prose.
+  • Cross-ref last (→ [...](...)), never mid-paragraph.
+  • No emojis in this file.
+  • Reverse-chronological: newest at top, oldest at bottom.
+  • Math / technical glyphs (ℏₛ, Δ, √, ≥, α, →) are allowed and preserved.
+-->
+
 ---
 
 ## 2026 — PRI era
