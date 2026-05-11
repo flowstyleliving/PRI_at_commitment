@@ -8,8 +8,15 @@
 
 > _Entries dated 2026-01-16 through 2026-02-18 below are the **tail of the SUP saga** (carried in the `anthropic-ai-safety` repo) and the moment of methodological split into the PRI track. Marked inline with `[SUP saga]` for clarity. PRI era proper begins at the 2026-01-22 PRI v1 paper and the 2026-03-02 `PRI_at_commitment` repo._
 
-### 2026-05-07 — v3.2 pre-reg amendment filed 📋
-Capture-only + descriptive-metric addition: closed-form `kl_discharged`, properly centered Fisher null-ratio (`null_ratio_centered_post_rank{r}` with the `−ppᵀ` correction), and `p_t_topk` capture for replay. Targets the 3-Fisher / 3-Raw split as a possible geometric artifact; sealed E18 / E17b primaries unchanged. → [results/v3.2-amendment](results/v3.2-amendment.md)
+### 2026-05-11 — Model-set expansion smoke + milestone log goes continuous 🪞
+Within-family scale-axis smoke: **Llama-3.1-8B passes** behavioral + adapter gates and is admitted into a new `v3_2_expansion_llama_8b` scope, giving Llama a 3B → 8B comparison the other primaries don't have. Mistral-Nemo, Phi-4-mini, Gemma-3-1B, and Dolphin-Nemo all fail the behavioral gate or adapter pipeline (diagnoses tracked in `wiki/v4-candidates.md §4 "Planned model-set expansion"`).
+
+Same day: this milestone log (`milestones.md`) gets a canonical home in the `PRI_at_commitment` repo, symlinked into the Obsidian vault for editing, and webhook-published to furnace.baby. **The chronicle starts following the same pattern the project designs for** — entropy-fed, memory-forming, continuously updating.
+
+### 2026-05-07 → 2026-05-08 — v3.2 amendment filed + adaptive-step analyzer 📋
+Pre-reg amendment (2026-05-07): capture-only + descriptive-metric addition — closed-form `kl_discharged`, properly centered Fisher null-ratio (`null_ratio_centered_post_rank{r}` with the `−ppᵀ` correction), and `gen_p_t_topk` capture for replay. New `v3_2_centered_bakeoff` scope runs a **three-way Fisher / Raw / Centered-Fisher comparison across six cross-architecture models** (Llama 3.2 3B, Mistral 7B, Qwen 2.5 7B, Qwen3 8B, Phi-3.5-mini, Gemma 3-4B). Seed 20260507; sealed E18 / E17b primaries unchanged.
+
+Pipeline patch (2026-05-08): `gen_token_id` capture per row, which unlocks the new **adaptive-step rupture analyzer** (`scripts/analyze_adaptive_step.py`, also pre-reg'd as v4-candidate #3). It finds the answer-commit step by decoding YES/NO tokens, then computes AUROC at three planes per model: *sealed* (`gen_step = 1`, the pinned v3.x analysis plane), *adaptive* (`gen_step = commit_step`, the actual answer-emission step), *adaptive_pre* (one step before commit). Tests whether per-model rupture concentrates at a step *other than* the sealed plane — and whether the 3-Fisher / 3-Raw split survives the adaptive view. → [results/v3.2-amendment](results/v3.2-amendment.md)
 
 ### 2026-05-06 — Junjie Hu (HARP first author) responds to PRI v3 outreach 🤝
 Sent the v3 paper PDF to Hu (Hu et al. 2025, *HARP: Hallucination Detection via Reasoning Subspace Projection*). Reply was warm, engaged, and specific — Hu identified the **"static SVD saturation vs. Fisher reweighting" regime distinction** as "a meaningful extension of the original perspective." Substantive technical feedback still pending his careful read. → [feedback/hu-anticipated-probes](feedback/hu-anticipated-probes.md)
