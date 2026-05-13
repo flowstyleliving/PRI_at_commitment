@@ -28,6 +28,9 @@ Rules:
 
 > _Entries dated 2026-01-16 through 2026-02-18 below are the **tail of the SUP saga** (carried in the `anthropic-ai-safety` repo) and the moment of methodological split into the PRI track. Marked inline with `[SUP saga]` for clarity. PRI era proper begins at the 2026-01-22 PRI v1 paper and the 2026-03-02 `PRI_at_commitment` repo._
 
+### 2026-05-12 — PRI calibrator ships, retires label-free claim
+`pri_calibrator.py` (440 LOC, schema v1.0) operationalizes per-(model, task) PRI rupture detection after the Codex adversarial review showed that the prior label-free meta-classifier claim was inflated — `auroc_signed` was peeking at held-out labels to flip sign. The calibrator takes a small labeled set (n=10-50 prompt+label pairs), traces each sample, sweeps an 8-cell metric panel under direction-preserving scoring with sign locked from the calibration data, bootstraps a 95% CI, and persists a versioned JSON profile with deployability warnings and reproducibility provenance (data hash + pipeline module hash). End-to-end at n=30 on Mistral-Nemo + ANLI R2: picks `d_F_full @ step 1` with AUROC=0.911, CI [0.778, 1.000], sign=−1 — same sign the full 200-sample cross-task analysis found, recovered from 30 labeled samples. The deployable PRI is now per-(model, task) calibration; downstream `pri_detector.py` consumer and a formal `tests/` directory are planned. → [v4-candidates §4](wiki/v4-candidates.md#4-meta-classifier-for-step-metric-rank-selection)
+
 ### 2026-05-11 — Milestone log goes continuous
 `milestones.md` gets a canonical home in `PRI_at_commitment`, symlinked into the Obsidian vault for editing, and webhook-published to furnace.baby. The chronicle starts following the project's own pattern — entropy-fed, memory-forming, continuously updating.
 
