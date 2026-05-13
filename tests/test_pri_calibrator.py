@@ -1,0 +1,367 @@
+"""Tests for pri_calibrator.py — schema dataclass, pure helpers, scoring,
+and end-to-end calibration (slow tier).
+
+Run with:
+    .venv/bin/pytest tests/test_pri_calibrator.py -m "not slow"   # fast unit tests
+    .venv/bin/pytest tests/test_pri_calibrator.py -m slow         # model-load tests
+"""
+from __future__ import annotations
+
+import dataclasses
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+from pri_calibrator import (  # noqa: E402
+    CalibrationProfile,
+    DEFAULT_PANEL,
+    SCHEMA_VERSION,
+    _bootstrap_auroc,
+    _cell_label,
+    _column_name,
+    _emit_warnings,
+    _load_calibration_jsonl,
+    _score_candidate,
+    calibrate,
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CalibrationProfile dataclass — schema v1.0
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestProfile:
+    def test_to_json_roundtrip(self, tmp_path, synthetic_profile_dict):
+        p = CalibrationProfile(**synthetic_profile_dict)
+        out = tmp_path / "p.json"
+        p.to_json(str(out))
+        p2 = CalibrationProfile.from_json(str(out))
+        assert p.detector == p2.detector
+        assert p.model == p2.model
+        assert p.task == p2.task
+        assert p.calibration_stats == p2.calibration_stats
+        assert p.provenance == p2.provenance
+        assert p.warnings == p2.warnings
+
+    def test_schema_version_mismatch_rejected(self, tmp_path, synthetic_profile_dict):
+        synthetic_profile_dict["schema_version"] = "99.0"
+        path = tmp_path / "bad.json"
+        path.write_text(json.dumps(synthetic_profile_dict))
+        with pytest.raises(ValueError, match=r"schema 99\.0 != supported 1\.0"):
+            CalibrationProfile.from_json(str(path))
+
+    def test_warnings_default_empty_list(self, synthetic_profile_dict):
+        d = dict(synthetic_profile_dict)
+        d.pop("warnings", None)
+        p = CalibrationProfile(**d)
+        assert p.warnings == []
+        # Mutating one instance's warnings must not leak to another's default.
+        p.warnings.append("x")
+        d2 = dict(synthetic_profile_dict)
+        d2.pop("warnings", None)
+        p2 = CalibrationProfile(**d2)
+        assert p2.warnings == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pure helpers — no model, no PRIComputer
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPureHelpers:
+    # _column_name table
+    @pytest.mark.parametrize("cell,expected", [
+        ((1, "scalar", "d_F_full"), "d_F_full"),
+        ((1, "scalar", "kl_discharged"), "kl_discharged"),
+        ((1, "Fisher", "r=1"), "null_ratio_post_rank1"),
+        ((3, "Fisher", "r=2"), "null_ratio_post_rank2"),
+        ((1, "Centered", "r=2"), "null_ratio_centered_post_rank2"),
+        ((1, "Centered", "r=4"), "null_ratio_centered_post_rank4"),
+        ((4, "Raw", "r=2"), "null_ratio_raw_post_rank2"),
+        ((3, "Raw", "r=21"), "null_ratio_raw_post_rank21"),
+    ])
+    def test_column_name_known_families(self, cell, expected):
+        assert _column_name(cell) == expected
+
+    def test_column_name_unknown_family_raises(self):
+        with pytest.raises(ValueError, match="unknown family"):
+            _column_name((1, "Banana", "r=1"))
+
+    @pytest.mark.parametrize("cell,expected", [
+        ((1, "scalar", "d_F_full"), "d_F_full @ step 1"),
+        ((1, "scalar", "kl_discharged"), "kl_discharged @ step 1"),
+        ((3, "Raw", "r=21"), "Raw r=21 @ step 3"),
+        ((4, "Centered", "r=4"), "Centered r=4 @ step 4"),
+    ])
+    def test_cell_label(self, cell, expected):
+        assert _cell_label(cell) == expected
+
+    def test_default_panel_shape(self):
+        # 8 cells, each (step, family, label)
+        assert len(DEFAULT_PANEL) == 8
+        for cell in DEFAULT_PANEL:
+            assert len(cell) == 3
+            step, fam, label = cell
+            assert isinstance(step, int) and step >= 1
+            assert fam in {"scalar", "Fisher", "Raw", "Centered"}
+            # _column_name should accept every panel cell
+            _column_name(cell)
+
+
+class TestLoadCalibrationJsonl:
+    def test_minimal(self, tmp_calibration_jsonl):
+        path = tmp_calibration_jsonl([("hello world", 0), ("goodbye", 1)])
+        prompts, labels, h = _load_calibration_jsonl(str(path))
+        assert prompts == ["hello world", "goodbye"]
+        assert list(labels) == [0, 1]
+        assert isinstance(h, str) and len(h) == 64  # sha256 hex
+
+    def test_deterministic_hash_same_content(self, tmp_calibration_jsonl):
+        rows = [("a", 0), ("b", 1), ("c", 0)]
+        p1 = tmp_calibration_jsonl(rows, filename="cal1.jsonl")
+        p2 = tmp_calibration_jsonl(rows, filename="cal2.jsonl")
+        _, _, h1 = _load_calibration_jsonl(str(p1))
+        _, _, h2 = _load_calibration_jsonl(str(p2))
+        assert h1 == h2
+
+    def test_hash_changes_on_reorder(self, tmp_calibration_jsonl):
+        p1 = tmp_calibration_jsonl([("a", 0), ("b", 1)], filename="cal1.jsonl")
+        p2 = tmp_calibration_jsonl([("b", 1), ("a", 0)], filename="cal2.jsonl")
+        _, _, h1 = _load_calibration_jsonl(str(p1))
+        _, _, h2 = _load_calibration_jsonl(str(p2))
+        assert h1 != h2
+
+    def test_invalid_label_raises(self, tmp_path):
+        path = tmp_path / "bad.jsonl"
+        path.write_text(json.dumps({"prompt": "x", "label": 2}) + "\n")
+        with pytest.raises(ValueError, match=r"label must be 0 or 1"):
+            _load_calibration_jsonl(str(path))
+
+    def test_empty_file_raises(self, tmp_path):
+        path = tmp_path / "empty.jsonl"
+        path.write_text("")
+        with pytest.raises(SystemExit, match="no calibration samples"):
+            _load_calibration_jsonl(str(path))
+
+    def test_blank_lines_skipped(self, tmp_path):
+        path = tmp_path / "with_blanks.jsonl"
+        path.write_text(
+            json.dumps({"prompt": "a", "label": 0}) + "\n"
+            "\n"
+            + json.dumps({"prompt": "b", "label": 1}) + "\n"
+        )
+        prompts, labels, _ = _load_calibration_jsonl(str(path))
+        assert prompts == ["a", "b"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Warning logic
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestEmitWarnings:
+    HEALTHY_KWARGS = dict(
+        n_calibration=30, n_pos=15, n_neg=15,
+        best_auroc=0.91, ci_lo=0.78, ci_hi=1.00,
+        panel_eval_counts={(1, "scalar", "d_F_full"): 30},
+    )
+
+    def test_clean_run_no_warnings(self):
+        w = _emit_warnings(**self.HEALTHY_KWARGS)
+        assert w == []
+
+    def test_small_n_fires(self):
+        kw = dict(self.HEALTHY_KWARGS, n_calibration=10, n_pos=5, n_neg=5,
+                  panel_eval_counts={(1, "scalar", "d_F_full"): 10})
+        w = _emit_warnings(**kw)
+        assert any("small_calibration_n" in x for x in w)
+
+    def test_low_auroc_fires(self):
+        kw = dict(self.HEALTHY_KWARGS, best_auroc=0.55)
+        w = _emit_warnings(**kw)
+        assert any("low_auroc" in x for x in w)
+
+    def test_wide_ci_fires(self):
+        kw = dict(self.HEALTHY_KWARGS, ci_lo=0.55, ci_hi=0.99)  # width 0.44
+        w = _emit_warnings(**kw)
+        assert any("wide_ci" in x for x in w)
+
+    def test_class_imbalance_fires(self):
+        kw = dict(self.HEALTHY_KWARGS, n_pos=24, n_neg=6,
+                  panel_eval_counts={(1, "scalar", "d_F_full"): 30})
+        w = _emit_warnings(**kw)
+        assert any("class_imbalance" in x for x in w)
+
+    def test_compose_multiple(self):
+        kw = dict(self.HEALTHY_KWARGS, n_calibration=8, n_pos=4, n_neg=4,
+                  best_auroc=0.55,
+                  panel_eval_counts={(1, "scalar", "d_F_full"): 8})
+        w = _emit_warnings(**kw)
+        assert any("small_calibration_n" in x for x in w)
+        assert any("low_auroc" in x for x in w)
+
+    def test_insufficient_coverage_fires(self):
+        kw = dict(self.HEALTHY_KWARGS,
+                  panel_eval_counts={
+                      (1, "scalar", "d_F_full"): 30,   # full
+                      (4, "Raw", "r=2"): 10,           # 10/30 < 80% — fires
+                  })
+        w = _emit_warnings(**kw)
+        assert any("insufficient_coverage_at_" in x for x in w)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scoring + bootstrap (synthetic data)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestScoring:
+    def test_perfect_separation_positive_sign(self, synthetic_scores_and_labels):
+        scores, labels = synthetic_scores_and_labels["perfect_pos"]
+        auc, sign, n = _score_candidate(scores, labels)
+        assert auc == pytest.approx(1.0)
+        assert sign == 1
+        assert n == 10
+
+    def test_perfect_separation_negative_sign(self, synthetic_scores_and_labels):
+        scores, labels = synthetic_scores_and_labels["perfect_neg"]
+        auc, sign, n = _score_candidate(scores, labels)
+        # Sign-agnostic AUROC still 1.0; sign is negative.
+        assert auc == pytest.approx(1.0)
+        assert sign == -1
+
+    def test_too_few_samples(self, synthetic_scores_and_labels):
+        scores, labels = synthetic_scores_and_labels["tiny"]
+        auc, sign, n = _score_candidate(scores, labels)
+        assert np.isnan(auc)
+        assert sign == 0
+
+    def test_single_class(self, synthetic_scores_and_labels):
+        scores, labels = synthetic_scores_and_labels["single_class"]
+        auc, sign, n = _score_candidate(scores, labels)
+        assert np.isnan(auc)
+        assert sign == 0
+
+    def test_nan_scores_dropped(self, synthetic_scores_and_labels):
+        scores, labels = synthetic_scores_and_labels["with_nans"]
+        # 7 finite scores remain: positions 0,2,4,5,7,8,9 → labels [0,0,0,1,1,1,1]
+        auc, sign, n = _score_candidate(scores, labels)
+        assert n == 7
+        assert auc == pytest.approx(1.0)  # finite half is perfectly separable
+        assert sign == 1
+
+    def test_random_data_near_chance(self, synthetic_scores_and_labels):
+        scores, labels = synthetic_scores_and_labels["random"]
+        auc, sign, n = _score_candidate(scores, labels)
+        # Should be near 0.5 but sign-agnostic AUROC is in [0.5, 1]
+        assert 0.5 <= auc <= 1.0
+        assert sign in {-1, 1}
+
+    def test_bootstrap_ci_brackets_point_perfect(self, synthetic_scores_and_labels):
+        scores, labels = synthetic_scores_and_labels["perfect_pos"]
+        ci_lo, ci_hi = _bootstrap_auroc(scores, labels, sign=1, n_bootstrap=500, seed=42)
+        # Perfect separation + locked sign → every bootstrap resample also perfect
+        assert ci_lo == pytest.approx(1.0)
+        assert ci_hi == pytest.approx(1.0)
+
+    def test_bootstrap_ci_seed_deterministic(self, synthetic_scores_and_labels):
+        scores, labels = synthetic_scores_and_labels["random"]
+        a1 = _bootstrap_auroc(scores, labels, sign=1, n_bootstrap=200, seed=42)
+        a2 = _bootstrap_auroc(scores, labels, sign=1, n_bootstrap=200, seed=42)
+        assert a1 == a2
+
+    def test_bootstrap_ci_locked_sign_inverts_for_wrong_direction(
+        self, synthetic_scores_and_labels
+    ):
+        """If we lock the WRONG sign on perfectly-separable data, the bootstrap
+        CI should collapse near 0.0 (anti-discrimination), not 1.0. This is
+        the property that makes direction-preserving scoring honest."""
+        scores, labels = synthetic_scores_and_labels["perfect_pos"]
+        ci_lo, ci_hi = _bootstrap_auroc(scores, labels, sign=-1, n_bootstrap=500, seed=42)
+        assert ci_lo == pytest.approx(0.0)
+        assert ci_hi == pytest.approx(0.0)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# End-to-end calibration (slow — loads a real model)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestIntegration:
+    @pytest.mark.slow
+    def test_calibrate_e2e_gemma_3_1b(
+        self, puzzle_calibration_jsonl, gemma_3_1b_slug
+    ):
+        """Full calibrate() on 20 synthetic puzzles + smallest cached model.
+        Asserts profile structure + plausible bounds, not exact AUROC."""
+        profile = calibrate(
+            model_slug=gemma_3_1b_slug,
+            calibration_jsonl_path=str(puzzle_calibration_jsonl),
+            task_label="unit_test_puzzles",
+            n_bootstrap=200,
+            max_new_tokens=8,
+            seed=42,
+        )
+        assert profile.schema_version == SCHEMA_VERSION
+        assert profile.model["slug"] == gemma_3_1b_slug
+        assert profile.model["output_projection_kind"] in {"lm_head", "tied_embed"}
+        assert profile.task["n_calibration"] == 20
+        assert profile.task["n_pos"] + profile.task["n_neg"] == 20
+        assert len(profile.task["data_hash_sha256"]) == 64
+
+        # Detector contract
+        assert profile.detector["gen_step"] >= 1
+        assert profile.detector["layer"] == "final"
+        assert profile.detector["alpha"] == 1.0
+        assert profile.detector["sign"] in {-1, 1}
+        assert profile.detector["metric"]["family"] in {"scalar", "Fisher", "Raw", "Centered"}
+
+        # Calibration stats sanity
+        auc = profile.calibration_stats["auroc"]
+        assert 0.0 <= auc <= 1.0
+        ci_lo = profile.calibration_stats["auroc_bootstrap_ci_lo"]
+        ci_hi = profile.calibration_stats["auroc_bootstrap_ci_hi"]
+        assert 0.0 <= ci_lo <= ci_hi <= 1.0
+        assert len(profile.calibration_stats["candidate_panel"]) == len(DEFAULT_PANEL)
+
+        # Provenance must be populated
+        assert profile.provenance["calibration_seed"] == 42
+        assert len(profile.provenance["pipeline_module_hash_sha256"]) == 64
+        assert len(profile.provenance["calibrator_module_hash_sha256"]) == 64
+
+    @pytest.mark.slow
+    def test_calibrate_determinism_same_seed_same_profile(
+        self, puzzle_calibration_jsonl, gemma_3_1b_slug
+    ):
+        """Two calibrate() runs with identical input must produce identical
+        metric/sign/AUROC/CI (provenance.calibrated_at_iso allowed to differ)."""
+        p1 = calibrate(
+            model_slug=gemma_3_1b_slug,
+            calibration_jsonl_path=str(puzzle_calibration_jsonl),
+            n_bootstrap=200, max_new_tokens=8, seed=42,
+        )
+        p2 = calibrate(
+            model_slug=gemma_3_1b_slug,
+            calibration_jsonl_path=str(puzzle_calibration_jsonl),
+            n_bootstrap=200, max_new_tokens=8, seed=42,
+        )
+        assert p1.detector == p2.detector
+        assert p1.calibration_stats == p2.calibration_stats
+        assert p1.task == p2.task
+        assert p1.model == p2.model
+        # Provenance: hashes match; only the timestamp can differ
+        assert (
+            p1.provenance["pipeline_module_hash_sha256"]
+            == p2.provenance["pipeline_module_hash_sha256"]
+        )
+        assert (
+            p1.provenance["calibrator_module_hash_sha256"]
+            == p2.provenance["calibrator_module_hash_sha256"]
+        )
