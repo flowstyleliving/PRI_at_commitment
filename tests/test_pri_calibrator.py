@@ -27,6 +27,7 @@ from pri_calibrator import (  # noqa: E402
     _column_name,
     _emit_warnings,
     _load_calibration_jsonl,
+    _nested_bootstrap_oob_auroc,
     _score_candidate,
     calibrate,
 )
@@ -54,7 +55,7 @@ class TestProfile:
         synthetic_profile_dict["schema_version"] = "99.0"
         path = tmp_path / "bad.json"
         path.write_text(json.dumps(synthetic_profile_dict))
-        with pytest.raises(ValueError, match=r"schema 99\.0 != supported 1\.0"):
+        with pytest.raises(ValueError, match=r"schema 99\.0 != supported 1\.1"):
             CalibrationProfile.from_json(str(path))
 
     def test_warnings_default_empty_list(self, synthetic_profile_dict):
@@ -290,6 +291,106 @@ class TestScoring:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Nested OOB bootstrap (Codex review fix for post-selection bias)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestNestedBootstrap:
+    def test_oob_with_separable_data_recovers_high_auroc(self):
+        """Two cells in the panel: one is perfect, one is pure noise.
+        Nested bootstrap should pick the perfect cell in most rounds,
+        winner_stability should be high, and OOB AUROC should be near 1.0.
+        """
+        n = 30
+        rng = np.random.RandomState(0)
+        labels = np.array([0]*15 + [1]*15, dtype=np.int32)
+        # Column 0: perfectly separable (will be picked); column 1: noise.
+        score_matrix = np.column_stack([
+            np.array([float(y) + rng.normal(0, 0.05) for y in labels]),
+            rng.randn(n),
+        ])
+        panel = [(1, "scalar", "d_F_full"), (1, "scalar", "kl_discharged")]
+        stats = _nested_bootstrap_oob_auroc(
+            score_matrix, labels, panel, n_bootstrap=500, seed=42,
+        )
+        assert stats["oob_n_bootstrap_used"] > 400
+        assert stats["oob_auroc_median"] > 0.9
+        # Winner should be the separable cell on almost every round.
+        assert stats["winner_stability"] > 0.9
+        # The dominant winner label should match cell 0 (d_F_full).
+        assert "d_F_full @ step 1" in stats["winner_counts"]
+
+    def test_oob_unstable_when_two_cells_tie(self):
+        """Two cells with identical noisy signal: winner choice is roughly
+        50/50 across resamples, winner_stability should be ~0.5."""
+        n = 30
+        rng = np.random.RandomState(1)
+        labels = np.array([0]*15 + [1]*15, dtype=np.int32)
+        # Both columns: same weak signal + independent noise → tie.
+        base = np.array([float(y) for y in labels])
+        score_matrix = np.column_stack([
+            base + rng.normal(0, 1.0, size=n),
+            base + rng.normal(0, 1.0, size=n),
+        ])
+        panel = [(1, "scalar", "d_F_full"), (1, "scalar", "kl_discharged")]
+        stats = _nested_bootstrap_oob_auroc(
+            score_matrix, labels, panel, n_bootstrap=500, seed=42,
+        )
+        # Neither cell should dominate — stability well below 0.9 (the value
+        # we'd get if one cell were truly better).
+        assert stats["winner_stability"] < 0.9
+
+    def test_oob_seed_deterministic(self):
+        n = 20
+        rng = np.random.RandomState(2)
+        labels = np.array([0]*10 + [1]*10, dtype=np.int32)
+        score_matrix = rng.randn(n, 3)
+        panel = [(1, "scalar", "d_F_full"), (1, "scalar", "kl_discharged"), (1, "Fisher", "r=1")]
+        s1 = _nested_bootstrap_oob_auroc(score_matrix, labels, panel, n_bootstrap=200, seed=7)
+        s2 = _nested_bootstrap_oob_auroc(score_matrix, labels, panel, n_bootstrap=200, seed=7)
+        # Float comparison is exact because we use np.random with the same seed.
+        assert s1["oob_auroc_median"] == s2["oob_auroc_median"]
+        assert s1["oob_auroc_ci_lo"] == s2["oob_auroc_ci_lo"]
+        assert s1["oob_auroc_ci_hi"] == s2["oob_auroc_ci_hi"]
+        assert s1["winner_stability"] == s2["winner_stability"]
+
+
+class TestWarningsOob:
+    HEALTHY_KWARGS = dict(
+        n_calibration=30, n_pos=15, n_neg=15,
+        best_auroc=0.91, ci_lo=0.78, ci_hi=1.00,
+        panel_eval_counts={(1, "scalar", "d_F_full"): 30},
+    )
+
+    def test_oob_low_auroc_fires(self):
+        kw = dict(self.HEALTHY_KWARGS,
+                  oob_auroc_median=0.50, winner_stability=0.9)
+        w = _emit_warnings(**kw)
+        assert any("oob_low_auroc" in x for x in w)
+
+    def test_large_oob_in_sample_gap_fires(self):
+        # in-sample 0.91, OOB 0.65 → gap 0.26 > 0.15
+        kw = dict(self.HEALTHY_KWARGS,
+                  oob_auroc_median=0.65, winner_stability=0.9)
+        w = _emit_warnings(**kw)
+        assert any("large_oob_in_sample_gap" in x for x in w)
+
+    def test_winner_unstable_fires(self):
+        kw = dict(self.HEALTHY_KWARGS,
+                  oob_auroc_median=0.85, winner_stability=0.4)
+        w = _emit_warnings(**kw)
+        assert any("winner_unstable" in x for x in w)
+
+    def test_oob_warnings_silent_when_healthy(self):
+        kw = dict(self.HEALTHY_KWARGS,
+                  oob_auroc_median=0.85, winner_stability=0.9)
+        w = _emit_warnings(**kw)
+        assert not any("oob_low_auroc" in x for x in w)
+        assert not any("large_oob_in_sample_gap" in x for x in w)
+        assert not any("winner_unstable" in x for x in w)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # End-to-end calibration (slow — loads a real model)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -323,7 +424,7 @@ class TestIntegration:
         assert profile.detector["sign"] in {-1, 1}
         assert profile.detector["metric"]["family"] in {"scalar", "Fisher", "Raw", "Centered"}
 
-        # Calibration stats sanity
+        # In-sample stats (post-selection, legacy semantics)
         auc = profile.calibration_stats["auroc"]
         assert 0.0 <= auc <= 1.0
         ci_lo = profile.calibration_stats["auroc_bootstrap_ci_lo"]
@@ -331,10 +432,32 @@ class TestIntegration:
         assert 0.0 <= ci_lo <= ci_hi <= 1.0
         assert len(profile.calibration_stats["candidate_panel"]) == len(DEFAULT_PANEL)
 
-        # Provenance must be populated
+        # OOB stats — the honest deployment estimate (v1.1)
+        assert "oob_auroc_median" in profile.calibration_stats
+        assert "oob_auroc_ci_lo" in profile.calibration_stats
+        assert "oob_auroc_ci_hi" in profile.calibration_stats
+        assert profile.calibration_stats["oob_n_bootstrap_used"] >= 0
+        # winner_stability in [0, 1] when bootstrap produced any usable rounds
+        ws = profile.calibration_stats["winner_stability"]
+        if profile.calibration_stats["oob_n_bootstrap_used"] > 0:
+            assert 0.0 <= ws <= 1.0
+        # winner_counts: dict, non-negative integer counts
+        assert isinstance(profile.calibration_stats["winner_counts"], dict)
+        for label, count in profile.calibration_stats["winner_counts"].items():
+            assert isinstance(label, str)
+            assert isinstance(count, int) and count >= 0
+
+        # Provenance must be populated for ALL score-critical artifacts (v1.1)
         assert profile.provenance["calibration_seed"] == 42
         assert len(profile.provenance["pipeline_module_hash_sha256"]) == 64
+        assert len(profile.provenance["io_plugins_module_hash_sha256"]) == 64
+        assert len(profile.provenance["model_adapters_module_hash_sha256"]) == 64
         assert len(profile.provenance["calibrator_module_hash_sha256"]) == 64
+        # model_snapshot_sha may be None (uncached) but if present must be 40-char hex
+        snap = profile.provenance["model_snapshot_sha"]
+        if snap is not None:
+            assert len(snap) == 40
+            assert all(c in "0123456789abcdef" for c in snap)
 
     @pytest.mark.slow
     def test_calibrate_determinism_same_seed_same_profile(

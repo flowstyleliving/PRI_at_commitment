@@ -40,9 +40,9 @@ def tmp_calibration_jsonl(tmp_path) -> Callable[[List[Tuple[str, int]]], Path]:
 
 @pytest.fixture
 def synthetic_profile_dict() -> Dict[str, Any]:
-    """Minimal valid CalibrationProfile-shaped dict (schema v1.0)."""
+    """Minimal valid CalibrationProfile-shaped dict (schema v1.1)."""
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "model": {"slug": "test/fake-model", "output_projection_kind": "lm_head"},
         "task": {
             "label": "unit_test",
@@ -67,13 +67,22 @@ def synthetic_profile_dict() -> Dict[str, Any]:
             "auroc": 0.85,
             "auroc_bootstrap_ci_lo": 0.72,
             "auroc_bootstrap_ci_hi": 0.95,
+            "oob_auroc_median": 0.78,
+            "oob_auroc_ci_lo": 0.62,
+            "oob_auroc_ci_hi": 0.90,
+            "oob_n_bootstrap_used": 100,
+            "winner_stability": 0.85,
+            "winner_counts": {"d_F_full @ step 1": 85, "kl_discharged @ step 1": 15},
             "candidate_panel": [],
         },
         "provenance": {
             "calibration_seed": 42,
             "n_bootstrap": 100,
             "pipeline_module_hash_sha256": "deadbeef",
+            "io_plugins_module_hash_sha256": "0000aaaa",
+            "model_adapters_module_hash_sha256": "0000bbbb",
             "calibrator_module_hash_sha256": "cafef00d",
+            "model_snapshot_sha": None,
             "calibrated_at_iso": "2026-05-13T00:00:00Z",
             "max_new_tokens": 8,
         },

@@ -60,7 +60,16 @@ import pri_v2_io_plugins as io_plugins
 from analyze_adaptive_step import auroc_signed
 
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
+# v1.0 → v1.1 (2026-05-13): Codex adversarial review fixes.
+#   * calibration_stats gains oob_auroc_median + oob_auroc_ci_{lo,hi} +
+#     oob_n_bootstrap_used + winner_stability + winner_counts. The in-sample
+#     auroc/CI are still recorded (legacy semantics, useful for inspection),
+#     but the OOB stats are the honest "deployment-ready" estimate.
+#   * provenance gains io_plugins_module_hash_sha256 +
+#     model_adapters_module_hash_sha256 + model_snapshot_sha. Detector's
+#     strict mode validates ALL hashes, not just the pipeline file.
+#   * v1.0 profiles are rejected — re-calibrate.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -290,6 +299,124 @@ def _score_candidate(
     return float(auc), int(sign), n_eval
 
 
+def _nested_bootstrap_oob_auroc(
+    score_matrix: np.ndarray,
+    labels: np.ndarray,
+    panel: List[PanelCell],
+    n_bootstrap: int,
+    seed: int,
+) -> Dict[str, Any]:
+    """Nested bootstrap: at each round, resample the calibration set with
+    replacement to form an in-bag set; re-run the WHOLE cell selection
+    (best cell + sign-lock) on the in-bag samples; then evaluate the
+    selected (cell, sign) on the out-of-bag samples. The OOB AUROC
+    distribution is the honest deployment estimate — it accounts for the
+    selection bias that contaminates in-sample stats.
+
+    Also tracks how often each cell is selected across rounds; if one cell
+    wins ≪ 100% of resamples, the selection is noisy at this n and the
+    profile gets a `winner_unstable` warning.
+
+    Returns a dict with the OOB summary stats. If no round produced a
+    valid OOB AUROC (degenerate small-n case), returns a dict full of
+    NaNs.
+    """
+    from sklearn.metrics import roc_auc_score
+
+    n, n_cells = score_matrix.shape
+    rng = np.random.RandomState(seed + 1)  # +1 so it doesn't clash with _bootstrap_auroc's stream
+    oob_aurocs: List[float] = []
+    winner_counts: Dict[int, int] = {j: 0 for j in range(n_cells)}
+
+    for _ in range(n_bootstrap):
+        in_bag = rng.randint(0, n, size=n)
+        in_bag_set = set(in_bag.tolist())
+        oob = np.array([i for i in range(n) if i not in in_bag_set], dtype=np.int64)
+        if len(oob) < 4 or len(np.unique(labels[oob])) < 2:
+            continue
+
+        # Re-run cell selection inside this resample.
+        best_j = -1
+        best_distance = -1.0
+        best_sign = 0
+        for j in range(n_cells):
+            s_in = score_matrix[in_bag, j]
+            y_in = labels[in_bag]
+            auc, sign, _ = _score_candidate(s_in, y_in)
+            if np.isfinite(auc):
+                d = abs(auc - 0.5)
+                if d > best_distance:
+                    best_distance = d
+                    best_j = j
+                    best_sign = sign
+        if best_j < 0:
+            continue
+        winner_counts[best_j] += 1
+
+        # Evaluate the in-bag-selected cell on OOB with the in-bag-locked sign.
+        s_oob = score_matrix[oob, best_j] * best_sign
+        y_oob = labels[oob]
+        finite = np.isfinite(s_oob)
+        if finite.sum() < 4 or len(np.unique(y_oob[finite])) < 2:
+            continue
+        oob_aurocs.append(float(roc_auc_score(y_oob[finite], s_oob[finite])))
+
+    total_winners = sum(winner_counts.values())
+    if total_winners > 0:
+        max_count = max(winner_counts.values())
+        winner_stability = max_count / total_winners
+    else:
+        winner_stability = float("nan")
+    winner_counts_labeled = {
+        _cell_label(panel[j]): c for j, c in winner_counts.items() if c > 0
+    }
+    if not oob_aurocs:
+        return {
+            "oob_auroc_median": float("nan"),
+            "oob_auroc_ci_lo": float("nan"),
+            "oob_auroc_ci_hi": float("nan"),
+            "oob_n_bootstrap_used": 0,
+            "winner_stability": float(winner_stability) if np.isfinite(winner_stability) else float("nan"),
+            "winner_counts": winner_counts_labeled,
+        }
+    arr = np.array(oob_aurocs)
+    return {
+        "oob_auroc_median": float(np.median(arr)),
+        "oob_auroc_ci_lo": float(np.percentile(arr, 2.5)),
+        "oob_auroc_ci_hi": float(np.percentile(arr, 97.5)),
+        "oob_n_bootstrap_used": int(len(oob_aurocs)),
+        "winner_stability": float(winner_stability),
+        "winner_counts": winner_counts_labeled,
+    }
+
+
+def _resolve_model_snapshot_sha(model_slug: str) -> Optional[str]:
+    """Resolve the HuggingFace cache snapshot SHA for the model the calibrator
+    will load. This pins the exact model artifact (not just the slug). Returns
+    None if the model isn't cached locally or the path can't be parsed.
+
+    The HF cache layout puts each downloaded snapshot under
+        ~/.cache/huggingface/hub/models--{owner}--{repo}/snapshots/{commit_sha}/
+    so the parent directory of any file we resolve gives us the SHA directly.
+    """
+    try:
+        from huggingface_hub import try_to_load_from_cache
+    except ImportError:
+        return None
+    # config.json is the most reliable sentinel — present in every HF repo.
+    path = try_to_load_from_cache(repo_id=model_slug, filename="config.json")
+    if not path:
+        return None
+    try:
+        sha = Path(path).parent.name
+    except Exception:
+        return None
+    # Sanity: HF commit SHAs are 40-char hex.
+    if len(sha) != 40 or not all(c in "0123456789abcdef" for c in sha):
+        return None
+    return sha
+
+
 def _bootstrap_auroc(
     scores: np.ndarray,
     labels: np.ndarray,
@@ -336,6 +463,9 @@ def _emit_warnings(
     ci_lo: float,
     ci_hi: float,
     panel_eval_counts: Dict[PanelCell, int],
+    *,
+    oob_auroc_median: Optional[float] = None,
+    winner_stability: Optional[float] = None,
 ) -> List[str]:
     """Deployability warnings, baked into the profile so downstream consumers
     see them at load time. Don't raise — these are advisory; the researcher
@@ -358,6 +488,30 @@ def _emit_warnings(
             w.append(
                 f"insufficient_coverage_at_{_cell_label(cell)} "
                 f"(n_evaluated={n_eval}/{n_calibration}; model EOS'd before this step too often)"
+            )
+    # OOB-flavored warnings — these reflect the honest deployment estimate,
+    # not the optimistically-biased in-sample stats. Added 2026-05-13 to
+    # address the Codex review's selection-bias finding.
+    if oob_auroc_median is not None and np.isfinite(oob_auroc_median):
+        if oob_auroc_median < 0.60:
+            w.append(
+                f"oob_low_auroc (oob_median={oob_auroc_median:.3f}; <0.60 means the cell "
+                f"selection didn't generalize beyond the calibration sample)"
+            )
+        if np.isfinite(best_auroc):
+            gap = best_auroc - oob_auroc_median
+            if gap > 0.15:
+                w.append(
+                    f"large_oob_in_sample_gap (in_sample={best_auroc:.3f}, "
+                    f"oob_median={oob_auroc_median:.3f}, gap={gap:.3f}; "
+                    f"in-sample AUROC is materially over-stated by selection bias)"
+                )
+    if winner_stability is not None and np.isfinite(winner_stability):
+        if winner_stability < 0.70:
+            w.append(
+                f"winner_unstable (winner_stability={winner_stability:.2f}; "
+                f"a different panel cell wins on >30% of bootstrap resamples — "
+                f"the chosen cell is noise-driven at this n)"
             )
     return w
 
@@ -470,20 +624,47 @@ def calibrate(
     print(f"[calibrate] best cell: {_cell_label(best_cell)}  "
           f"AUROC={best_auroc:.3f}  sign={best_sign:+d}")
 
-    # Bootstrap CI on the locked sign.
+    # In-sample bootstrap CI on the locked sign (legacy semantics).
     ci_lo, ci_hi = _bootstrap_auroc(
         score_matrix[:, best_idx], labels, best_sign, n_bootstrap, seed,
     )
-    print(f"[calibrate] bootstrap 95%% CI: [{ci_lo:.3f}, {ci_hi:.3f}]  "
+    print(f"[calibrate] in-sample 95%% CI: [{ci_lo:.3f}, {ci_hi:.3f}]  "
           f"(n_bootstrap={n_bootstrap})")
+
+    # Nested OOB bootstrap — the honest deployment estimate. Re-runs cell
+    # selection inside each resample, evaluates on the out-of-bag samples.
+    # 2026-05-13: added in response to the Codex adversarial review's
+    # post-selection-bias finding.
+    print(f"[calibrate] nested OOB bootstrap...")
+    oob_stats = _nested_bootstrap_oob_auroc(
+        score_matrix, labels, panel, n_bootstrap, seed,
+    )
+    if oob_stats["oob_n_bootstrap_used"] > 0:
+        print(
+            f"[calibrate] OOB median AUROC: {oob_stats['oob_auroc_median']:.3f}  "
+            f"CI [{oob_stats['oob_auroc_ci_lo']:.3f}, {oob_stats['oob_auroc_ci_hi']:.3f}]  "
+            f"(used {oob_stats['oob_n_bootstrap_used']}/{n_bootstrap} rounds)"
+        )
+        print(
+            f"[calibrate] winner stability: {oob_stats['winner_stability']:.2f}  "
+            f"counts: {oob_stats['winner_counts']}"
+        )
+    else:
+        print("[calibrate] OOB bootstrap: 0/N usable rounds (calibration set "
+              "too small or degenerate); deployment estimate unavailable")
 
     warnings_list = _emit_warnings(
         n_calibration, n_pos, n_neg, best_auroc, ci_lo, ci_hi, panel_eval_counts,
+        oob_auroc_median=oob_stats["oob_auroc_median"],
+        winner_stability=oob_stats["winner_stability"],
     )
     for w in warnings_list:
         print(f"[calibrate]   WARNING: {w}")
 
     pipeline_path = REPO_ROOT / "pri_v2_mlx_pipeline.py"
+    io_plugins_path = REPO_ROOT / "pri_v2_io_plugins.py"
+    model_adapters_path = REPO_ROOT / "model_adapters.py"
+    model_snapshot_sha = _resolve_model_snapshot_sha(model_slug)
     profile = CalibrationProfile(
         schema_version=SCHEMA_VERSION,
         model={
@@ -510,16 +691,27 @@ def calibrate(
             "threshold": None,  # researcher chooses at deploy time (Youden's J etc.)
         },
         calibration_stats={
+            # In-sample post-selection — kept for inspection but NOT deployable.
             "auroc": best_auroc,
             "auroc_bootstrap_ci_lo": ci_lo,
             "auroc_bootstrap_ci_hi": ci_hi,
+            # OOB stats — the honest deployment estimate.
+            "oob_auroc_median": oob_stats["oob_auroc_median"],
+            "oob_auroc_ci_lo": oob_stats["oob_auroc_ci_lo"],
+            "oob_auroc_ci_hi": oob_stats["oob_auroc_ci_hi"],
+            "oob_n_bootstrap_used": oob_stats["oob_n_bootstrap_used"],
+            "winner_stability": oob_stats["winner_stability"],
+            "winner_counts": oob_stats["winner_counts"],
             "candidate_panel": candidate_results,
         },
         provenance={
             "calibration_seed": int(seed),
             "n_bootstrap": int(n_bootstrap),
             "pipeline_module_hash_sha256": _hash_file(pipeline_path),
+            "io_plugins_module_hash_sha256": _hash_file(io_plugins_path),
+            "model_adapters_module_hash_sha256": _hash_file(model_adapters_path),
             "calibrator_module_hash_sha256": _hash_file(REPO_ROOT / "pri_calibrator.py"),
+            "model_snapshot_sha": model_snapshot_sha,  # may be None if uncached
             "calibrated_at_iso": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "max_new_tokens": int(max_new_tokens),
         },

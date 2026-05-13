@@ -47,7 +47,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional  # noqa: F401 — List used in strict-mode drift list
 
 import numpy as np
 
@@ -108,9 +108,14 @@ class Detector:
     ) -> "Detector":
         """Load a CalibrationProfile and instantiate a ready-to-score Detector.
 
-        `strict_pipeline_hash=True` refuses to load if `pri_v2_mlx_pipeline.py`
-        has changed since calibration (recommended for production). When False,
-        prints a warning to stderr instead.
+        `strict_pipeline_hash=True` refuses to load if ANY score-critical
+        artifact has changed since calibration: the pipeline module, the
+        io_plugins module (prompt strategy + parser), the model_adapters
+        module, the calibrator module itself, OR the HuggingFace cache
+        snapshot of the model. When False, prints a warning to stderr.
+
+        Recommended for production: always pass `strict_pipeline_hash=True`
+        and re-calibrate when it fires.
         """
         profile = CalibrationProfile.from_json(profile_path)
         if profile.schema_version != SCHEMA_VERSION:
@@ -118,17 +123,44 @@ class Detector:
                 f"profile schema {profile.schema_version} != supported {SCHEMA_VERSION}"
             )
 
-        # Check pipeline-version drift before loading the model — fast fail.
-        pipeline_path = REPO_ROOT / "pri_v2_mlx_pipeline.py"
-        current_hash = _hash_file(pipeline_path)
-        recorded_hash = profile.provenance.get("pipeline_module_hash_sha256")
-        if recorded_hash and current_hash != recorded_hash:
-            msg = (
-                f"pri_v2_mlx_pipeline.py hash changed since calibration\n"
-                f"  recorded: {recorded_hash}\n"
-                f"  current:  {current_hash}\n"
-                f"  metric values may differ from those in the profile."
-            )
+        # Check ALL score-critical provenance before loading the model — fast fail.
+        # 2026-05-13: expanded from pipeline-only after the Codex review's
+        # finding that prompt strategy + adapter changes also affect scores
+        # while strict_pipeline_hash=True silently passed.
+        score_critical_hashes = [
+            ("pipeline_module_hash_sha256",       REPO_ROOT / "pri_v2_mlx_pipeline.py"),
+            ("io_plugins_module_hash_sha256",     REPO_ROOT / "pri_v2_io_plugins.py"),
+            ("model_adapters_module_hash_sha256", REPO_ROOT / "model_adapters.py"),
+            ("calibrator_module_hash_sha256",     REPO_ROOT / "pri_calibrator.py"),
+        ]
+        drift_msgs: List[str] = []
+        for field, fpath in score_critical_hashes:
+            recorded = profile.provenance.get(field)
+            if not recorded:
+                continue
+            current = _hash_file(fpath)
+            if current != recorded:
+                drift_msgs.append(
+                    f"  {fpath.name}: recorded={recorded[:12]}…  current={current[:12]}…"
+                )
+        # Model artifact (HF cache snapshot) — the slug points at a moving
+        # target unless we also pin the snapshot SHA.
+        from pri_calibrator import _resolve_model_snapshot_sha
+        recorded_snapshot = profile.provenance.get("model_snapshot_sha")
+        if recorded_snapshot:
+            current_snapshot = _resolve_model_snapshot_sha(profile.model["slug"])
+            if current_snapshot and current_snapshot != recorded_snapshot:
+                drift_msgs.append(
+                    f"  model snapshot ({profile.model['slug']}): "
+                    f"recorded={recorded_snapshot[:12]}…  current={current_snapshot[:12]}…"
+                )
+            elif current_snapshot is None:
+                drift_msgs.append(
+                    f"  model snapshot ({profile.model['slug']}): "
+                    f"recorded={recorded_snapshot[:12]}… but local cache unresolvable"
+                )
+        if drift_msgs:
+            msg = "score-critical provenance changed since calibration:\n" + "\n".join(drift_msgs)
             if strict_pipeline_hash:
                 raise RuntimeError(msg)
             print(f"[detector] WARNING: {msg}", file=sys.stderr)

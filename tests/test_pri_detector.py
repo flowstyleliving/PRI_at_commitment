@@ -45,6 +45,38 @@ class TestConstructionPure:
         with pytest.raises(FileNotFoundError):
             Detector.from_profile(str(bogus))
 
+    def test_strict_mode_rejects_io_plugins_drift(self, tmp_path, synthetic_profile_dict):
+        """Codex review fix: strict mode must catch drift in pri_v2_io_plugins.py,
+        not just pri_v2_mlx_pipeline.py. We forge a profile whose io_plugins
+        hash is wrong, and assert strict mode raises BEFORE any model load."""
+        # Set the pipeline hash to the current real value so it passes,
+        # but leave the io_plugins hash as the fixture's bogus "0000aaaa".
+        import pri_calibrator
+        synthetic_profile_dict["provenance"]["pipeline_module_hash_sha256"] = (
+            pri_calibrator._hash_file(pri_calibrator.REPO_ROOT / "pri_v2_mlx_pipeline.py")
+        )
+        # io_plugins_module_hash_sha256 stays as "0000aaaa" → must be flagged.
+        path = tmp_path / "drifted.json"
+        path.write_text(json.dumps(synthetic_profile_dict))
+        with pytest.raises(RuntimeError, match=r"pri_v2_io_plugins\.py"):
+            Detector.from_profile(str(path), strict_pipeline_hash=True)
+
+    def test_strict_mode_rejects_model_adapters_drift(self, tmp_path, synthetic_profile_dict):
+        """Same check for model_adapters.py — score path depends on adapter
+        forward methods, so drift there must be caught."""
+        import pri_calibrator
+        synthetic_profile_dict["provenance"]["pipeline_module_hash_sha256"] = (
+            pri_calibrator._hash_file(pri_calibrator.REPO_ROOT / "pri_v2_mlx_pipeline.py")
+        )
+        synthetic_profile_dict["provenance"]["io_plugins_module_hash_sha256"] = (
+            pri_calibrator._hash_file(pri_calibrator.REPO_ROOT / "pri_v2_io_plugins.py")
+        )
+        # model_adapters hash stays bogus → must be flagged.
+        path = tmp_path / "drifted.json"
+        path.write_text(json.dumps(synthetic_profile_dict))
+        with pytest.raises(RuntimeError, match=r"model_adapters\.py"):
+            Detector.from_profile(str(path), strict_pipeline_hash=True)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Runtime — slow tier with a real model (session-scoped detector)
