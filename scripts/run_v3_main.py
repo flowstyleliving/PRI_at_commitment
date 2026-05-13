@@ -124,6 +124,60 @@ SCOPES = {
     "v3_1_main": PRIMARIES + [
         "mlx-community/Qwen3-8B-4bit",
     ],
+    # v3_2_centered_bakeoff — pre-reg amendment 2026-05-07. Three-way
+    #                   Fisher / Raw / Centered-Fisher comparison across the
+    #                   six v3.1 cross-architecture models. Adds two
+    #                   descriptive column families (kl_discharged,
+    #                   null_ratio_centered_post_rank{r}) and one capture
+    #                   family (gen_p_t_topk_*) — sealed E18/E17b primaries
+    #                   unchanged. See wiki/results/v3.2-amendment.md for
+    #                   the pre-reg, decision criteria, and seed (20260507).
+    "v3_2_centered_bakeoff": PRIMARIES + [
+        "mlx-community/Qwen3-8B-4bit",
+        "mlx-community/Phi-3.5-mini-instruct-4bit",
+        "mlx-community/gemma-3-4b-it-4bit",
+    ],
+    # v3_2_expansion_llama_8b — 2026-05-11 expansion run. Only Llama-3.1-8B
+    # passed smoke (Mistral-Nemo, Phi-4-mini, Gemma-3-1B, Dolphin-Nemo all
+    # failed the behavioral gate or adapter pipeline; see
+    # wiki/v4-candidates.md §4 "Planned model-set expansion" for the
+    # diagnoses and follow-up tasks). This single-model scope builds the
+    # within-family scale axis for Llama (3B → 8B).
+    "v3_2_expansion_llama_8b": [
+        "mlx-community/Llama-3.1-8B-Instruct-4bit",
+    ],
+    # v3_2_expansion_phi_4 — 2026-05-11. Phi-4-mini-instruct added after the
+    # Phi3Adapter received a tied-embedding fix (model_adapters.py:622:
+    # falls back to embed_tokens.as_linear() when lm_head is None). Builds
+    # the within-family generation axis for Phi (3.5 → 4).
+    "v3_2_expansion_phi_4": [
+        "mlx-community/Phi-4-mini-instruct-4bit",
+    ],
+    # v3_2_expansion_phase_b — 2026-05-11. Mistral-Nemo (12B) + Gemma-3-1B
+    # added after the pri_v2_io_plugins module landed: chat-template is
+    # now applied per-model via PROMPT_STRATEGY_BY_MODEL, parser handles
+    # bare YES/NO via Tier 0. Both models re-smoke 4/4 = 100% with the
+    # new pipeline. Adds the within-family pair for Mistral (7B → Nemo 12B)
+    # and Gemma (1B + 4B). Mistral-Nemo runs first because it's larger
+    # (~90 min) and dominates total wall time; Gemma-3-1B is the smaller
+    # quick add (~30 min).
+    "v3_2_expansion_phase_b": [
+        "mlx-community/Mistral-Nemo-Instruct-2407-4bit",
+        "mlx-community/gemma-3-1b-it-4bit",
+    ],
+    # v3_2_expansion_reasoning — 2026-05-12. Second reasoning-tuned model
+    # added to unblock v4-candidate #4's strict-bar failure on Qwen 3 8B
+    # (oracle Fisher r=64 step 2 vs predicted Fisher r=2 step 3). Qwen3-1.7B
+    # is a same-family scale variant — if its oracle cell lands at the same
+    # (family, rank) as Qwen 3 8B, the reasoning-branch's rank is pinned;
+    # if not, the within-reasoning rank choice is model-specific and the
+    # branch needs further work. DeepSeek-R1-Distill-Qwen-7B was attempted
+    # first but smoke-failed (R1 thinks-before-answer; 0/4 at 24 tokens).
+    # Smoke pass 4/4 = 100% after the 2026-05-12 tied-embedding patch in
+    # QwenAdapter (lm_head=None → embed_tokens.as_linear()).
+    "v3_2_expansion_reasoning": [
+        "mlx-community/Qwen3-1.7B-4bit",
+    ],
 }
 
 EXPERIMENT_SLUG = "v3-main-run"
@@ -157,6 +211,24 @@ def main() -> int:
              "emits null_ratio_raw_rank{r} and raw_energy_rank{r} columns alongside "
              "the Fisher-weighted v3 columns for the same rank sweep. One-time "
              "model-load cost (~5–30s per model); per-sample cost is a matvec.",
+    )
+    parser.add_argument(
+        "--no-centered",
+        action="store_true",
+        help="disable v3.2 centered-Fisher null_ratio capture. Default is ON — "
+             "emits kl_discharged + null_ratio_centered_post_rank{r} + "
+             "fisher_energy_centered_rank{r} columns alongside the sealed "
+             "Fisher / Raw pair (descriptive-only, no sealed-gate authority). "
+             "Per-sample cost is one extra eigh on a (≤support × ≤support) "
+             "matrix, ~50ms at support=512.",
+    )
+    parser.add_argument(
+        "--p-t-topk",
+        type=int,
+        default=None,
+        help="override Config.v3_capture_p_t_topk (default 512). Persists "
+             "per-step top-K probability indices+values in trace_dumps for "
+             "post-hoc KL-grounded analysis without replay. Set 0 to disable.",
     )
     parser.add_argument(
         "--max-gen-tokens",
@@ -249,6 +321,15 @@ def main() -> int:
     # the falsification criterion (AUROC(null_bare) − AUROC(null_raw) ≥ 0.02
     # with non-overlap CI on Qwen).
     cfg.v3_capture_raw = not bool(args.no_e17b)
+    # v3.2 centered-Fisher capture — default ON. Adds kl_discharged +
+    # null_ratio_centered_post_rank{r} + fisher_energy_centered_rank{r}
+    # columns alongside the sealed Fisher/Raw pair. DESCRIPTIVE-ONLY: no
+    # sealed-gate authority. See wiki/results/v3.2-amendment.md.
+    cfg.v3_capture_centered = not bool(args.no_centered)
+    if args.p_t_topk is not None:
+        if args.p_t_topk < 0:
+            raise SystemExit(f"--p-t-topk must be ≥ 0, got {args.p_t_topk}")
+        cfg.v3_capture_p_t_topk = int(args.p_t_topk)
 
     # Gate controls. --skip-gate short-circuits by forcing pilot_threshold=0.0
     # (every run passes); --pilot-threshold lets you dial a lower bar (e.g. 0.6

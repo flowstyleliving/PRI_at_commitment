@@ -43,40 +43,17 @@ if str(REPO_ROOT) not in sys.path:
 
 import hidden_state_collector  # noqa: E402
 import synthetic_logic_loader  # noqa: E402
+import pri_v2_io_plugins  # noqa: E402
 from model_adapters import create_adapter  # noqa: E402
 
 
 def _parse_yes_no(text: str | None) -> str:
-    """
-    Loose YES/NO parser for reasoning-tuned models.
-
-    Returns whichever of YES/NO appears FIRST in the response, ignoring role
-    headers. Returns UNPARSEABLE only if neither word appears. This differs
-    intentionally from run_synthetic_logic_experiment.py's strict
-    parse_yes_no_answer (which requires YES/NO as the first meaningful
-    alphabetic token and therefore flags reasoning-prefixed answers like
-    "Final Answer: YES" as UNPARSEABLE). The strict parser was tuned for
-    direct-answer primaries (Llama 3.2 3B, Mistral 7B, Qwen 2.5 7B) — but
-    Gemma 3 and Qwen3 are instruct-tuned to reason first, so strict parsing
-    would reject correct answers purely on emission style. For the Prereq-4
-    behavioral gate we care whether the model reaches the right conclusion,
-    not whether it emits it as the first token. Use the runner's strict
-    parser if and when exact v2-pilot parity is required.
-    """
-    if text is None:
-        return "UNPARSEABLE"
-    s = str(text).strip()
-    s = re.sub(r"<\|[^|>]+?\|>", " ", s)
-    role_header_tokens = {"ASSISTANT", "USER", "SYSTEM"}
-    for match in re.finditer(r"[A-Za-z]+", s):
-        tok = match.group(0).upper()
-        if tok in role_header_tokens:
-            continue
-        if tok.startswith("YES"):
-            return "YES"
-        if tok.startswith("NO"):
-            return "NO"
-    return "UNPARSEABLE"
+    """Thin wrapper around `pri_v2_io_plugins.parse_yes_no`. The plugin module
+    owns the four-tier parser (Tier 1 Answer: prefix, Tier 0 bare first word,
+    Tier 2 trailing-line, Tier 3 last-match-anywhere). UNPARSEABLE when all
+    tiers abstain — caller (gate) treats UNPARSEABLE as a miss."""
+    parsed = pri_v2_io_plugins.parse_yes_no(text)
+    return parsed if parsed is not None else "UNPARSEABLE"
 
 
 def adapter_smoke(model: Any, tokenizer: Any, model_type: str, prompt: str) -> int:
@@ -168,11 +145,18 @@ def behavioral_gate(
     threshold: float,
     seed: int,
     max_tokens: int,
+    model_slug: str = "",
 ) -> int:
     """
     Prereq-4 step 3: generate greedy answers on n control (non-contradiction)
     puzzles and gate on accuracy ≥ threshold. Samples are seed-reproducible.
+
+    `model_slug` selects the prompt-wrap strategy (raw_passthrough by default;
+    chat-template wrap for newer models — see pri_v2_io_plugins). Passing
+    empty string preserves the legacy raw-prompt behavior for callers that
+    pre-date this hook.
     """
+    prompt_strategy = pri_v2_io_plugins.get_prompt_strategy(model_slug)
     print(f"[gate] building n={n} control puzzles (seed={seed}, baseline/YES-NO mode)")
     # Need enough samples per cell to pull n from the two control cells
     # (short_no_contradiction + long_no_contradiction). With 2 control cells,
@@ -198,8 +182,16 @@ def behavioral_gate(
         prompt = str(sample.get("prompt", ""))
         # Baseline (YES/NO) expected answer: "YES" when has_contradiction=False.
         expected = "NO" if bool(sample.get("has_contradiction", False)) else "YES"
+        # Wrap with the per-model prompt strategy (default raw_passthrough).
+        # For newer chat-tuned models in PROMPT_STRATEGY_BY_MODEL (Mistral-Nemo,
+        # Gemma-3-1B, Dolphin), this calls tokenizer.apply_chat_template.
         try:
-            out = mlx_generate(model, tokenizer, prompt=prompt, max_tokens=max_tokens, verbose=False)
+            wrapped_prompt = prompt_strategy(prompt, tokenizer)
+        except Exception as e:
+            print(f"[gate] sample {sample_id}: FAIL prompt-wrap ({type(e).__name__}: {e}); falling back to raw")
+            wrapped_prompt = prompt
+        try:
+            out = mlx_generate(model, tokenizer, prompt=wrapped_prompt, max_tokens=max_tokens, verbose=False)
         except Exception as e:
             print(f"[gate] sample {sample_id}: FAIL generate ({type(e).__name__}: {e})")
             results.append((sample_id, expected, "GEN_ERROR", False))
@@ -249,6 +241,7 @@ def run(
             threshold=gate_threshold,
             seed=gate_seed,
             max_tokens=gate_max_tokens,
+            model_slug=model_slug,
         )
         if gate_rc != 0:
             return gate_rc

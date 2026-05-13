@@ -19,6 +19,11 @@ Scope (intentionally tiny — schema / provenance / tripwire / parquet / audit):
       B7 dict_collision   — H4 write-once guard exercises every layer × step
                             without duplicate-key crash.
       B8 consumer_audit   — grep PRIComputer.compute_step vs parquet schema.
+      B9 trace_dump_v32   — verify v3.2 capture amendment columns
+                            (gen_p_t_topk_indices/values/K + descriptive
+                            metric columns) are emitted under
+                            v3_capture_p_t_topk > 0 / v3_capture_centered.
+                            Static source audit + dynamic top-K simulator.
 
 Exit 0 = all eight bundles green on all three models; v3 main run may launch.
 Exit non-zero = shared pipeline still unfit; do NOT launch the main run.
@@ -263,6 +268,127 @@ def consumer_audit() -> Dict[str, Any]:
             "S_t via trace['gen_surprises'][si] finite check"
         ),
         "passed": not dead_checks and not missing_checks,
+    }
+
+
+def trace_dump_schema_audit() -> Dict[str, Any]:
+    """B9 — verify the v3.2 trace-dump amendment is wired through.
+
+    The v3.2 amendment (wiki/results/v3.2-amendment.md) adds:
+      * Capture columns in trace_dump dict (when config.v3_capture_p_t_topk > 0):
+          gen_p_t_topk_indices  (per-step list of top-K vocab indices)
+          gen_p_t_topk_values   (per-step list of top-K probability values,
+                                 sorted descending)
+          v3_capture_p_t_topk_K (scalar provenance of the K used)
+      * Descriptive metric columns from PRIComputer.kl_discharged_and_centered
+        (when config.v3_capture_centered=True):
+          kl_discharged
+          null_ratio_centered_post_rank{r}
+          fisher_energy_centered_rank{r}
+
+    This audit is BOTH static (grep pipeline source for the trace_dump keys
+    and the gate) AND dynamic (run the top-K extraction logic on a synthetic
+    p_t and check shape/dtype/sort-order/no-duplicates).
+
+    Returns dict with `passed` and per-check breakdown.
+    """
+    src = CONSUMER_FILE.read_text()
+    errors: List[str] = []
+
+    # ── Static: trace-dump keys present + gated correctly ────────────────
+    expected_keys = [
+        "gen_p_t_topk_indices",
+        "gen_p_t_topk_values",
+        "v3_capture_p_t_topk_K",
+    ]
+    keys_present = {k: (f'"{k}"' in src) for k in expected_keys}
+    for k, present in keys_present.items():
+        if not present:
+            errors.append(
+                f"trace_dump key {k!r} not found in {CONSUMER_FILE.name} — "
+                "v3.2 capture amendment not wired"
+            )
+
+    # The gate must guard the trace_dump assignment so legacy runs
+    # (v3_capture_p_t_topk=0) emit a clean dump without these columns.
+    has_gate = bool(re.search(r"config\.v3_capture_p_t_topk", src))
+    if not has_gate:
+        errors.append(
+            "config.v3_capture_p_t_topk not referenced in pipeline source — "
+            "v3.2 capture cannot be toggled per run"
+        )
+
+    # Centered-Fisher metric method must exist on PRIComputer.
+    has_centered_method = bool(
+        re.search(r"def\s+kl_discharged_and_centered\s*\(", src)
+    )
+    if not has_centered_method:
+        errors.append(
+            "PRIComputer.kl_discharged_and_centered not found — "
+            "v3.2 metric method missing"
+        )
+    has_centered_gate = bool(re.search(r"v3_capture_centered", src))
+    if not has_centered_gate:
+        errors.append(
+            "v3_capture_centered flag not referenced in pipeline source — "
+            "v3.2 metric path cannot be toggled per run"
+        )
+
+    # ── Dynamic: top-K extraction simulator ──────────────────────────────
+    # Replicates the trace_sample dump path semantics: argpartition for
+    # unordered top-K, then sort descending by probability. Validates the
+    # invariants downstream consumers rely on.
+    rng = np.random.default_rng(20260507)
+    V = 1024
+    K = 64
+    z = rng.standard_normal(V) * 1.7
+    p = np.exp(z - z.max())
+    p /= p.sum()
+
+    K_eff = int(min(K, p.shape[0]))
+    idx_part = np.argpartition(-p, kth=K_eff - 1)[:K_eff]
+    order = np.argsort(-p[idx_part])
+    idx_sorted = idx_part[order]
+    vals_sorted = p[idx_sorted]
+
+    sim_errors: List[str] = []
+    if len(idx_sorted) != K_eff:
+        sim_errors.append(
+            f"top-K length mismatch: got {len(idx_sorted)}, expected {K_eff}"
+        )
+    if len(set(int(i) for i in idx_sorted)) != K_eff:
+        sim_errors.append("top-K indices contain duplicates")
+    if int(idx_sorted.min()) < 0 or int(idx_sorted.max()) >= V:
+        sim_errors.append(
+            f"top-K indices out of [0, V): "
+            f"min={int(idx_sorted.min())}, max={int(idx_sorted.max())}, V={V}"
+        )
+    if not np.all(np.diff(vals_sorted) <= 1e-12):
+        sim_errors.append("top-K values not monotone non-increasing (sort failed)")
+    # Top-K mass should dominate the tail for a non-uniform distribution.
+    topk_mass = float(vals_sorted.sum())
+    if not (0.0 < topk_mass <= 1.0 + 1e-9):
+        sim_errors.append(f"top-K mass {topk_mass:.6f} outside (0, 1]")
+    # Top-1 must equal global max — argpartition+sort invariant.
+    if not np.isclose(float(vals_sorted[0]), float(p.max()), atol=1e-12):
+        sim_errors.append(
+            f"top-1 value {vals_sorted[0]:.6f} != global max {p.max():.6f}"
+        )
+    errors.extend(sim_errors)
+
+    return {
+        "static_keys_present": keys_present,
+        "topk_gate_referenced": has_gate,
+        "centered_method_present": has_centered_method,
+        "centered_gate_referenced": has_centered_gate,
+        "simulator": {
+            "V": V,
+            "K": K_eff,
+            "topk_mass": topk_mass,
+            "errors": sim_errors,
+        },
+        "errors": errors,
+        "passed": not errors,
     }
 
 
@@ -650,6 +776,9 @@ def main() -> int:
     # Global B8 — consumer audit is run once against the pipeline source. Its
     # verdict is a pipeline-wide fact, not a per-model one.
     audit = consumer_audit()
+    # Global B9 — v3.2 capture amendment audit. Static + dynamic checks on the
+    # trace-dump schema and top-K extraction logic. Pipeline-wide.
+    trace_dump_audit = trace_dump_schema_audit()
 
     records: List[Dict[str, Any]] = []
     for model_name in MODELS:
@@ -722,6 +851,7 @@ def main() -> int:
     all_passed = (
         all(r.get("passed", False) for r in records)
         and audit["passed"]
+        and trace_dump_audit["passed"]
     )
 
     report = {
@@ -746,6 +876,7 @@ def main() -> int:
             "total_rows": len(all_rows),
         },
         "consumer_audit": audit,
+        "trace_dump_schema_audit": trace_dump_audit,
         "all_passed": all_passed,
         "per_model": [
             {
@@ -776,10 +907,18 @@ def main() -> int:
         print("VERDICT: DRY-RUN GREEN — Prereq 4 closed. v3 main run may launch.")
     else:
         n_fail = sum(1 for r in records if not r.get("passed", False))
-        audit_note = "" if audit["passed"] else " [consumer_audit also failed]"
+        notes: List[str] = []
+        if not audit["passed"]:
+            notes.append("consumer_audit also failed")
+        if not trace_dump_audit["passed"]:
+            notes.append(
+                f"trace_dump_schema_audit failed "
+                f"({len(trace_dump_audit.get('errors', []))} errors)"
+            )
+        notes_str = f" [{'; '.join(notes)}]" if notes else ""
         print(
             f"VERDICT: FAIL — {n_fail}/{len(records)} model(s) failed"
-            f"{audit_note}."
+            f"{notes_str}."
         )
         print("         DO NOT launch v3 main run until the pipeline clears.")
     print(f"report:   {out_dir / 'dryrun_report.json'}")
