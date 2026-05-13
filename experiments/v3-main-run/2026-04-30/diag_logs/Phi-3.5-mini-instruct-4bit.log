@@ -1,0 +1,124 @@
+/Users/msrk/Documents/PRI_at_commitment/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+Loading mlx-community/Phi-3.5-mini-instruct-4bit...
+Fetching 11 files:   0%|          | 0/11 [00:00<?, ?it/s]Fetching 11 files: 100%|██████████| 11/11 [00:00<00:00, 134511.21it/s]
+  V=32064, D=3072, γ.mean=1.6505, γ.std=0.0753
+  Raw SVD top-1 σ: 111.6707 (top-8 σ: [111.67072584  63.88091871  50.23072931  39.8263786   31.94560216
+  29.98439262  28.00077026  26.07964555])
+
+=== TOP-30 positive projections onto V_raw[0] ===
+    +  1.5441  tok='provin'
+    +  1.2491  tok='Wikip'
+    +  1.1736  tok='zna'
+    +  1.1507  tok='vess'
+    +  1.1490  tok='kö'
+    +  1.1455  tok='Fich'
+    +  1.1434  tok='zv'
+    +  1.1419  tok='Febru'
+    +  1.1397  tok='cí'
+    +  1.1348  tok='fö'
+    +  1.1218  tok='xspace'
+    +  1.1178  tok='Egy'
+    +  1.1167  tok='ViewById'
+    +  1.1135  tok='nego'
+    +  1.1075  tok='ví'
+    +  1.1064  tok='byl'
+    +  1.1052  tok='zá'
+    +  1.1016  tok='bolds'
+    +  1.0961  tok='techni'
+    +  1.0941  tok='Janu'
+    +  1.0932  tok='ycz'
+    +  1.0918  tok='haar'
+    +  1.0902  tok='elij'
+    +  1.0891  tok='Magyar'
+    +  1.0878  tok='tó'
+    +  1.0803  tok='trz'
+    +  1.0770  tok='zou'
+    +  1.0768  tok='.~'
+    +  1.0761  tok='nika'
+    +  1.0747  tok='tör'
+
+=== TOP-30 negative projections onto V_raw[0] ===
+     -0.4937  tok='('
+     -0.4692  tok='\n'
+     -0.3876  tok='in'
+     -0.3579  tok='"'
+     -0.3387  tok='a'
+     -0.3325  tok='and'
+     -0.2807  tok='['
+     -0.2642  tok='-'
+     -0.2640  tok='A'
+     -0.2595  tok='to'
+     -0.2587  tok="'"
+     -0.2533  tok='b'
+     -0.2524  tok='s'
+     -0.2523  tok='re'
+     -0.2470  tok='p'
+     -0.2440  tok='C'
+     -0.2426  tok='m'
+     -0.2422  tok='t'
+     -0.2419  tok='c'
+     -0.2369  tok='for'
+     -0.2343  tok='as'
+     -0.2321  tok='P'
+     -0.2309  tok='the'
+     -0.2306  tok='S'
+     -0.2294  tok='de'
+     -0.2293  tok='d'
+     -0.2263  tok='D'
+     -0.2232  tok='M'
+     -0.2204  tok='l'
+     -0.2166  tok='or'
+
+=== Targeted: project key tokens onto V_raw[0] / [1] ===
+    ' NO'        → id=11698   top1= +0.3444  top2= -0.5865
+    'NO'         → id=11698   top1= +0.3444  top2= -0.5865
+    ' Yes'       → id=3869    top1= +0.3220  top2= -0.4558
+    ' No'        → id=1939    top1= +0.0787  top2= -0.6813
+    'Yes'        → id=3869    top1= +0.3220  top2= -0.4558
+    'No'         → id=1939    top1= +0.0787  top2= -0.6813
+    ' Answer'    → id=673     top1= +0.4835  top2= -0.3182
+    'Answer'     → id=673     top1= +0.4835  top2= -0.3182
+    ' answer'    → id=1234    top1= +0.2835  top2= -0.5953
+    'answer'     → id=1234    top1= +0.2835  top2= -0.5953
+    ':'          → id=584     top1= +0.0803  top2= -0.6999
+    ' '          → id=259     top1= -0.1310  top2= -0.8363
+    '\n'         → id=13      top1= -0.4692  top2= -1.1615
+
+=== Per-sample signed Δh_jn · V_raw[0..2] (N=100) ===
+  [  1] contr=0 next=      '\n'  signed(top1)=    -9.04  |signed|/|Δh|=0.2182
+  [  2] contr=1 next=      '\n'  signed(top1)=    -7.75  |signed|/|Δh|=0.1689
+  [  3] contr=1 next=      '\n'  signed(top1)=    -7.09  |signed|/|Δh|=0.1551
+  [  4] contr=1 next=      '\n'  signed(top1)=    -9.07  |signed|/|Δh|=0.1935
+  [  5] contr=0 next=      '\n'  signed(top1)=    -9.39  |signed|/|Δh|=0.2340
+  [  6] contr=0 next=      '\n'  signed(top1)=    -9.52  |signed|/|Δh|=0.2262
+  [  7] contr=1 next=      '\n'  signed(top1)=    -8.20  |signed|/|Δh|=0.1900
+  [  8] contr=0 next=      '\n'  signed(top1)=    -9.68  |signed|/|Δh|=0.2346
+  [ 97] contr=1 next=      '\n'  signed(top1)=    -7.39  |signed|/|Δh|=0.1620
+  [ 98] contr=0 next=      '\n'  signed(top1)=    -8.80  |signed|/|Δh|=0.2064
+  [ 99] contr=0 next=      '\n'  signed(top1)=   -10.06  |signed|/|Δh|=0.2340
+  [100] contr=1 next=      '\n'  signed(top1)=    -7.11  |signed|/|Δh|=0.1521
+
+Wrote experiments/v3-main-run/2026-04-30/Phi-3.5-mini-instruct-4bit_signed_proj.csv
+
+=== Signed projection distributions ===
+  signed_proj_raw_top1:
+    ctrl     : mean=  -9.5726  std=0.5908  median=  -9.5465
+    contr    : mean=  -8.1389  std=0.8925  median=  -8.0663
+    Δ(c-c)   :   +1.4336
+    fraction>0:  ctrl=0.00%  contr=0.00%
+  signed_proj_raw_top2:
+    ctrl     : mean= +10.4690  std=0.4275  median= +10.5433
+    contr    : mean=  +9.9225  std=0.5428  median=  +9.8540
+    Δ(c-c)   :   -0.5465
+    fraction>0:  ctrl=100.00%  contr=100.00%
+  signed_proj_raw_top3:
+    ctrl     : mean=  -4.3678  std=0.1984  median=  -4.3375
+    contr    : mean=  -4.6273  std=0.3190  median=  -4.6254
+    Δ(c-c)   :   -0.2595
+    fraction>0:  ctrl=0.00%  contr=0.00%
+
+=== gen_step=1 commit tokens (next_token tally) ===
+     100× '\n'
+
+Wrote experiments/v3-main-run/2026-04-30/Phi-3.5-mini-instruct-4bit_top1_summary.json

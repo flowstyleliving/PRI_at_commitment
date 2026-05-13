@@ -1,0 +1,14 @@
+=== queue START at Thu Apr 30 18:56:00 PDT 2026 ===
+=== Starting Llama-3.2-3B-Instruct-4bit at Thu Apr 30 18:56:00 PDT 2026 ===
+=== Finished Llama-3.2-3B-Instruct-4bit at Thu Apr 30 18:57:12 PDT 2026 (exit=0) ===
+=== Starting Mistral-7B-Instruct-v0.3-4bit at Thu Apr 30 18:57:12 PDT 2026 ===
+=== Finished Mistral-7B-Instruct-v0.3-4bit at Thu Apr 30 19:00:27 PDT 2026 (exit=0) ===
+=== Starting Qwen2.5-7B-Instruct-4bit at Thu Apr 30 19:00:27 PDT 2026 ===
+=== Finished Qwen2.5-7B-Instruct-4bit at Thu Apr 30 19:03:09 PDT 2026 (exit=0) ===
+=== Starting Qwen3-8B-4bit at Thu Apr 30 19:03:09 PDT 2026 ===
+=== Finished Qwen3-8B-4bit at Thu Apr 30 19:06:10 PDT 2026 (exit=0) ===
+=== Starting Phi-3.5-mini-instruct-4bit at Thu Apr 30 19:06:10 PDT 2026 ===
+=== Finished Phi-3.5-mini-instruct-4bit at Thu Apr 30 19:07:55 PDT 2026 (exit=0) ===
+=== Starting gemma-3-4b-it-4bit at Thu Apr 30 19:07:55 PDT 2026 ===
+=== Finished gemma-3-4b-it-4bit at Thu Apr 30 19:07:59 PDT 2026 (exit=1) ===
+=== queue ALL DONE at Thu Apr 30 19:07:59 PDT 2026 ===

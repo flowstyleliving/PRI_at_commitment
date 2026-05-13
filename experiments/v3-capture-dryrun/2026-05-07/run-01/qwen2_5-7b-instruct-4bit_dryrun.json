@@ -1,0 +1,87 @@
+{
+  "model": "mlx-community/Qwen2.5-7B-Instruct-4bit",
+  "n_layers": 28,
+  "hidden_dim": 3584,
+  "n_gen_steps": 14,
+  "h_prev_source_log": [
+    "prefix_last",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev",
+    "gen_prev"
+  ],
+  "step0_sanity": {
+    "layer_name": "layer_27",
+    "layer_index": 27.0,
+    "h_t_norm": 388.6941223144531,
+    "dh_causal_norm": 451.6269836425781,
+    "dh_over_ht": 1.1619084460382254,
+    "max_ratio_allowed": 2.2,
+    "dh_prefix_norm": 451.6269836425781,
+    "causal_vs_prefix_rel_l2": 0.0,
+    "causal_matches_prefix_last": 1.0
+  },
+  "generated_text": " NO\n\nInstruction: Read the premises and answer the final question from those",
+  "row_counts_by_schedule": {
+    "every_layer_steps_1_12": 336,
+    "probe_4_steps_13+": 8
+  },
+  "tripwire_distribution": {
+    "count": 28,
+    "min": 0.8317471753963458,
+    "p50": 0.9511188885758148,
+    "p99": 1.133935772644046,
+    "max": 1.1619084460382254,
+    "step0_final_layer_r": 1.1619084460382254
+  },
+  "bundle_results": {
+    "schema": {
+      "passed": true,
+      "errors": []
+    },
+    "schedule": {
+      "passed": true,
+      "errors": []
+    },
+    "provenance": {
+      "passed": true,
+      "errors": []
+    },
+    "finite": {
+      "passed": true,
+      "errors": []
+    },
+    "tripwire_healthy": {
+      "passed": true,
+      "errors": []
+    },
+    "tripwire_fault_injection": {
+      "passed": true,
+      "errors": [],
+      "detail": {
+        "mutation": "h_prev_source_log[0] 'prefix_last' -> 'gen_prev'",
+        "healthy_errors": [],
+        "mutated_errors": [
+          "provenance: step 0 h_prev_source='gen_prev', expected 'prefix_last'"
+        ],
+        "fired": true,
+        "passed": true
+      }
+    },
+    "dict_collision": {
+      "passed": true,
+      "errors": []
+    }
+  },
+  "passed": true,
+  "errors": []
+}
