@@ -48,6 +48,11 @@ except Exception as exc:  # pragma: no cover
         "mlx-lm and mlx are required. Install with: pip install mlx-lm"
     ) from exc
 
+# 2026-05-11: parser tiers + prompt strategies live in a plugin module
+# so the registries can grow without touching the main pipeline file.
+# See pri_v2_io_plugins.py and wiki/learn/chat-template-gap-eli12.md.
+import pri_v2_io_plugins as io_plugins
+
 warnings.filterwarnings("ignore")
 sns.set_theme(style="whitegrid", font_scale=1.1)
 
@@ -114,6 +119,26 @@ class Config:
     # runs produce the E17b head-to-head without extra flags; flip off for
     # legacy v2 reproductions or memory-constrained environments.
     v3_capture_raw: bool = True
+    # v3.2: KL-grounded centered-Fisher null_ratio. The sealed null_ratio_post
+    # uses A = sqrt(diag(p))·W_u as basis, which diagonalizes the UNcentered
+    # form Aᵀ A = W_uᵀ diag(p) W_u, then Euclidean projection. The proper
+    # softmax Fisher is the CENTERED form W_uᵀ (diag(p) − ppᵀ) W_u; the −ppᵀ
+    # rank-1 correction has the largest magnitude at high-confidence tokens.
+    # When True, emits descriptive columns alongside the sealed Fisher/raw
+    # pair for a three-way bake-off:
+    #   * kl_discharged                    (closed form ½·Var_p(W_u·∂h_post))
+    #   * null_ratio_centered_post_rank{r} (centered-Fisher KL-norm null)
+    #   * fisher_energy_centered_rank{r}   (cumulative eigvals of F_c)
+    # DESCRIPTIVE-ONLY in v3.2: sealed E18/E17b primaries unchanged.
+    v3_capture_centered: bool = True
+    # v3.2: persist top-K probability vector per gen-step in trace_dumps so
+    # KL-grounded post-hoc analyses are runnable without replay. K=512 matches
+    # the support truncation used by null_ratio_and_energy at max_rank=32.
+    # Set 0 to disable. Adds list-of-list columns:
+    #   * gen_p_t_topk_indices  (per-step top-K vocab indices)
+    #   * gen_p_t_topk_values   (per-step top-K probs, sorted descending)
+    #   * v3_capture_p_t_topk_K (provenance scalar of the K used)
+    v3_capture_p_t_topk: int = 512
     # Sanity gate: ||Δh_step0|| / ||h_t_step0|| must be < this at the final layer.
     # Guards the paper's step-0 h_prev inflation bug (paper AUROCs 0.998/0.994/0.980
     # were artefacts of an undefined h_prev at step 0).
@@ -126,6 +151,15 @@ class Config:
     # Output
     save_dir: str = "./pri_v2_results"
     seed: int = 42
+
+    # 2026-05-12: external-dataset hook for ANLI / other natural-language
+    # benchmarks. When set, run_experiment uses this DataFrame instead of
+    # generating synthetic logic puzzles. Must have at minimum:
+    #   prompt, contradiction, sample_id, chain_length
+    # (chain_length can be any per-row stratum tag — keeps stratified
+    # preflight gate behavior consistent).
+    task_dataset: Optional["pd.DataFrame"] = None
+    task_label: str = "synthetic_logic_puzzles"  # for banner provenance
 
 
 cfg = Config()
@@ -229,6 +263,8 @@ def checkpoint_signature(config: Config, model_name: str) -> Dict[str, Any]:
         "lowrank_values": [int(x) for x in config.lowrank_values],
         "v3_rank_values": [int(x) for x in config.v3_rank_values],
         "v3_capture_raw": bool(config.v3_capture_raw),
+        "v3_capture_centered": bool(config.v3_capture_centered),
+        "v3_capture_p_t_topk": int(config.v3_capture_p_t_topk),
         "layers_to_probe": list(config.layers_to_probe),
     }
 
@@ -1344,6 +1380,129 @@ class PRIComputer:
 
         return out
 
+    def kl_discharged_and_centered(
+        self,
+        dh_post: np.ndarray,
+        p_t: np.ndarray,
+        rank_values: Iterable[int],
+    ) -> Dict[str, float]:
+        """
+        v3.2 — KL-grounded null_ratio with the proper centered softmax Fisher.
+
+        KL identity (Cover & Thomas §11; Amari, Information Geometry §3):
+          KL(p_θ ‖ p_{θ+ε}) ≈ ½ εᵀ I(θ) ε + O(ε³)
+        For p_t = softmax(W_u · n(h_post)) and ε = ∂h_post:
+          I(h_post) = W_uᵀ (diag(p_t) − p_t p_tᵀ) W_u           [centered Fisher]
+          KL_total ≈ ½ ∂h_postᵀ I(h_post) ∂h_post = ½ Var_p(z),  z = W_u·∂h_post
+
+        The sealed null_ratio_post_rank{r} uses A = sqrt(diag(p))·W_u as basis,
+        which diagonalizes the UNcentered Aᵀ A = W_uᵀ diag(p) W_u, then takes
+        a Euclidean projection. The centered form is F_c = Aᵀ A − m mᵀ where
+        m = W_uᵀ p_t (rank-1 correction, dominant at high-confidence p).
+
+        m lies in span(V) (the right singular vectors of A) since
+        m = Aᵀ sqrt(p_t), so the perturbation is confined to the (rank A)
+        subspace. In V coordinates,
+          F_c | V = M = Σ² − (Σg)(Σg)ᵀ,   g = Uᵀ sqrt(p_t),  A = U Σ Vᵀ
+        Eigh on M (size ≤ support × support) gives the centered eigendecomp;
+        eigenvectors of F_c in h-space are V·eigvecs(M).
+
+        Per call, emits:
+          kl_discharged                    [single scalar; nats]
+          null_ratio_centered_post_rank{r} = max(KL_total − KL_topr, 0) / KL_total
+          fisher_energy_centered_rank{r}   = Σ_{i≤r} λ_i / Σ_i λ_i  (centered)
+
+        Numerator uses truncated-support eigendecomp; denominator uses the
+        full-vocab Var_p closed form. Off-support KL is by construction not
+        in any top-r and counts toward "null" — same convention as
+        null_ratio_and_energy (full ‖dh_post‖ in denominator).
+
+        Identity worth noting: kl_discharged = 0.5 · d_F_full² (existing v2
+        column), surfaced here in nat units with the explicit KL label.
+        """
+        out: Dict[str, float] = {}
+        rank_list = [int(r) for r in rank_values]
+
+        # 1. Closed-form KL_discharged (full p, no truncation).
+        z = self._project(dh_post)
+        p_local = p_t
+        if z.shape[0] != p_local.shape[0]:
+            m_min = min(z.shape[0], p_local.shape[0])
+            z = z[:m_min]
+            p_local = p_local[:m_min] / (np.sum(p_local[:m_min]) + 1e-10)
+        mu = float(np.dot(p_local, z))
+        var = float(np.dot(p_local, (z - mu) ** 2))
+        kl_total = 0.5 * max(var, 0.0)
+        out["kl_discharged"] = kl_total
+
+        if not rank_list:
+            return out
+
+        zero_per_rank = {
+            **{f"null_ratio_centered_post_rank{r}": 0.0 for r in rank_list},
+            **{f"fisher_energy_centered_rank{r}": 0.0 for r in rank_list},
+        }
+        nan_per_rank = {
+            **{f"null_ratio_centered_post_rank{r}": float("nan") for r in rank_list},
+            **{f"fisher_energy_centered_rank{r}": float("nan") for r in rank_list},
+        }
+        if kl_total <= 1e-12:
+            out.update(zero_per_rank)
+            return out
+
+        # 2. Truncated-support SVD of A = sqrt(p_s)·W_s  (mirror null_ratio_and_energy).
+        max_rank = max(rank_list)
+        support = int(min(max(256, max_rank * 16), p_local.shape[0]))
+        idx = np.argpartition(-p_local, kth=support - 1)[:support]
+        p_s = p_local[idx]
+        W_s = self.output_projection.get_rows(idx)
+        if W_s is None or W_s.ndim != 2:
+            out.update(nan_per_rank)
+            return out
+
+        sqrt_p = np.sqrt(p_s + 1e-10)
+        A = sqrt_p[:, None] * W_s
+        try:
+            U, S, Vt = np.linalg.svd(A, full_matrices=False)
+        except np.linalg.LinAlgError:
+            out.update(nan_per_rank)
+            return out
+
+        # 3. Centered eigendecomp in V basis. F_c | V = Σ² − (Σg)(Σg)ᵀ.
+        g = U.T @ sqrt_p                            # (rank,)
+        sg = S * g                                  # (rank,)
+        M = np.diag(S ** 2) - np.outer(sg, sg)
+        M = 0.5 * (M + M.T)                         # symmetrize roundoff
+        try:
+            eigvals_M, eigvecs_M = np.linalg.eigh(M)
+        except np.linalg.LinAlgError:
+            out.update(nan_per_rank)
+            return out
+        # eigh returns ascending; flip to descending for top-r convention.
+        eigvals_F = np.maximum(eigvals_M[::-1], 0.0)   # PSD; clamp roundoff
+        eigvecs_F_in_V = eigvecs_M[:, ::-1]            # (rank, rank)
+
+        # 4. Project dh_post into eigenbasis of F_c in h-space:
+        # eigvecs_h = V · eigvecs_F_in_V; proj_i = (V w_i)ᵀ dh = w_iᵀ (Vt @ dh).
+        Vt_dh = Vt @ dh_post                            # (rank,)
+        proj = eigvecs_F_in_V.T @ Vt_dh                 # (rank,)
+        kl_per_dir = 0.5 * eigvals_F * (proj ** 2)
+        cum_kl = np.cumsum(kl_per_dir)
+        cum_eigen = np.cumsum(eigvals_F)
+        total_eigen = float(cum_eigen[-1]) + 1e-12
+        max_available = len(eigvals_F)
+
+        for r in rank_list:
+            r_eff = int(min(r, max_available))
+            kl_topr = float(cum_kl[r_eff - 1]) if r_eff > 0 else 0.0
+            kl_null = max(kl_total - kl_topr, 0.0)
+            out[f"null_ratio_centered_post_rank{r}"] = float(kl_null / kl_total)
+            out[f"fisher_energy_centered_rank{r}"] = (
+                float(cum_eigen[r_eff - 1] / total_eigen) if r_eff > 0 else 0.0
+            )
+
+        return out
+
     @staticmethod
     def pri_v1(S_t: float, delta_h: float, alpha: float) -> float:
         return S_t * (1.0 + alpha * delta_h)
@@ -1363,6 +1522,7 @@ class PRIComputer:
         lowrank_values: Iterable[int],
         v3_rank_values: Iterable[int] = (),
         v3_capture_raw: bool = False,
+        v3_capture_centered: bool = False,
     ) -> Dict[str, float]:
         cos_d = self.cosine_dist(h_t, h_prev)
         l2_d = self.l2_dist(h_t, h_prev)
@@ -1428,6 +1588,15 @@ class PRIComputer:
                 # OutputProjection.raw_right_singular_vectors.
                 v3_raw_out = self.null_ratio_raw_and_energy(dh_post, v3_list)
                 out.update(v3_raw_out)
+            if v3_capture_centered:
+                # v3.2 — KL-grounded centered-Fisher null_ratio + closed-form
+                # kl_discharged. Same dh_post, same analysis plane; basis is
+                # F_c = W_uᵀ(diag(p)−ppᵀ)W_u (vs uncentered W_uᵀ diag(p) W_u).
+                # Descriptive-only: sealed E18/E17b primaries unchanged.
+                v3_centered_out = self.kl_discharged_and_centered(
+                    dh_post, p_t, v3_list
+                )
+                out.update(v3_centered_out)
 
         return out
 
@@ -1568,73 +1737,26 @@ def bootstrap_auc_diff(
 def check_answer(generated: str, expected_value: str) -> bool:
     """Extract the model's final YES/NO verdict from generated text.
 
-    Three-tier parser (2026-04-24 fix — addresses v3.1 cl=5 control-gate
-    fails where reasoning-tuned primaries walked the premise chain before
-    answering and emitted mid-CoT "NO" tokens that the previous last-match
-    heuristic caught as the verdict):
+    Delegates to `pri_v2_io_plugins.parse_yes_no`, which runs a four-tier
+    pluggable parser (Tier 1: Answer: prefix, Tier 0: bare first word,
+    Tier 2: trailing-line, Tier 3: last-match-anywhere). See io_plugins for
+    tier definitions and the rationale for each. Backward compatible with
+    pre-2026-05-11 behavior on the v3.2 sealed model set; Tier 0 adds
+    bare-YES/NO support for newer chat-tuned models (Mistral-Nemo, Gemma-3-1B).
 
-      Tier 1: explicit "Answer: YES|NO" (the worked-example format taught
-              by the prompt). Strongest signal; wins if present anywhere
-              in the output regardless of surrounding CoT reasoning.
-      Tier 2: trailing-line YES|NO — the last non-empty line of the output
-              is just a bare YES/NO (optionally padded by trivial
-              punctuation / whitespace / markdown). Catches direct-answer
-              models whose final line is "YES." even if mid-CoT said "NO".
-      Tier 3: last-match-anywhere (the previous behavior). Safety net for
-              outputs that don't match Tiers 1 or 2.
-
-    History note: the first version was first-match; flipped to last-match
-    2026-04-23 after Gemma 1B scored 10% on 20 controls because of a
-    leading "No contradiction found" phrase. Last-match fixed that but
-    introduced a new failure on cl=5 reasoning-chain outputs (seed 20260423
-    preflight: Llama 65%, Qwen 2.5 65%, Gemma 1B 70%). Tier 1 + 2 resolve
-    both failure modes without reintroducing the first-match bug.
+    Final fallback: substring match — kept in case the parser abstains on a
+    truly novel output shape so we don't silently flip to False.
     """
     if generated is None:
         return False
     expected = str(expected_value).strip().upper()
     if expected not in {"YES", "NO"}:
         return expected.lower() in str(generated).lower()
-
-    text = re.sub(r"<\|[^|>]+?\|>", " ", str(generated).strip())
-
-    # Tier 1: explicit "Answer: X" (matches the worked-example format).
-    # Case-insensitive; tolerates colon / equals / whitespace after
-    # "Answer"; the match must be at a line boundary, after a period, or
-    # after an opening delimiter so mid-sentence "…my answer: yes, the
-    # cat is happy…" style phrasings don't over-fire. If multiple
-    # "Answer: X" statements appear (rare), take the LAST — that's the
-    # model's final verdict.
-    last_answer_tier = None
-    for m in re.finditer(
-        r"(?:(?:^|\n)\s*|[\.\:]\s+)answer\s*[:=]?\s*[\"']?(YES|NO)\b",
-        text,
-        re.IGNORECASE,
-    ):
-        last_answer_tier = m.group(1).upper()
-    if last_answer_tier is not None:
-        return last_answer_tier == expected
-
-    # Tier 2: trailing-line bare YES/NO. Scan from the last non-empty line
-    # upward; first line that is just YES or NO (with trivial surrounding
-    # punctuation / markdown) decides.
-    for ln in reversed([l.strip() for l in text.splitlines() if l.strip()]):
-        m = re.fullmatch(r"[\s\*\"'\.\!\?\-\:\(\)]*(YES|NO)[\s\*\"'\.\!\?\-\:\(\)]*", ln, re.IGNORECASE)
-        if m:
-            return m.group(1).upper() == expected
-
-    # Tier 3: last-match anywhere (legacy behavior preserved as safety net).
-    last_token: Optional[str] = None
-    for match in re.finditer(r"[A-Za-z]+", text):
-        token = match.group(0).upper()
-        if token in {"YES", "NO"}:
-            last_token = token
-    if last_token is not None:
-        return last_token == expected
-
-    # Final fallback for uncommon tokenization patterns.
-    low = text.lower()
-    return expected.lower() in low
+    parsed = io_plugins.parse_yes_no(generated)
+    if parsed is not None:
+        return parsed == expected
+    # Final fallback for uncommon tokenization patterns the tiers abstained on.
+    return expected.lower() in str(generated).lower()
 
 
 def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -1642,9 +1764,13 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
     os.makedirs(config.save_dir, exist_ok=True)
 
     print_header("SECTION 1: DATA GENERATION")
-    gen = PuzzleGenerator(seed=config.seed)
-    dataset = gen.generate_dataset(config.n_samples_per_cell, config.chain_lengths)
-    print(f"  Generated {len(dataset)} samples")
+    if config.task_dataset is not None:
+        dataset = config.task_dataset.copy().reset_index(drop=True)
+        print(f"  Using external dataset ({config.task_label}): {len(dataset)} samples")
+    else:
+        gen = PuzzleGenerator(seed=config.seed)
+        dataset = gen.generate_dataset(config.n_samples_per_cell, config.chain_lengths)
+        print(f"  Generated {len(dataset)} samples")
     print(dataset.groupby(["chain_length", "contradiction"]).size().unstack(fill_value=0))
 
     all_results: List[Dict[str, Any]] = []
@@ -1827,15 +1953,22 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
         # V=32000 was unaffected (~62 MB/sample), which is why this bug only
         # surfaced on larger-vocab primaries. The gate only needs generated
         # text — trace payload is pure overhead.
+        #
+        # 2026-05-11: apply per-model prompt strategy from io_plugins (same
+        # one trace_sample uses below) — default raw_passthrough for the v3.2
+        # sealed models; apply_chat_template for newer models like Mistral-Nemo
+        # and Gemma-3-1B that emit empty / CoT-overflow output otherwise.
+        gate_prompt_strategy = io_plugins.get_prompt_strategy(model_name)
         n_correct = 0
         for _, row in controls.iterrows():
             sample_id = row["sample_id"]
             expected = str(row["correct_value"]).strip().upper()
             try:
+                wrapped_prompt = gate_prompt_strategy(row["prompt"], tokenizer)
                 generated = mlx_generate(
                     model,
                     tokenizer,
-                    row["prompt"],
+                    wrapped_prompt,
                     max_tokens=gate_tokens,
                     verbose=False,
                 )
@@ -1916,10 +2049,17 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                 clear_mlx_cache()
 
             try:
+                # 2026-05-11: apply per-model prompt strategy before tracing.
+                # Default (raw_passthrough) preserves the v3.2 sealed protocol
+                # for the 8 working models; newer chat-tuned models in
+                # io_plugins.PROMPT_STRATEGY_BY_MODEL get tokenizer.apply_chat_template
+                # so they don't emit empty / CoT-overflow / garbled outputs.
+                prompt_strategy = io_plugins.get_prompt_strategy(model_name)
+                wrapped_prompt = prompt_strategy(row["prompt"], tokenizer)
                 trace = trace_sample(
                     model,
                     tokenizer,
-                    row["prompt"],
+                    wrapped_prompt,
                     layer_indices,
                     output_projection,
                     config.max_new_tokens,
@@ -1949,6 +2089,10 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                 gen_pri_v2_full: List[float] = []
                 gen_delta_h_cosine: List[float] = []
                 gen_d_F_full: List[float] = []
+                # v3.2: post-hoc-replay support — top-K p_t per gen step.
+                topk_K = int(config.v3_capture_p_t_topk)
+                gen_p_t_topk_indices: List[List[int]] = []
+                gen_p_t_topk_values: List[List[float]] = []
 
                 for step in range(n_steps):
                     S_t_dump = float(trace["gen_surprises"][step])
@@ -1973,6 +2117,19 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     gen_pri_v1_cosine.append(float(dump_metrics["pri_v1_cosine"]))
                     gen_pri_v2_full.append(float(dump_metrics["pri_v2_full"]))
 
+                    if topk_K > 0:
+                        K_eff = int(min(topk_K, p_t_dump.shape[0]))
+                        # argpartition for unordered top-K, then sort descending.
+                        idx_part = np.argpartition(-p_t_dump, kth=K_eff - 1)[:K_eff]
+                        order = np.argsort(-p_t_dump[idx_part])
+                        idx_sorted = idx_part[order]
+                        gen_p_t_topk_indices.append(
+                            [int(i) for i in idx_sorted]
+                        )
+                        gen_p_t_topk_values.append(
+                            [float(v) for v in p_t_dump[idx_sorted]]
+                        )
+
                 trace_dump = {
                     "model": model_name,
                     "sample_id": int(row["sample_id"]),
@@ -1989,6 +2146,10 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     "gen_delta_h_cosine": gen_delta_h_cosine,
                     "gen_d_F_full": gen_d_F_full,
                 }
+                if topk_K > 0:
+                    trace_dump["gen_p_t_topk_indices"] = gen_p_t_topk_indices
+                    trace_dump["gen_p_t_topk_values"] = gen_p_t_topk_values
+                    trace_dump["v3_capture_p_t_topk_K"] = topk_K
                 trace_dumps.append(trace_dump)
                 all_trace_dumps.append(trace_dump)
                 if is_contr:
@@ -2019,6 +2180,7 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                             lowrank_values=config.lowrank_values,
                             v3_rank_values=config.v3_rank_values,
                             v3_capture_raw=config.v3_capture_raw,
+                            v3_capture_centered=config.v3_capture_centered,
                         )
 
                         if (
@@ -2048,6 +2210,13 @@ def run_experiment(config: Config) -> Tuple[pd.DataFrame, pd.DataFrame]:
                             "chain_length": int(row["chain_length"]),
                             "contradiction": bool(row["contradiction"]),
                             "gen_step": step + 1,
+                            # v3.2 amendment 2026-05-08: persist the token
+                            # emitted at this gen_step so adaptive-step
+                            # rupture analysis (find the step where YES/NO
+                            # is committed) is post-hoc-runnable from
+                            # all_results without trace_dumps. Adds ~8
+                            # bytes/row at no compute cost.
+                            "gen_token_id": int(trace["gen_token_ids"][step]),
                             "is_correct": bool(is_correct),
                             "generated_text": trace["generated_text"],
                             "layer": layer_name,

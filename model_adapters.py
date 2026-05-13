@@ -546,12 +546,19 @@ class QwenAdapter(ModelAdapter):
         
         # Extract last token and project
         last_token = self._extract_last_token_hidden(x)
-        logits = self.lm_head(last_token)
-        
+        # 2026-05-12: Qwen3-1.7B uses TIED EMBEDDINGS (`lm_head=None` on the
+        # outer model — the lm_head shares weights with `embed_tokens`).
+        # Mirrors the 2026-05-11 Phi3Adapter patch. Fall back to projecting
+        # through the tied input embedding when lm_head is None.
+        if self.lm_head is not None:
+            logits = self.lm_head(last_token)
+        else:
+            logits = self.embed_tokens.as_linear(last_token)
+
         # Normalize shape
         if logits.ndim == 2:
             logits = logits.squeeze(0)
-        
+
         return logits
 
 
@@ -619,12 +626,20 @@ class Phi3Adapter(ModelAdapter):
         
         # Extract last token and project
         last_token = self._extract_last_token_hidden(x)
-        logits = self.lm_head(last_token)
-        
+        # 2026-05-11: Phi-4-mini uses TIED EMBEDDINGS (`lm_head=None` on the
+        # outer model — the lm_head shares weights with `embed_tokens`).
+        # Fall back to `embed_tokens.as_linear()` in that case, matching
+        # the LlamaAdapter convention (line 465). Without this guard the
+        # smoke fails with `TypeError: 'NoneType' object is not callable`.
+        if self.lm_head is not None:
+            logits = self.lm_head(last_token)
+        else:
+            logits = self.embed_tokens.as_linear(last_token)
+
         # Normalize shape
         if logits.ndim == 2:
             logits = logits.squeeze(0)
-        
+
         return logits
 
 
