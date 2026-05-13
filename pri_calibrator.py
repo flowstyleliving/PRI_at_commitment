@@ -179,7 +179,7 @@ def _load_calibration_jsonl(path: str) -> Tuple[List[str], np.ndarray, str]:
             labels.append(y)
             h.update(f"{y}\t{p}\n".encode("utf-8"))
     if not prompts:
-        raise SystemExit(f"no calibration samples loaded from {path}")
+        raise RuntimeError(f"no calibration samples loaded from {path}")
     return prompts, np.array(labels, dtype=np.int32), h.hexdigest()
 
 
@@ -521,25 +521,74 @@ def _emit_warnings(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def calibrate(
+@dataclass
+class CalibrationState:
+    """Loaded model + everything needed to run calibrate_with_state(). Build
+    once via load_calibration_state(model_slug, ...); reuse across multiple
+    calibrations (e.g. ANLI R1/R2/R3 on the same model) to skip the model
+    load cost. Not part of the persisted profile."""
+    model_slug: str
+    model: Any
+    tokenizer: Any
+    projection: Any
+    layer_indices: Dict[str, int]
+    pri_computer: Any
+    prompt_strategy: Any
+    layer_name: str
+    seed: int
+
+
+def load_calibration_state(
     model_slug: str,
+    *,
+    layer_name: str = "final",
+    seed: int = 20260512,
+) -> CalibrationState:
+    """Load the model + tokenizer + PRIComputer once. The returned state can
+    be passed to `calibrate_with_state(state, ...)` repeatedly with different
+    calibration jsonls without paying the model-load cost each time.
+    """
+    cfg = pipeline.Config()
+    cfg.layers_to_probe = [layer_name]
+    cfg.seed = seed
+    model, tokenizer, projection, layer_indices = pipeline.load_model(model_slug, cfg)
+    gamma = pipeline._extract_final_rmsnorm_gamma(model)
+    if gamma is None:
+        raise RuntimeError(
+            f"could not extract final-RMSNorm gamma for {model_slug}; "
+            f"check pri_v2_mlx_pipeline._extract_final_rmsnorm_gamma logs."
+        )
+    pri_computer = pipeline.PRIComputer(projection, final_norm_gamma=gamma)
+    prompt_strategy = io_plugins.get_prompt_strategy(model_slug)
+    return CalibrationState(
+        model_slug=model_slug,
+        model=model,
+        tokenizer=tokenizer,
+        projection=projection,
+        layer_indices=layer_indices,
+        pri_computer=pri_computer,
+        prompt_strategy=prompt_strategy,
+        layer_name=layer_name,
+        seed=seed,
+    )
+
+
+def calibrate_with_state(
+    state: CalibrationState,
     calibration_jsonl_path: str,
     *,
     task_label: str = "",
     panel: Optional[List[PanelCell]] = None,
-    seed: int = 20260512,
     n_bootstrap: int = 1000,
     max_new_tokens: int = 8,
-    layer_name: str = "final",
     alpha: float = 1.0,
 ) -> CalibrationProfile:
-    """Calibrate a PRI detector for (model_slug, calibration_data). Returns
-    a CalibrationProfile with the best (cell, sign) locked, plus bootstrap
-    CI and deployability warnings.
+    """Run the calibration pass using a pre-loaded model state. This is the
+    inner work — see `calibrate()` for the single-shot wrapper that loads +
+    runs in one call.
 
-    `max_new_tokens` defaults to 8 — enough to cover gen_step ∈ {1..5} for the
-    default panel (max panel step is 4; one extra for safety) while keeping
-    per-sample cost low.
+    Use this when you want to calibrate the same model on multiple datasets
+    (e.g. ANLI R1/R2/R3) without reloading the model each time.
     """
     panel = list(panel or DEFAULT_PANEL)
     prompts, labels, data_hash = _load_calibration_jsonl(calibration_jsonl_path)
@@ -547,25 +596,9 @@ def calibrate(
     n_pos = int((labels == 1).sum())
     n_neg = int((labels == 0).sum())
 
-    print(f"[calibrate] model={model_slug}")
+    print(f"[calibrate] model={state.model_slug}  task={task_label or '(unset)'}")
     print(f"[calibrate] n_calibration={n_calibration} (pos={n_pos}, neg={n_neg})")
     print(f"[calibrate] panel={[_cell_label(c) for c in panel]}")
-
-    # Build a Config that mirrors the v3.2 sealed protocol (final-layer only).
-    cfg = pipeline.Config()
-    cfg.layers_to_probe = [layer_name]
-    cfg.seed = seed
-
-    # Load model + extract gamma + build PRIComputer.
-    model, tokenizer, projection, layer_indices = pipeline.load_model(model_slug, cfg)
-    gamma = pipeline._extract_final_rmsnorm_gamma(model)
-    if gamma is None:
-        raise SystemExit(
-            f"could not extract final-RMSNorm gamma for {model_slug}; "
-            f"check pri_v2_mlx_pipeline._extract_final_rmsnorm_gamma logs."
-        )
-    pri_computer = pipeline.PRIComputer(projection, final_norm_gamma=gamma)
-    prompt_strategy = io_plugins.get_prompt_strategy(model_slug)
 
     # Per-sample × per-cell score matrix.
     n_cells = len(panel)
@@ -573,11 +606,11 @@ def calibrate(
     print(f"[calibrate] tracing {n_calibration} samples...")
     for i, prompt in enumerate(prompts):
         trace = _trace_one_prompt(
-            model, tokenizer, projection, layer_indices, prompt,
-            prompt_strategy, max_new_tokens,
+            state.model, state.tokenizer, state.projection, state.layer_indices,
+            prompt, state.prompt_strategy, max_new_tokens,
         )
         per_cell = _compute_panel_scores_for_sample(
-            pri_computer, trace, layer_name, panel, alpha=alpha,
+            state.pri_computer, trace, state.layer_name, panel, alpha=alpha,
         )
         for j, cell in enumerate(panel):
             v = per_cell.get(cell)
@@ -612,7 +645,7 @@ def calibrate(
                 best_idx = j
 
     if best_idx < 0:
-        raise SystemExit(
+        raise RuntimeError(
             "no candidate cell produced a finite AUROC — calibration data "
             "may be too small or all samples EOS'd before reaching panel steps."
         )
@@ -626,7 +659,7 @@ def calibrate(
 
     # In-sample bootstrap CI on the locked sign (legacy semantics).
     ci_lo, ci_hi = _bootstrap_auroc(
-        score_matrix[:, best_idx], labels, best_sign, n_bootstrap, seed,
+        score_matrix[:, best_idx], labels, best_sign, n_bootstrap, state.seed,
     )
     print(f"[calibrate] in-sample 95%% CI: [{ci_lo:.3f}, {ci_hi:.3f}]  "
           f"(n_bootstrap={n_bootstrap})")
@@ -637,7 +670,7 @@ def calibrate(
     # post-selection-bias finding.
     print(f"[calibrate] nested OOB bootstrap...")
     oob_stats = _nested_bootstrap_oob_auroc(
-        score_matrix, labels, panel, n_bootstrap, seed,
+        score_matrix, labels, panel, n_bootstrap, state.seed,
     )
     if oob_stats["oob_n_bootstrap_used"] > 0:
         print(
@@ -664,12 +697,12 @@ def calibrate(
     pipeline_path = REPO_ROOT / "pri_v2_mlx_pipeline.py"
     io_plugins_path = REPO_ROOT / "pri_v2_io_plugins.py"
     model_adapters_path = REPO_ROOT / "model_adapters.py"
-    model_snapshot_sha = _resolve_model_snapshot_sha(model_slug)
+    model_snapshot_sha = _resolve_model_snapshot_sha(state.model_slug)
     profile = CalibrationProfile(
         schema_version=SCHEMA_VERSION,
         model={
-            "slug": model_slug,
-            "output_projection_kind": projection.mode,
+            "slug": state.model_slug,
+            "output_projection_kind": state.projection.mode,
         },
         task={
             "label": task_label,
@@ -680,7 +713,7 @@ def calibrate(
         },
         detector={
             "gen_step": int(best_cell[0]),
-            "layer": layer_name,
+            "layer": state.layer_name,
             "alpha": float(alpha),
             "metric": {
                 "family": best_cell[1],
@@ -705,7 +738,7 @@ def calibrate(
             "candidate_panel": candidate_results,
         },
         provenance={
-            "calibration_seed": int(seed),
+            "calibration_seed": int(state.seed),
             "n_bootstrap": int(n_bootstrap),
             "pipeline_module_hash_sha256": _hash_file(pipeline_path),
             "io_plugins_module_hash_sha256": _hash_file(io_plugins_path),
@@ -718,6 +751,39 @@ def calibrate(
         warnings=warnings_list,
     )
     return profile
+
+
+def calibrate(
+    model_slug: str,
+    calibration_jsonl_path: str,
+    *,
+    task_label: str = "",
+    panel: Optional[List[PanelCell]] = None,
+    seed: int = 20260512,
+    n_bootstrap: int = 1000,
+    max_new_tokens: int = 8,
+    layer_name: str = "final",
+    alpha: float = 1.0,
+) -> CalibrationProfile:
+    """Single-shot calibration: load the model then run the calibration pass.
+
+    Thin wrapper around `load_calibration_state` + `calibrate_with_state`.
+    Use the two-step form directly when you want to calibrate the same model
+    on multiple datasets without reloading.
+
+    `max_new_tokens` defaults to 8 — enough to cover gen_step ∈ {1..5} for the
+    default panel (max panel step is 4; one extra for safety).
+    """
+    state = load_calibration_state(model_slug, layer_name=layer_name, seed=seed)
+    return calibrate_with_state(
+        state,
+        calibration_jsonl_path,
+        task_label=task_label,
+        panel=panel,
+        n_bootstrap=n_bootstrap,
+        max_new_tokens=max_new_tokens,
+        alpha=alpha,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

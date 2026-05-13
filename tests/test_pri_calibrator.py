@@ -20,6 +20,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from pri_calibrator import (  # noqa: E402
     CalibrationProfile,
+    CalibrationState,
     DEFAULT_PANEL,
     SCHEMA_VERSION,
     _bootstrap_auroc,
@@ -30,12 +31,53 @@ from pri_calibrator import (  # noqa: E402
     _nested_bootstrap_oob_auroc,
     _score_candidate,
     calibrate,
+    calibrate_with_state,
+    load_calibration_state,
 )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CalibrationProfile dataclass — schema v1.0
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestCalibrateWithStateSignature:
+    """Regression tests for the 2026-05-13 calibrate_with_state refactor that
+    Codex's adversarial review flagged. Catches the seed-NameError bug at
+    parse time without needing a model load."""
+
+    def test_calibrate_with_state_does_not_accept_seed_kwarg(self):
+        """The split moved `seed` from a kwarg into state.seed. Anyone passing
+        `seed=` to calibrate_with_state() should get TypeError, not silent
+        misuse."""
+        import inspect
+        sig = inspect.signature(calibrate_with_state)
+        assert "seed" not in sig.parameters, (
+            "calibrate_with_state must not accept a `seed` kwarg — the seed "
+            "lives in CalibrationState.seed now."
+        )
+
+    def test_calibrate_with_state_function_body_references_state_seed(self):
+        """Catches the regression Codex found: the body referencing bare
+        `seed` after the refactor. Source-level grep is a low-tech but
+        effective unit-level guard."""
+        import inspect
+        src = inspect.getsource(calibrate_with_state)
+        # Bootstrap calls must use state.seed (not a bare `seed` variable).
+        assert "n_bootstrap, state.seed" in src or "state.seed," in src, (
+            "calibrate_with_state appears not to thread state.seed into "
+            "bootstrap calls — bare `seed` reference would NameError at runtime"
+        )
+
+    def test_calibration_state_dataclass_has_seed_field(self):
+        """CalibrationState must carry seed since calibrate_with_state needs it."""
+        import dataclasses
+        fields = {f.name for f in dataclasses.fields(CalibrationState)}
+        assert "seed" in fields
+        assert "model_slug" in fields
+        assert "model" in fields
+        assert "pri_computer" in fields
+        assert "prompt_strategy" in fields
 
 
 class TestProfile:
@@ -148,7 +190,9 @@ class TestLoadCalibrationJsonl:
     def test_empty_file_raises(self, tmp_path):
         path = tmp_path / "empty.jsonl"
         path.write_text("")
-        with pytest.raises(SystemExit, match="no calibration samples"):
+        # Was SystemExit until 2026-05-13 — library helpers now raise
+        # RuntimeError so callers (sweep runner) can catch failures.
+        with pytest.raises(RuntimeError, match="no calibration samples"):
             _load_calibration_jsonl(str(path))
 
     def test_blank_lines_skipped(self, tmp_path):
@@ -458,6 +502,48 @@ class TestIntegration:
         if snap is not None:
             assert len(snap) == 40
             assert all(c in "0123456789abcdef" for c in snap)
+
+    @pytest.mark.slow
+    def test_calibrate_with_state_direct_two_calls_reuse_model(
+        self, puzzle_calibration_jsonl, gemma_3_1b_slug
+    ):
+        """Regression test for the 2026-05-13 refactor — exercises the
+        two-step path (load_calibration_state + calibrate_with_state) that
+        scripts/anli_full_sweep.py depends on. Catches:
+          * the seed-NameError bug Codex found (would fire on first bootstrap)
+          * any state-leak between back-to-back calibrate_with_state calls
+        """
+        state = load_calibration_state(gemma_3_1b_slug, seed=42)
+        # Two back-to-back calls on the same dataset must produce identical
+        # detector + calibration_stats (the slug + data identity hold).
+        p1 = calibrate_with_state(
+            state, str(puzzle_calibration_jsonl),
+            task_label="reg_test_round_a",
+            n_bootstrap=200, max_new_tokens=8,
+        )
+        p2 = calibrate_with_state(
+            state, str(puzzle_calibration_jsonl),
+            task_label="reg_test_round_b",
+            n_bootstrap=200, max_new_tokens=8,
+        )
+        # Detector identity must match — same model + same data + same seed
+        # (in state) → identical winner cell, sign, and locked-sign AUROC.
+        assert p1.detector == p2.detector
+        assert p1.calibration_stats["auroc"] == p2.calibration_stats["auroc"]
+        # Task label differs (the kwarg) but the rest of `task` should match.
+        assert p1.task["data_hash_sha256"] == p2.task["data_hash_sha256"]
+        assert p1.task["n_calibration"] == p2.task["n_calibration"]
+        # Provenance: pipeline + module hashes must be identical (same code);
+        # only calibrated_at_iso may differ.
+        for k in [
+            "pipeline_module_hash_sha256",
+            "io_plugins_module_hash_sha256",
+            "model_adapters_module_hash_sha256",
+            "calibrator_module_hash_sha256",
+            "model_snapshot_sha",
+            "calibration_seed",
+        ]:
+            assert p1.provenance[k] == p2.provenance[k]
 
     @pytest.mark.slow
     def test_calibrate_determinism_same_seed_same_profile(
