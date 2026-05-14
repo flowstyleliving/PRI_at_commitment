@@ -1,0 +1,145 @@
+{
+  "calibration_stats": {
+    "auroc": 0.6483333333333334,
+    "auroc_bootstrap_ci_hi": 0.7982772988505747,
+    "auroc_bootstrap_ci_lo": 0.48921440489432705,
+    "candidate_panel": [
+      {
+        "auroc": 0.5104,
+        "cell": "d_F_full @ step 1",
+        "column_name": "d_F_full",
+        "family": "scalar",
+        "n_evaluated": 50,
+        "rank_label": "d_F_full",
+        "sign": -1,
+        "step": 1
+      },
+      {
+        "auroc": 0.5167999999999999,
+        "cell": "kl_discharged @ step 1",
+        "column_name": "kl_discharged",
+        "family": "scalar",
+        "n_evaluated": 50,
+        "rank_label": "kl_discharged",
+        "sign": 1,
+        "step": 1
+      },
+      {
+        "auroc": 0.5728,
+        "cell": "Fisher r=1 @ step 1",
+        "column_name": "null_ratio_post_rank1",
+        "family": "Fisher",
+        "n_evaluated": 50,
+        "rank_label": "r=1",
+        "sign": -1,
+        "step": 1
+      },
+      {
+        "auroc": 0.5383333333333333,
+        "cell": "Fisher r=2 @ step 3",
+        "column_name": "null_ratio_post_rank2",
+        "family": "Fisher",
+        "n_evaluated": 49,
+        "rank_label": "r=2",
+        "sign": 1,
+        "step": 3
+      },
+      {
+        "auroc": 0.64,
+        "cell": "Centered r=2 @ step 1",
+        "column_name": "null_ratio_centered_post_rank2",
+        "family": "Centered",
+        "n_evaluated": 50,
+        "rank_label": "r=2",
+        "sign": -1,
+        "step": 1
+      },
+      {
+        "auroc": 0.5536,
+        "cell": "Centered r=4 @ step 1",
+        "column_name": "null_ratio_centered_post_rank4",
+        "family": "Centered",
+        "n_evaluated": 50,
+        "rank_label": "r=4",
+        "sign": 1,
+        "step": 1
+      },
+      {
+        "auroc": 0.6483333333333334,
+        "cell": "Raw r=2 @ step 4",
+        "column_name": "null_ratio_raw_post_rank2",
+        "family": "Raw",
+        "n_evaluated": 49,
+        "rank_label": "r=2",
+        "sign": 1,
+        "step": 4
+      },
+      {
+        "auroc": 0.63,
+        "cell": "Raw r=21 @ step 3",
+        "column_name": "null_ratio_raw_post_rank21",
+        "family": "Raw",
+        "n_evaluated": 49,
+        "rank_label": "r=21",
+        "sign": 1,
+        "step": 3
+      }
+    ],
+    "oob_auroc_ci_hi": 0.7400416666666665,
+    "oob_auroc_ci_lo": 0.2678571428571429,
+    "oob_auroc_median": 0.5375,
+    "oob_n_bootstrap_used": 2000,
+    "winner_counts": {
+      "Centered r=2 @ step 1": 512,
+      "Centered r=4 @ step 1": 86,
+      "Fisher r=1 @ step 1": 122,
+      "Fisher r=2 @ step 3": 54,
+      "Raw r=2 @ step 4": 715,
+      "Raw r=21 @ step 3": 453,
+      "d_F_full @ step 1": 43,
+      "kl_discharged @ step 1": 15
+    },
+    "winner_stability": 0.3575
+  },
+  "detector": {
+    "alpha": 1.0,
+    "gen_step": 4,
+    "layer": "final",
+    "metric": {
+      "column_name": "null_ratio_raw_post_rank2",
+      "family": "Raw",
+      "label": "r=2"
+    },
+    "sign": 1,
+    "threshold": null
+  },
+  "model": {
+    "output_projection_kind": "lm_head",
+    "slug": "mlx-community/gemma-3-4b-it-4bit"
+  },
+  "provenance": {
+    "calibrated_at_iso": "2026-05-14T00:08:04.943051Z",
+    "calibration_seed": 20260513,
+    "calibrator_module_hash_sha256": "f12c4533298d8cf18797d0c74a375499e4cd2b85b4d71cb06aec1f5a1010c635",
+    "io_plugins_module_hash_sha256": "6c56be1888abc6ad44150583b869bac06366fa70a7d8e13230da3703064eb7b7",
+    "max_new_tokens": 8,
+    "model_adapters_module_hash_sha256": "5ce42c7f8de787e6f301c4542ebbb5057bc8b1702758702095f62cc720743137",
+    "model_snapshot_sha": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "n_bootstrap": 2000,
+    "pipeline_module_hash_sha256": "98c0abea4b651822c947599db921b16e47033026d6999bab74573ccec035c8ba"
+  },
+  "schema_version": "1.1",
+  "task": {
+    "data_hash_sha256": "c6501109bd1072e097cd19427c2af75c48ee1a4b498fcf6175416b5905ae861f",
+    "label": "anli_R3_dev_n50",
+    "n_calibration": 50,
+    "n_neg": 25,
+    "n_pos": 25
+  },
+  "warnings": [
+    "low_auroc (best=0.648; <0.65 likely not deployable)",
+    "wide_ci (95%% CI width=0.31; >0.30 implies n too small)",
+    "oob_low_auroc (oob_median=0.537; <0.60 means the cell selection didn't generalize beyond the calibration sample)",
+    "winner_unstable (winner_stability=0.36; a different panel cell wins on >30% of bootstrap resamples \u2014 the chosen cell is noise-driven at this n)"
+  ]
+}
