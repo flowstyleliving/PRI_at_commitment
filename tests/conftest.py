@@ -40,9 +40,9 @@ def tmp_calibration_jsonl(tmp_path) -> Callable[[List[Tuple[str, int]]], Path]:
 
 @pytest.fixture
 def synthetic_profile_dict() -> Dict[str, Any]:
-    """Minimal valid CalibrationProfile-shaped dict (schema v1.1)."""
+    """Minimal valid CalibrationProfile-shaped dict (schema v1.2)."""
     return {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "model": {"slug": "test/fake-model", "output_projection_kind": "lm_head"},
         "task": {
             "label": "unit_test",
@@ -59,6 +59,7 @@ def synthetic_profile_dict() -> Dict[str, Any]:
                 "family": "scalar",
                 "label": "d_F_full",
                 "column_name": "d_F_full",
+                "derivation": None,
             },
             "sign": -1,
             "threshold": None,

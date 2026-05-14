@@ -60,7 +60,7 @@ import pri_v2_io_plugins as io_plugins
 from analyze_adaptive_step import auroc_signed
 
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
 # v1.0 → v1.1 (2026-05-13): Codex adversarial review fixes.
 #   * calibration_stats gains oob_auroc_median + oob_auroc_ci_{lo,hi} +
 #     oob_n_bootstrap_used + winner_stability + winner_counts. The in-sample
@@ -69,7 +69,17 @@ SCHEMA_VERSION = "1.1"
 #   * provenance gains io_plugins_module_hash_sha256 +
 #     model_adapters_module_hash_sha256 + model_snapshot_sha. Detector's
 #     strict mode validates ALL hashes, not just the pipeline file.
-#   * v1.0 profiles are rejected — re-calibrate.
+# v1.1 → v1.2 (2026-05-14): support derived winners (composites + residualized).
+#   * profile.detector.metric optionally carries a `derivation` payload that
+#     tells the detector how to compute the metric at score time:
+#       - composite: {"kind": "composite", "formula": "<label>"}
+#       - residualized: {"kind": "residualized", "base_column": "...",
+#                        "regress_against": "d_F_full", "b0": float, "b1": float}
+#     Direct cells leave `derivation: None`.
+#   * Detector v1.2 reads `derivation` and reproduces both forms.
+#   * Earlier (v1.1) profiles are rejected — re-calibrate. Existing v1.1
+#     calibrator wrote `column_name = "composite::..."` for composite winners
+#     which detector couldn't resolve; v1.2 makes that contract explicit.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -94,14 +104,19 @@ DEFAULT_PANEL: List[PanelCell] = [
     # ─── Residualized (E18 sealed primary form) ────────────────────────
     # `null_ratio_resid = null_ratio − predicted(null_ratio | d_F_full)`
     # via linear regression on d_F_full alone. Per pri-v3-plan.md §
-    # Magnitude-independence test: this is the SEALED E18 acceptance
-    # variable — strips the magnitude confound the raw null_ratio carries.
-    # Added 2026-05-13 after Codex/user found the calibrator was scoring
-    # only the decomposition control (E17 null_bare), not the sealed primary.
+    # Magnitude-independence test (sealed at step 1): this is the E18
+    # acceptance variable — strips the magnitude confound the raw
+    # null_ratio carries.
+    #
+    # CONFINED TO STEP 1 (Codex review 2026-05-14): residualization
+    # requires d_F_full at the SAME step. Only step 1 has d_F_full in this
+    # panel, so step-3/4 resid cells would be cross-step-leaked. The non-
+    # step-1 raw cells stay in the panel for their own merit; we don't
+    # provide a residualized version for them unless / until d_F_full @
+    # those steps is added explicitly.
     (1, "Fisher_resid", "r=1"),
     (1, "Centered_resid", "r=2"),
-    (4, "Raw_resid", "r=2"),
-    (3, "Raw_resid", "r=21"),
+    (1, "Raw_resid", "r=1"),
     # ─── Composites (E18 additive + E19 multiplicative) ────────────────
     # `pri_v3_null_ratio = S_t + α · null_ratio_final` (additive, E18)
     # `pri_v3_null_gated = d_F · null_ratio` (multiplicative, E19)
@@ -656,57 +671,111 @@ class CalibrationState:
     seed: int
 
 
+def _build_derivation(
+    cell: PanelCell,
+    resid_coeffs: Dict[PanelCell, Dict[str, float]],
+) -> Optional[Dict[str, Any]]:
+    """Construct the `derivation` payload for `profile.detector.metric` so
+    the detector can reproduce the score at deploy time. Returns None for
+    direct cells (the detector falls through to the legacy
+    `result[column_name]` path).
+
+    Composite cells: `{"kind": "composite", "formula": "<label>"}` — the
+    detector parses the label via the same _compose_score dispatcher.
+
+    Residualized cells: `{"kind": "residualized", "base_column": "...",
+    "regress_against": "d_F_full", "regress_against_step": int, "b0": ...,
+    "b1": ...}` — the detector pulls base_column + the regress-against
+    column from compute_step output, computes `raw − (b0 + b1 · regressor)`.
+    """
+    step, fam, label = cell
+    if fam == DERIVED_COMPOSITE_FAMILY:
+        return {"kind": "composite", "formula": label}
+    if fam in DERIVED_RESID_FAMILIES:
+        coeffs = resid_coeffs.get(cell)
+        if not coeffs:
+            # Residualization wasn't successfully fit for this cell — the
+            # cell column is NaN, so this shouldn't be a winner. Defensive.
+            return None
+        return {
+            "kind": "residualized",
+            "base_column": coeffs["base_column"],
+            "regress_against": coeffs["regress_against"],
+            "regress_against_step": coeffs["regress_against_step"],
+            "b0": coeffs["b0"],
+            "b1": coeffs["b1"],
+        }
+    return None
+
+
 def _residualize_in_place(
     score_matrix: np.ndarray,
     panel: List[PanelCell],
     *,
     prompts_n: int,
-) -> None:
+) -> Dict[PanelCell, Dict[str, float]]:
     """For each `*_resid` cell in the panel, replace its column in the
-    score matrix with `raw − predicted(raw | d_F_full)`. Linear regression
-    is fit on (d_F_full, raw) pairs across the n calibration samples. NaNs
-    in either column drop the sample from the fit AND from the residual
-    output (residual stays NaN for that row).
+    score matrix with `raw − predicted(raw | d_F_full @ same_step)`. The
+    regression is OLS `y = b0 + b1 * d_F_full` fitted across n samples.
+    NaNs in either column drop the sample from the fit AND from the
+    residual output (residual stays NaN for that row).
 
-    This is the E18 sealed acceptance variable from pri-v3-plan.md
-    §Magnitude-independence test (lines 178-181). It strips the magnitude
-    confound that raw `null_ratio` carries.
+    STEP-MATCHED (Codex review 2026-05-14): `d_F_full` is looked up by
+    step. If the panel doesn't contain `(step, "scalar", "d_F_full")` for
+    a resid cell's step, the cell's column is filled with NaN — we never
+    silently regress against a different step's magnitude.
+
+    Returns a dict mapping each successfully-residualized PanelCell to
+    `{"b0": float, "b1": float, "base_column": str, "regress_against": str}`
+    so the calibrator can persist these coefficients in the profile and
+    the detector can reproduce the residual at score time. Cells that
+    couldn't be residualized (insufficient samples or missing d_F_full)
+    are absent from the returned dict.
     """
-    # Build column-index map for direct cells we need to reference.
     col_index: Dict[PanelCell, int] = {cell: j for j, cell in enumerate(panel)}
-    # Find d_F_full column (must exist for residualization)
-    d_F_cell: Optional[PanelCell] = None
+
+    # Index d_F_full by gen_step.
+    d_F_col_by_step: Dict[int, int] = {}
     for cell in panel:
         if cell[1] == "scalar" and cell[2] == "d_F_full":
-            d_F_cell = cell
-            break
-    if d_F_cell is None:
-        # Without d_F_full in the panel we can't residualize. Leave the
-        # resid columns as their base values; downstream cell scoring will
-        # behave as if they're duplicates of the raw cells.
-        return
-    d_F_col_idx = col_index[d_F_cell]
-    d_F_values = score_matrix[:, d_F_col_idx]
+            d_F_col_by_step[cell[0]] = col_index[cell]
+    if not d_F_col_by_step:
+        return {}
 
+    coeffs: Dict[PanelCell, Dict[str, float]] = {}
     for j, cell in enumerate(panel):
         if cell[1] not in DERIVED_RESID_FAMILIES:
             continue
+        step = cell[0]
+        if step not in d_F_col_by_step:
+            # No d_F_full at this step → can't fit a same-step residual.
+            score_matrix[:, j] = np.nan
+            continue
+        d_F_values = score_matrix[:, d_F_col_by_step[step]]
         raw_values = score_matrix[:, j].copy()
         finite_mask = np.isfinite(raw_values) & np.isfinite(d_F_values)
         if finite_mask.sum() < 3:
-            # Too few finite pairs to fit a regression; mark all as NaN.
             score_matrix[:, j] = np.nan
             continue
         x = d_F_values[finite_mask]
         y = raw_values[finite_mask]
-        # OLS: y ≈ b0 + b1 * x. Use np.polyfit (degree=1) for numerical
-        # stability + tiny dependency surface.
-        b1, b0 = np.polyfit(x, y, 1)
+        b1, b0 = np.polyfit(x, y, 1)  # OLS deg=1 → (slope, intercept)
         predicted = b0 + b1 * d_F_values
         residuals = raw_values - predicted
-        # Preserve NaN where either input was NaN — don't fabricate residuals.
         residuals = np.where(finite_mask, residuals, np.nan)
         score_matrix[:, j] = residuals
+
+        # Record coefficients for downstream persistence.
+        base_fam = _resid_base_family(cell[1])
+        base_column = _column_name((step, base_fam, cell[2]))
+        coeffs[cell] = {
+            "b0": float(b0),
+            "b1": float(b1),
+            "base_column": str(base_column),
+            "regress_against": "d_F_full",
+            "regress_against_step": int(step),
+        }
+    return coeffs
 
 
 def load_calibration_state(
@@ -795,8 +864,10 @@ def calibrate_with_state(
     # (which holds the raw null_ratio values at this point) against the
     # d_F_full column AT THE SAME STEP across all calibration samples, and
     # replace the column with residuals. Cells whose corresponding d_F_full
-    # or base column doesn't exist on this sample are left as NaN.
-    _residualize_in_place(score_matrix, panel, prompts_n=n_calibration)
+    # is missing at that step (or with <3 finite pairs) become NaN.
+    # The returned coefficients let us persist (b0, b1) per residualized
+    # cell so the detector can reproduce the residual at score time.
+    resid_coeffs = _residualize_in_place(score_matrix, panel, prompts_n=n_calibration)
 
     # Score every candidate; pick best by |AUROC - 0.5|.
     candidate_results = []
@@ -898,6 +969,11 @@ def calibrate_with_state(
                 "family": best_cell[1],
                 "label": best_cell[2],
                 "column_name": _column_name(best_cell),
+                # `derivation` tells Detector.score() how to compute this
+                # metric at deploy time. None for direct cells (the detector
+                # just looks up column_name in compute_step output). Set for
+                # composite + residualized winners — schema v1.2.
+                "derivation": _build_derivation(best_cell, resid_coeffs),
             },
             "sign": best_sign,
             "threshold": None,  # researcher chooses at deploy time (Youden's J etc.)

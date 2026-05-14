@@ -90,6 +90,9 @@ class Detector:
         self._alpha = float(profile.detector["alpha"])
         self._sign = int(profile.detector["sign"])
         self._metric_column = str(profile.detector["metric"]["column_name"])
+        # v1.2: `derivation` is None for direct cells; populated for composite
+        # + residualized winners. _extract_metric_value() dispatches on it.
+        self._derivation: Optional[Dict[str, Any]] = profile.detector["metric"].get("derivation")
         self._v3_rank_values = list(v3_rank_values)
         # Default max_new_tokens = calibration's max_new_tokens (so the gen
         # window at deploy matches what was used to derive the profile).
@@ -264,7 +267,7 @@ class Detector:
             v3_capture_raw=True,
             v3_capture_centered=True,
         )
-        raw = result.get(self._metric_column)
+        raw = self._extract_metric_value(result)
         if raw is None or not np.isfinite(raw):
             raise RuntimeError(
                 f"calibrated metric '{self._metric_column}' not produced at "
@@ -272,6 +275,43 @@ class Detector:
                 f"cover the calibrated rank"
             )
         return float(raw) * self._sign
+
+    def _extract_metric_value(self, result: Dict[str, float]) -> Optional[float]:
+        """Pull the metric value from compute_step's result dict.
+
+        v1.2 derivation dispatch:
+          * derivation is None → direct column lookup (legacy v1.1 behavior)
+          * derivation.kind == "composite" → parse formula, compose from
+            primitives via `_compose_score`
+          * derivation.kind == "residualized" → `raw - (b0 + b1 * regressor)`
+            using stored coefficients from calibration time
+        """
+        if not self._derivation:
+            v = result.get(self._metric_column)
+            return float(v) if (v is not None and np.isfinite(v)) else None
+
+        kind = self._derivation.get("kind")
+        if kind == "composite":
+            from pri_calibrator import _compose_score
+            formula = self._derivation.get("formula", "")
+            v = _compose_score(result, formula)
+            return float(v) if (v is not None and np.isfinite(v)) else None
+
+        if kind == "residualized":
+            base_col = self._derivation["base_column"]
+            regress_col = self._derivation["regress_against"]
+            b0 = float(self._derivation["b0"])
+            b1 = float(self._derivation["b1"])
+            base = result.get(base_col)
+            regressor = result.get(regress_col)
+            if base is None or regressor is None:
+                return None
+            if not (np.isfinite(base) and np.isfinite(regressor)):
+                return None
+            return float(base) - (b0 + b1 * float(regressor))
+
+        # Unknown derivation kind — bail honestly.
+        raise RuntimeError(f"unknown derivation kind: {kind!r}")
 
     def predict(self, prompt: str, *, threshold: Optional[float] = None) -> bool:
         """Binary prediction: True if score > threshold. Default threshold

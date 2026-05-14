@@ -99,7 +99,7 @@ class TestProfile:
         synthetic_profile_dict["schema_version"] = "99.0"
         path = tmp_path / "bad.json"
         path.write_text(json.dumps(synthetic_profile_dict))
-        with pytest.raises(ValueError, match=r"schema 99\.0 != supported 1\.1"):
+        with pytest.raises(ValueError, match=r"schema 99\.0 != supported 1\.2"):
             CalibrationProfile.from_json(str(path))
 
     def test_warnings_default_empty_list(self, synthetic_profile_dict):
@@ -149,9 +149,10 @@ class TestPureHelpers:
         assert _cell_label(cell) == expected
 
     def test_default_panel_shape(self):
-        # 2026-05-13 panel expansion: 8 direct cells + 4 residualized
-        # (E18 sealed primary form) + 4 composites (additive + gated).
-        assert len(DEFAULT_PANEL) == 16
+        # 2026-05-13/14 panel expansion (post-Codex fix):
+        #   8 direct cells + 3 residualized (step-1 only, where d_F_full
+        #   lives in the panel) + 4 composites (additive + gated) = 15.
+        assert len(DEFAULT_PANEL) == 15
         for cell in DEFAULT_PANEL:
             assert len(cell) == 3
             step, fam, label = cell
@@ -491,6 +492,49 @@ class TestDerivedCells:
         finite_idx = [i for i in range(n) if i not in (5, 10)]
         for i in finite_idx:
             assert np.isfinite(score_matrix[i, 1])
+
+    def test_residualize_returns_coefficients(self):
+        """v1.2 requires coefficients persisted so Detector can reproduce
+        the residual at score time. _residualize_in_place returns a dict
+        mapping each successfully-residualized cell → (b0, b1, base_column,
+        regress_against, regress_against_step)."""
+        rng = np.random.RandomState(0)
+        n = 20
+        d_F = rng.uniform(1, 5, n)
+        null_ratio = 0.9 + 0.05 * d_F + rng.normal(0, 0.01, n)
+        panel = [
+            (1, "scalar", "d_F_full"),
+            (1, "Fisher_resid", "r=1"),
+        ]
+        score_matrix = np.column_stack([d_F, null_ratio])
+        coeffs = _residualize_in_place(score_matrix, panel, prompts_n=n)
+        assert (1, "Fisher_resid", "r=1") in coeffs
+        entry = coeffs[(1, "Fisher_resid", "r=1")]
+        # Coefficients recovered within tolerance from data we generated
+        assert abs(entry["b0"] - 0.9) < 0.05
+        assert abs(entry["b1"] - 0.05) < 0.02
+        assert entry["base_column"] == "null_ratio_post_rank1"
+        assert entry["regress_against"] == "d_F_full"
+        assert entry["regress_against_step"] == 1
+
+    def test_residualize_no_d_F_at_step_marks_nan(self):
+        """Codex review fix (2026-05-14): residualizing a step-N cell when
+        the panel only has d_F_full at step 1 must NOT silently regress
+        against the wrong step. Instead the cell column is filled with NaN."""
+        rng = np.random.RandomState(1)
+        n = 20
+        d_F_step1 = rng.uniform(1, 5, n)
+        null_ratio_step3 = rng.uniform(0.85, 0.95, n)
+        panel = [
+            (1, "scalar", "d_F_full"),
+            (3, "Fisher_resid", "r=2"),   # No d_F_full @ step 3 in panel!
+        ]
+        score_matrix = np.column_stack([d_F_step1, null_ratio_step3])
+        coeffs = _residualize_in_place(score_matrix, panel, prompts_n=n)
+        # Cross-step residualization must NOT have been performed
+        assert (3, "Fisher_resid", "r=2") not in coeffs
+        # Cell column is NaN — caller can detect "no usable resid here"
+        assert np.all(np.isnan(score_matrix[:, 1]))
 
     def test_residualize_too_few_samples_marks_nan(self):
         """If <3 finite pairs exist (regression needs at least 3), the
