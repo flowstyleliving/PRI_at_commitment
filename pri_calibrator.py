@@ -82,28 +82,72 @@ SCHEMA_VERSION = "1.1"
 PanelCell = Tuple[int, str, str]
 
 DEFAULT_PANEL: List[PanelCell] = [
-    (1, "scalar", "d_F_full"),         # most task-stable across N=11 (per 2026-05-12 cross-task analysis)
+    # ─── Direct (raw) cells from compute_step ──────────────────────────
+    (1, "scalar", "d_F_full"),         # most task-stable across N=11
     (1, "scalar", "kl_discharged"),    # closed-form KL-grounded scalar
-    (1, "Fisher", "r=1"),              # sealed v3 primary
+    (1, "Fisher", "r=1"),              # `pri_v3_null_bare` — decomposition control
     (3, "Fisher", "r=2"),              # Qwen 2.5 oracle (synthetic)
-    (1, "Centered", "r=2"),            # Mistral-Nemo / Phase B oracle (synthetic)
+    (1, "Centered", "r=2"),            # Mistral-Nemo oracle (synthetic)
     (1, "Centered", "r=4"),            # alternate centered low-rank
     (4, "Raw", "r=2"),                 # cross-Llama universal (3B + 8B)
-    (3, "Raw", "r=21"),                # cross-Qwen universal (N=11 LOO finding)
+    (3, "Raw", "r=21"),                # cross-Qwen universal
+    # ─── Residualized (E18 sealed primary form) ────────────────────────
+    # `null_ratio_resid = null_ratio − predicted(null_ratio | d_F_full)`
+    # via linear regression on d_F_full alone. Per pri-v3-plan.md §
+    # Magnitude-independence test: this is the SEALED E18 acceptance
+    # variable — strips the magnitude confound the raw null_ratio carries.
+    # Added 2026-05-13 after Codex/user found the calibrator was scoring
+    # only the decomposition control (E17 null_bare), not the sealed primary.
+    (1, "Fisher_resid", "r=1"),
+    (1, "Centered_resid", "r=2"),
+    (4, "Raw_resid", "r=2"),
+    (3, "Raw_resid", "r=21"),
+    # ─── Composites (E18 additive + E19 multiplicative) ────────────────
+    # `pri_v3_null_ratio = S_t + α · null_ratio_final` (additive, E18)
+    # `pri_v3_null_gated = d_F · null_ratio` (multiplicative, E19)
+    (1, "Composite", "additive_S_fisher_r=1"),     # surprise + null_ratio_post_rank1
+    (1, "Composite", "gated_dF_fisher_r=1"),       # d_F_full * null_ratio_post_rank1
+    (1, "Composite", "additive_S_centered_r=2"),
+    (1, "Composite", "gated_dF_centered_r=2"),
 ]
 
 
+# Families that are DERIVED (not present as a direct compute_step column).
+# Residualized cells use the base family's column + a regression against
+# d_F_full. Composite cells combine compute_step columns (S_t / d_F_full
+# with null_ratio). Both are computed in `_compute_panel_scores_for_sample`
+# and (for residuals) post-processed across the full sample set.
+DERIVED_RESID_FAMILIES = {"Fisher_resid", "Raw_resid", "Centered_resid"}
+DERIVED_COMPOSITE_FAMILY = "Composite"
+
+
+def _resid_base_family(family: str) -> str:
+    """Map a `*_resid` family to the underlying compute_step family."""
+    return family.removesuffix("_resid")
+
+
 def _column_name(cell: PanelCell) -> str:
-    """Map a PanelCell to the `compute_step` output dict key."""
+    """Map a PanelCell to the `compute_step` output dict key.
+    For derived cells (residualized / composite), this returns the column
+    of the *base* signal — the residualization or composition logic is
+    applied by `_compute_panel_scores_for_sample` and the post-loop
+    residualization pass in `calibrate_with_state`.
+    """
     step, fam, label = cell
     if fam == "scalar":
         return label  # "d_F_full" / "kl_discharged"
+    if fam == DERIVED_COMPOSITE_FAMILY:
+        # Composite labels encode their own base column reference. Return
+        # the label itself; the dispatcher in _compute_panel_scores_for_sample
+        # parses it and composes from primitive columns.
+        return f"composite::{label}"
+    base_fam = _resid_base_family(fam) if fam in DERIVED_RESID_FAMILIES else fam
     rank = int(label.split("=")[1])
-    if fam == "Fisher":
+    if base_fam == "Fisher":
         return f"null_ratio_post_rank{rank}"
-    if fam == "Raw":
+    if base_fam == "Raw":
         return f"null_ratio_raw_post_rank{rank}"
-    if fam == "Centered":
+    if base_fam == "Centered":
         return f"null_ratio_centered_post_rank{rank}"
     raise ValueError(f"unknown family: {fam}")
 
@@ -113,6 +157,8 @@ def _cell_label(cell: PanelCell) -> str:
     step, fam, label = cell
     if fam == "scalar":
         return f"{label} @ step {step}"
+    if fam == DERIVED_COMPOSITE_FAMILY:
+        return f"composite[{label}] @ step {step}"
     return f"{fam} {label} @ step {step}"
 
 
@@ -243,11 +289,29 @@ def _compute_panel_scores_for_sample(
 
     out: Dict[PanelCell, Optional[float]] = {}
     for cell in panel:
-        step, _, _ = cell
+        step, fam, label = cell
         res = step_to_result.get(step)
         if res is None:
             out[cell] = None
             continue
+
+        # ── Composite: assemble from primitive columns at THIS sample ──
+        if fam == DERIVED_COMPOSITE_FAMILY:
+            v = _compose_score(res, label)
+            out[cell] = v if (v is not None and np.isfinite(v)) else None
+            continue
+
+        # ── Residualized: emit the BASE column value here; the residual
+        # ── pass after all samples land will overwrite this with
+        # ── (raw − predicted_from_d_F).
+        if fam in DERIVED_RESID_FAMILIES:
+            base_fam = _resid_base_family(fam)
+            base_col = _column_name((step, base_fam, label))
+            v = res.get(base_col)
+            out[cell] = float(v) if (v is not None and np.isfinite(v)) else None
+            continue
+
+        # ── Direct cells (scalar / Fisher / Raw / Centered) ────────────
         col = _column_name(cell)
         v = res.get(col)
         if v is None or not np.isfinite(v):
@@ -255,6 +319,60 @@ def _compute_panel_scores_for_sample(
         else:
             out[cell] = float(v)
     return out
+
+
+def _compose_score(result: Dict[str, float], label: str) -> Optional[float]:
+    """Build a composite score from primitive compute_step columns.
+
+    Label conventions (extend by appending to this dispatcher):
+      additive_S_fisher_r=N    → result["surprise"] + result["null_ratio_post_rankN"]
+      gated_dF_fisher_r=N      → result["d_F_full"] * result["null_ratio_post_rankN"]
+      additive_S_centered_r=N  → result["surprise"] + result["null_ratio_centered_post_rankN"]
+      gated_dF_centered_r=N    → result["d_F_full"] * result["null_ratio_centered_post_rankN"]
+      additive_S_raw_r=N       → result["surprise"] + result["null_ratio_raw_post_rankN"]
+      gated_dF_raw_r=N         → result["d_F_full"] * result["null_ratio_raw_post_rankN"]
+    """
+    parts = label.split("_")
+    if len(parts) < 4:
+        return None
+    op = parts[0]                # "additive" or "gated"
+    scalar_key = parts[1]        # "S" or "dF"
+    base_family = parts[2]       # "fisher" / "centered" / "raw"
+    rank_part = parts[3]         # "r=N"
+    if not rank_part.startswith("r="):
+        return None
+    try:
+        rank = int(rank_part[2:])
+    except ValueError:
+        return None
+
+    if base_family == "fisher":
+        base_col = f"null_ratio_post_rank{rank}"
+    elif base_family == "centered":
+        base_col = f"null_ratio_centered_post_rank{rank}"
+    elif base_family == "raw":
+        base_col = f"null_ratio_raw_post_rank{rank}"
+    else:
+        return None
+
+    base = result.get(base_col)
+    if base is None or not np.isfinite(base):
+        return None
+
+    if scalar_key == "S":
+        scalar = result.get("surprise")
+    elif scalar_key == "dF":
+        scalar = result.get("d_F_full")
+    else:
+        return None
+    if scalar is None or not np.isfinite(scalar):
+        return None
+
+    if op == "additive":
+        return float(scalar + base)
+    if op == "gated":
+        return float(scalar * base)
+    return None
 
 
 def _trace_one_prompt(
@@ -538,6 +656,59 @@ class CalibrationState:
     seed: int
 
 
+def _residualize_in_place(
+    score_matrix: np.ndarray,
+    panel: List[PanelCell],
+    *,
+    prompts_n: int,
+) -> None:
+    """For each `*_resid` cell in the panel, replace its column in the
+    score matrix with `raw − predicted(raw | d_F_full)`. Linear regression
+    is fit on (d_F_full, raw) pairs across the n calibration samples. NaNs
+    in either column drop the sample from the fit AND from the residual
+    output (residual stays NaN for that row).
+
+    This is the E18 sealed acceptance variable from pri-v3-plan.md
+    §Magnitude-independence test (lines 178-181). It strips the magnitude
+    confound that raw `null_ratio` carries.
+    """
+    # Build column-index map for direct cells we need to reference.
+    col_index: Dict[PanelCell, int] = {cell: j for j, cell in enumerate(panel)}
+    # Find d_F_full column (must exist for residualization)
+    d_F_cell: Optional[PanelCell] = None
+    for cell in panel:
+        if cell[1] == "scalar" and cell[2] == "d_F_full":
+            d_F_cell = cell
+            break
+    if d_F_cell is None:
+        # Without d_F_full in the panel we can't residualize. Leave the
+        # resid columns as their base values; downstream cell scoring will
+        # behave as if they're duplicates of the raw cells.
+        return
+    d_F_col_idx = col_index[d_F_cell]
+    d_F_values = score_matrix[:, d_F_col_idx]
+
+    for j, cell in enumerate(panel):
+        if cell[1] not in DERIVED_RESID_FAMILIES:
+            continue
+        raw_values = score_matrix[:, j].copy()
+        finite_mask = np.isfinite(raw_values) & np.isfinite(d_F_values)
+        if finite_mask.sum() < 3:
+            # Too few finite pairs to fit a regression; mark all as NaN.
+            score_matrix[:, j] = np.nan
+            continue
+        x = d_F_values[finite_mask]
+        y = raw_values[finite_mask]
+        # OLS: y ≈ b0 + b1 * x. Use np.polyfit (degree=1) for numerical
+        # stability + tiny dependency surface.
+        b1, b0 = np.polyfit(x, y, 1)
+        predicted = b0 + b1 * d_F_values
+        residuals = raw_values - predicted
+        # Preserve NaN where either input was NaN — don't fabricate residuals.
+        residuals = np.where(finite_mask, residuals, np.nan)
+        score_matrix[:, j] = residuals
+
+
 def load_calibration_state(
     model_slug: str,
     *,
@@ -618,6 +789,14 @@ def calibrate_with_state(
                 score_matrix[i, j] = v
         if (i + 1) % 10 == 0 or i + 1 == n_calibration:
             print(f"[calibrate]   {i+1}/{n_calibration}")
+
+    # Post-loop residualization pass (E18 sealed primary form). For each
+    # `*_resid` cell, regress the cell's CURRENT score_matrix column
+    # (which holds the raw null_ratio values at this point) against the
+    # d_F_full column AT THE SAME STEP across all calibration samples, and
+    # replace the column with residuals. Cells whose corresponding d_F_full
+    # or base column doesn't exist on this sample are left as NaN.
+    _residualize_in_place(score_matrix, panel, prompts_n=n_calibration)
 
     # Score every candidate; pick best by |AUROC - 0.5|.
     candidate_results = []

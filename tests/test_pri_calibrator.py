@@ -26,9 +26,11 @@ from pri_calibrator import (  # noqa: E402
     _bootstrap_auroc,
     _cell_label,
     _column_name,
+    _compose_score,
     _emit_warnings,
     _load_calibration_jsonl,
     _nested_bootstrap_oob_auroc,
+    _residualize_in_place,
     _score_candidate,
     calibrate,
     calibrate_with_state,
@@ -147,13 +149,18 @@ class TestPureHelpers:
         assert _cell_label(cell) == expected
 
     def test_default_panel_shape(self):
-        # 8 cells, each (step, family, label)
-        assert len(DEFAULT_PANEL) == 8
+        # 2026-05-13 panel expansion: 8 direct cells + 4 residualized
+        # (E18 sealed primary form) + 4 composites (additive + gated).
+        assert len(DEFAULT_PANEL) == 16
         for cell in DEFAULT_PANEL:
             assert len(cell) == 3
             step, fam, label = cell
             assert isinstance(step, int) and step >= 1
-            assert fam in {"scalar", "Fisher", "Raw", "Centered"}
+            assert fam in {
+                "scalar", "Fisher", "Raw", "Centered",
+                "Fisher_resid", "Raw_resid", "Centered_resid",
+                "Composite",
+            }
             # _column_name should accept every panel cell
             _column_name(cell)
 
@@ -397,6 +404,111 @@ class TestNestedBootstrap:
         assert s1["oob_auroc_ci_lo"] == s2["oob_auroc_ci_lo"]
         assert s1["oob_auroc_ci_hi"] == s2["oob_auroc_ci_hi"]
         assert s1["winner_stability"] == s2["winner_stability"]
+
+
+class TestDerivedCells:
+    """Coverage for the 2026-05-13 panel expansion — composites + residuals.
+    Validates that the new cells compute correctly from primitive columns
+    and that residualization actually removes the d_F_full magnitude
+    confound (E18 sealed acceptance form)."""
+
+    def test_compose_additive_S_fisher(self):
+        result = {"surprise": 0.5, "null_ratio_post_rank1": 0.95}
+        v = _compose_score(result, "additive_S_fisher_r=1")
+        assert v == pytest.approx(1.45)
+
+    def test_compose_gated_dF_fisher(self):
+        result = {"d_F_full": 2.0, "null_ratio_post_rank1": 0.95}
+        v = _compose_score(result, "gated_dF_fisher_r=1")
+        assert v == pytest.approx(1.90)
+
+    def test_compose_additive_S_centered(self):
+        result = {"surprise": 0.2, "null_ratio_centered_post_rank2": 0.88}
+        v = _compose_score(result, "additive_S_centered_r=2")
+        assert v == pytest.approx(1.08)
+
+    def test_compose_returns_none_on_missing_primitive(self):
+        # No d_F_full in result → can't compute gated; must return None.
+        result = {"null_ratio_post_rank1": 0.95}
+        assert _compose_score(result, "gated_dF_fisher_r=1") is None
+
+    def test_compose_returns_none_on_nan(self):
+        result = {"surprise": float("nan"), "null_ratio_post_rank1": 0.95}
+        assert _compose_score(result, "additive_S_fisher_r=1") is None
+
+    def test_compose_unknown_op_returns_none(self):
+        result = {"surprise": 0.5, "null_ratio_post_rank1": 0.95}
+        assert _compose_score(result, "subtractive_S_fisher_r=1") is None
+
+    def test_residualize_strips_d_F_confound(self):
+        """Construct null_ratio = 0.9 + 0.05 * d_F + small_noise. After
+        regressing out d_F, the residual should be ~the noise — small and
+        un-correlated with d_F. AUROC of the residual should be near chance
+        for any d_F-aligned label set."""
+        rng = np.random.RandomState(0)
+        n = 30
+        d_F = rng.uniform(1.0, 5.0, size=n)
+        noise = rng.normal(0, 0.01, size=n)
+        null_ratio = 0.9 + 0.05 * d_F + noise
+        # Build a panel with just d_F_full + one Fisher_resid cell.
+        panel = [
+            (1, "scalar", "d_F_full"),
+            (1, "Fisher_resid", "r=1"),
+        ]
+        score_matrix = np.column_stack([d_F, null_ratio])
+        _residualize_in_place(score_matrix, panel, prompts_n=n)
+        # After residualization, the resid column should be near zero-mean
+        # (and equal to the noise term within numerical tolerance).
+        residual = score_matrix[:, 1]
+        assert np.allclose(np.mean(residual), 0.0, atol=1e-9)
+        # Residual should match the original noise within bootstrap noise
+        # (the regression recovers the linear part exactly when no noise
+        # in the model, so here the residual ≈ noise centered to mean 0).
+        assert np.std(residual) < 0.05  # small (just the noise term)
+        # And the residual should not be strongly correlated with d_F any more.
+        corr = np.corrcoef(d_F, residual)[0, 1]
+        assert abs(corr) < 1e-6  # OLS residuals are orthogonal to predictor by construction
+
+    def test_residualize_handles_nan(self):
+        """If some samples have NaN in either column, those rows' residuals
+        must remain NaN (not be silently fabricated by the regression)."""
+        n = 20
+        rng = np.random.RandomState(1)
+        d_F = rng.uniform(1, 5, size=n)
+        null_ratio = 0.9 + 0.05 * d_F + rng.normal(0, 0.01, n)
+        # NaN out a couple samples
+        null_ratio[5] = np.nan
+        d_F[10] = np.nan
+        panel = [
+            (1, "scalar", "d_F_full"),
+            (1, "Fisher_resid", "r=1"),
+        ]
+        score_matrix = np.column_stack([d_F, null_ratio])
+        _residualize_in_place(score_matrix, panel, prompts_n=n)
+        assert np.isnan(score_matrix[5, 1])
+        assert np.isnan(score_matrix[10, 1])
+        # Other rows: residual is finite
+        finite_idx = [i for i in range(n) if i not in (5, 10)]
+        for i in finite_idx:
+            assert np.isfinite(score_matrix[i, 1])
+
+    def test_residualize_too_few_samples_marks_nan(self):
+        """If <3 finite pairs exist (regression needs at least 3), the
+        whole resid column should be NaN — don't ship a profile claiming
+        a residualized cell when there isn't enough data to fit."""
+        n = 4
+        score_matrix = np.array([
+            [1.0, 0.91],
+            [np.nan, 0.92],
+            [3.0, np.nan],
+            [np.nan, np.nan],
+        ])
+        panel = [
+            (1, "scalar", "d_F_full"),
+            (1, "Fisher_resid", "r=1"),
+        ]
+        _residualize_in_place(score_matrix, panel, prompts_n=n)
+        assert np.all(np.isnan(score_matrix[:, 1]))
 
 
 class TestWarningsOob:
