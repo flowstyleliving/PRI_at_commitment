@@ -372,9 +372,15 @@ def emit_summary(profiles: Dict[Tuple[str, str], pri_calibrator.CalibrationProfi
                                 oob, ci_lo, ci_hi, stab, n_warn,
                                 "; ".join(p.warnings)])
 
-    (out_dir / "summary_winners.csv").write_text(
-        "\n".join(",".join(str(c) for c in row) for row in winners_csv) + "\n"
-    )
+    # 2026-05-15 Codex fix: use csv.writer for proper quoting. Warning
+    # strings contain commas (e.g. "large_oob_in_sample_gap (gap=0.151;
+    # in-sample AUROC is materially over-stated by selection bias)"),
+    # which the prior naive join broke into extra columns and made the
+    # most-problematic rows unparseable downstream.
+    with (out_dir / "summary_winners.csv").open("w", newline="") as f:
+        w = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
+        for row in winners_csv:
+            w.writerow(row)
 
     # ─── Fisher r=2 @ step 3 focus table ─────────────────────────────────
     print("\n" + "=" * 110)
@@ -407,9 +413,10 @@ def emit_summary(profiles: Dict[Tuple[str, str], pri_calibrator.CalibrationProfi
                   f"{'✓' if is_winner else ' ':>9s}")
             focus_csv.append([m, r, auc, sign, n_eval, is_winner])
 
-    (out_dir / "summary_fisher_r2_step3.csv").write_text(
-        "\n".join(",".join(str(c) for c in row) for row in focus_csv) + "\n"
-    )
+    with (out_dir / "summary_fisher_r2_step3.csv").open("w", newline="") as f:
+        w = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
+        for row in focus_csv:
+            w.writerow(row)
 
     # ─── Sign-consistency rollup for Fisher r=2 @ step 3 ─────────────────
     sign_counts = {-1: 0, 0: 0, 1: 0}
