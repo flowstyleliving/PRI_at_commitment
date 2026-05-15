@@ -5,7 +5,8 @@ For each calibration sample at gen_step=1, computes:
 
   * d_F_chord = √((h_final - h_layer_0)^T F_final (h_final - h_layer_0))
        — magnitude of the cumulative residual under the FINAL-layer Fisher
-         metric F_final.
+         metric F_final. Here `h_layer_0` means the first captured transformer
+         block output (`layer_00` under v3 capture), not the embedding stream.
 
   * d_F_path_fixed = Σ_ℓ √(Δh_ℓ^T F_final Δh_ℓ)        ← PRIMARY METRIC
        — path integral of the SAME final-layer metric F_final along the
@@ -53,7 +54,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -65,6 +68,115 @@ sys.path.insert(0, str(REPO_ROOT))
 import pri_v2_mlx_pipeline as pipeline
 import pri_v2_io_plugins as io_plugins
 from pri_calibrator import _load_calibration_jsonl
+
+MIN_CORR_SAMPLES = 3
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Output + summary helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _prepare_output_path(output_arg: str) -> Path:
+    """Resolve the destination, create the parent, and fail fast if unwritable."""
+    out_path = Path(output_arg).expanduser().resolve()
+    parent = out_path.parent
+    if out_path.exists() and out_path.is_dir():
+        raise SystemExit(f"output path is a directory, expected a file: {out_path}")
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise SystemExit(f"failed to create output directory {parent}: {exc}") from exc
+    if not parent.is_dir():
+        raise SystemExit(f"output parent is not a directory: {parent}")
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=parent,
+            prefix=f".{out_path.stem or out_path.name}.",
+            suffix=".tmp",
+            delete=True,
+        ):
+            pass
+    except OSError as exc:
+        raise SystemExit(f"output path is not writable: {out_path} ({exc})") from exc
+    return out_path
+
+
+def _write_rows_csv(out_path: Path, rows: List[Dict[str, Any]]) -> None:
+    """Write results atomically once tracing completes successfully."""
+    import csv as _csv
+
+    tmp_path: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            newline="",
+            dir=out_path.parent,
+            prefix=f".{out_path.stem or out_path.name}.",
+            suffix=f"{out_path.suffix or '.csv'}.tmp",
+            delete=False,
+        ) as f:
+            tmp_path = Path(f.name)
+            w = _csv.writer(f, quoting=_csv.QUOTE_MINIMAL)
+            w.writerow([
+                "sample_idx", "label", "n_layers",
+                "d_F_chord", "d_F_path_fixed", "d_F_path_varying",
+                "curvature_fixed", "path_fixed_over_chord",
+            ])
+            for r in rows:
+                ratio = (
+                    r["d_F_path_fixed"] / r["d_F_chord"]
+                    if r["d_F_chord"] > 0 else float("nan")
+                )
+                w.writerow([
+                    r["sample_idx"], r["label"], r["n_layers"],
+                    f"{r['d_F_chord']:.6f}",
+                    f"{r['d_F_path_fixed']:.6f}",
+                    f"{r['d_F_path_varying']:.6f}",
+                    f"{r['curvature_fixed']:.6f}",
+                    f"{ratio:.6f}",
+                ])
+        os.replace(tmp_path, out_path)
+    except OSError as exc:
+        if tmp_path is not None and tmp_path.exists():
+            tmp_path.unlink()
+        raise SystemExit(f"failed to write output CSV {out_path}: {exc}") from exc
+
+
+def _corrcoef_or_reason(
+    xs: np.ndarray,
+    ys: np.ndarray,
+    *,
+    min_samples: int = MIN_CORR_SAMPLES,
+) -> tuple[float, Optional[str]]:
+    """Return Pearson correlation or a reason the statistic is undefined."""
+    finite_mask = np.isfinite(xs) & np.isfinite(ys)
+    usable = int(np.sum(finite_mask))
+    if usable < min_samples:
+        return float("nan"), f"need at least {min_samples} usable samples (got {usable})"
+
+    xs_usable = xs[finite_mask]
+    ys_usable = ys[finite_mask]
+    if np.isclose(xs_usable.std(), 0.0) or np.isclose(ys_usable.std(), 0.0):
+        return float("nan"), "correlation is undefined when either series has zero variance"
+
+    corr = float(np.corrcoef(xs_usable, ys_usable)[0, 1])
+    if not np.isfinite(corr):
+        return float("nan"), "correlation remained undefined after filtering usable samples"
+    return corr, None
+
+
+def _format_stat(value: float, reason: Optional[str] = None) -> str:
+    if reason is not None:
+        return f"undefined ({reason})"
+    return f"{value:.4f}"
+
+
+def _format_mean_std(values: np.ndarray) -> str:
+    if values.size == 0:
+        return "mean=n/a  std=n/a"
+    return f"mean={values.mean():.3f}   std={values.std():.3f}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -92,16 +204,13 @@ def _fisher_d_F_full(
     h_prev: np.ndarray,
     p_t: np.ndarray,
 ) -> float:
-    """Compute `d_F_full` magnitude — √(Δh_post^T F Δh_post) at layer
-    where F is the uncentered Fisher pullback W_u^T diag(p) W_u.
-    Mirrors PRIComputer.compute_step's d_F_full path but bypasses the
-    per-step cosine/L2/null_ratio/etc. baggage so we can call it L times
-    per sample cheaply."""
-    gamma = pri_computer.final_norm_gamma
-    h_t_post = pri_computer.rmsnorm(h_t, gamma)
-    h_prev_post = pri_computer.rmsnorm(h_prev, gamma)
-    dh_post = h_t_post - h_prev_post
-    z = pri_computer._project(h_t - h_prev)  # raw dh through projection
+    """Compute `d_F_full` magnitude from the raw hidden-state delta.
+
+    This intentionally mirrors `PRIComputer.compute_step`'s `d_F_full` path:
+    project the raw residual-stream displacement `h_t - h_prev`, then score it
+    under the Fisher pullback induced by `p_t`. We bypass the rest of
+    `compute_step` so this can run once per layer segment."""
+    z = pri_computer._project(h_t - h_prev)
     if z.shape[0] != p_t.shape[0]:
         m = min(z.shape[0], p_t.shape[0])
         z = z[:m]
@@ -147,6 +256,8 @@ def _chord_and_path_for_sample(
     L = len(h_by_layer)  # number of layer captures (e.g., 28 for Llama)
 
     # ── Resolve the FINAL-layer Fisher metric ONCE (canonical p_final) ──
+    # `layer_00` is the output of transformer block 0 under v3 capture, not
+    # the embedding stream before any block has run.
     h_0 = h_by_layer[0]
     h_L = h_by_layer[-1]
     p_final = _logit_lens_probs(h_L, projection, final_norm_gamma)
@@ -219,6 +330,7 @@ def main() -> int:
     p.add_argument("--limit", type=int, default=0, help="cap n samples (default: all)")
     args = p.parse_args()
 
+    out_path = _prepare_output_path(args.out)
     prompts, labels, _ = _load_calibration_jsonl(args.data)
     if args.limit:
         prompts, labels = prompts[: args.limit], labels[: args.limit]
@@ -264,29 +376,8 @@ def main() -> int:
     if not rows:
         raise SystemExit("no usable samples")
 
-    # ── Write CSV (proper quoting via csv module) ──
-    import csv as _csv
-    with open(args.out, "w", newline="") as f:
-        w = _csv.writer(f, quoting=_csv.QUOTE_MINIMAL)
-        w.writerow([
-            "sample_idx", "label", "n_layers",
-            "d_F_chord", "d_F_path_fixed", "d_F_path_varying",
-            "curvature_fixed", "path_fixed_over_chord",
-        ])
-        for r in rows:
-            ratio = (
-                r["d_F_path_fixed"] / r["d_F_chord"]
-                if r["d_F_chord"] > 0 else float("nan")
-            )
-            w.writerow([
-                r["sample_idx"], r["label"], r["n_layers"],
-                f"{r['d_F_chord']:.6f}",
-                f"{r['d_F_path_fixed']:.6f}",
-                f"{r['d_F_path_varying']:.6f}",
-                f"{r['curvature_fixed']:.6f}",
-                f"{ratio:.6f}",
-            ])
-    print(f"[diagnose] wrote {len(rows)} rows to {args.out}")
+    _write_rows_csv(out_path, rows)
+    print(f"[diagnose] wrote {len(rows)} rows to {out_path}")
 
     # ── Summary stats ──
     chords = np.array([r["d_F_chord"] for r in rows])
@@ -294,13 +385,11 @@ def main() -> int:
     paths_varying = np.array([r["d_F_path_varying"] for r in rows])
     curvs = np.array([r["curvature_fixed"] for r in rows])
     labels_arr = np.array([r["label"] for r in rows])
-
-    corr_fixed = float(np.corrcoef(chords, paths_fixed)[0, 1])
     finite_pv = np.isfinite(paths_varying)
-    corr_varying = (
-        float(np.corrcoef(chords[finite_pv], paths_varying[finite_pv])[0, 1])
-        if finite_pv.sum() >= 2 else float("nan")
-    )
+    paths_varying_finite = paths_varying[finite_pv]
+
+    corr_fixed, corr_fixed_reason = _corrcoef_or_reason(chords, paths_fixed)
+    corr_varying, corr_varying_reason = _corrcoef_or_reason(chords[finite_pv], paths_varying_finite)
     ratio_fixed = float(np.mean(paths_fixed / np.maximum(chords, 1e-12)))
     min_ratio_fixed = float(np.min(paths_fixed / np.maximum(chords, 1e-12)))
 
@@ -309,16 +398,16 @@ def main() -> int:
     print(f"  Chord-vs-path summary (n={len(rows)})")
     print("=" * 80)
     print(f"  PRIMARY (fixed final-layer F, triangle-inequality applies):")
-    print(f"    Pearson correlation(chord, path_fixed): {corr_fixed:.4f}")
+    print(f"    Pearson correlation(chord, path_fixed): {_format_stat(corr_fixed, corr_fixed_reason)}")
     print(f"    Mean path_fixed / chord:                {ratio_fixed:.4f}  (≥1 by triangle ineq)")
     print(f"    Min  path_fixed / chord:                {min_ratio_fixed:.4f}  (should be ≥1; <1 = numerical bug)")
     print()
     print(f"  DESCRIPTIVE (per-layer logit-lens F_ℓ varying — different quadratic forms per segment):")
-    print(f"    Pearson correlation(chord, path_varying): {corr_varying:.4f}")
+    print(f"    Pearson correlation(chord, path_varying): {_format_stat(corr_varying, corr_varying_reason)}")
     print()
     print(f"  chord:           mean={chords.mean():.3f}  std={chords.std():.3f}")
     print(f"  path_fixed:      mean={paths_fixed.mean():.3f}   std={paths_fixed.std():.3f}")
-    print(f"  path_varying:    mean={paths_varying[finite_pv].mean():.3f}   std={paths_varying[finite_pv].std():.3f}")
+    print(f"  path_varying:    {_format_mean_std(paths_varying_finite)}")
     print(f"  curvature_fixed: mean={curvs.mean():.3f}   std={curvs.std():.3f}  (must be ≥ 0 per sample)")
 
     # Triangle-inequality sanity check on fixed-metric path
@@ -330,24 +419,46 @@ def main() -> int:
     # ── AUROC of each vs label (sign-agnostic) ──
     if len(np.unique(labels_arr)) > 1:
         from sklearn.metrics import roc_auc_score
-        def auroc_signed(s):
+
+        def auroc_signed(s: np.ndarray) -> tuple[float, int, Optional[str]]:
+            """Sign-agnostic AUROC after NaN-masking.
+
+            Returns `(nan, 0, reason)` if the finite-score subset is too small
+            or loses a label class, instead of letting `roc_auc_score` crash
+            after the expensive trace loop.
+            """
             mask = np.isfinite(s)
-            auc = roc_auc_score(labels_arr[mask], s[mask])
-            return max(auc, 1 - auc), (1 if auc >= 0.5 else -1)
-        c_a, c_s = auroc_signed(chords)
-        pf_a, pf_s = auroc_signed(paths_fixed)
-        pv_a, pv_s = auroc_signed(paths_varying)
-        cv_a, cv_s = auroc_signed(curvs)
+            y = labels_arr[mask]
+            v = s[mask]
+            if y.size < 2:
+                return float("nan"), 0, "fewer than 2 finite samples remain after NaN-masking"
+            if len(np.unique(y)) < 2:
+                return float("nan"), 0, "NaN-masking left only one label class"
+            try:
+                auc = roc_auc_score(y, v)
+            except ValueError as exc:
+                return float("nan"), 0, f"roc_auc_score undefined: {exc}"
+            return max(auc, 1 - auc), (1 if auc >= 0.5 else -1), None
+
+        def _fmt_auroc(name: str, result: tuple[float, int, Optional[str]]) -> str:
+            a, sgn, reason = result
+            if not np.isfinite(a):
+                return f"    {name}: undefined ({reason})"
+            return f"    {name}: {a:.4f}  sign={sgn:+d}"
+
         print()
         print(f"  AUROC (sign-agnostic) vs contradiction label:")
-        print(f"    d_F_chord:        {c_a:.4f}  sign={c_s:+d}")
-        print(f"    d_F_path_fixed:   {pf_a:.4f}  sign={pf_s:+d}")
-        print(f"    d_F_path_varying: {pv_a:.4f}  sign={pv_s:+d}")
-        print(f"    curvature_fixed:  {cv_a:.4f}  sign={cv_s:+d}")
+        print(_fmt_auroc("d_F_chord       ", auroc_signed(chords)))
+        print(_fmt_auroc("d_F_path_fixed  ", auroc_signed(paths_fixed)))
+        print(_fmt_auroc("d_F_path_varying", auroc_signed(paths_varying)))
+        print(_fmt_auroc("curvature_fixed ", auroc_signed(curvs)))
 
     print()
     print("Decision rule (applies to FIXED-metric path only):")
-    if corr_fixed > 0.95:
+    if corr_fixed_reason is not None:
+        print(f"  → Inconclusive — {corr_fixed_reason}.")
+        print(f"    No replacement-grade chord-vs-path verdict should be drawn from this run.")
+    elif corr_fixed > 0.95:
         print(f"  → corr_fixed > 0.95 — path collapses to chord; current chord-based")
         print(f"    primitives retain primacy. Path proposal is decorative.")
     elif corr_fixed > 0.7:
