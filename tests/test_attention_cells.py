@@ -21,6 +21,9 @@ from pri_calibrator import (
     ATTENTION_LAYERS,
     ATTENTION_METRICS,
     ATTENTION_PANEL,
+    ATTENTION_PANEL_MULTISTEP,
+    ATTENTION_STEPS_DEFAULT,
+    ATTENTION_STEPS_MULTISTEP,
     DEFAULT_PANEL,
     _build_derivation,
     _cell_label,
@@ -29,6 +32,7 @@ from pri_calibrator import (
     _is_attention_cell,
     _requires_attention_capture,
     _split_attention_label,
+    make_attention_panel,
 )
 
 
@@ -226,10 +230,17 @@ class TestComputeAttentionScore:
         cell = (1, ATTENTION_FAMILY, "final_js")
         assert _compute_attention_score(cell, captures, {"final": 1}) is None
 
-    def test_wrong_step_returns_none(self):
+    def test_step_zero_returns_none(self):
         w = np.ones((2, 4), dtype=np.float64) / 4
         captures = self._synthetic_captures({"final": w})
-        cell = (3, ATTENTION_FAMILY, "final_js")  # step 3, not 1
+        cell = (0, ATTENTION_FAMILY, "final_js")  # step 0 invalid
+        assert _compute_attention_score(cell, captures, {"final": 2}) is None
+
+    def test_step_past_captures_returns_none(self):
+        w = np.ones((2, 4), dtype=np.float64) / 4
+        # captures[final] = [prefix, step1] → step 2 is past available data
+        captures = self._synthetic_captures({"final": w})
+        cell = (2, ATTENTION_FAMILY, "final_js")
         assert _compute_attention_score(cell, captures, {"final": 2}) is None
 
     def test_non_attention_family_returns_none(self):
@@ -237,6 +248,60 @@ class TestComputeAttentionScore:
         # Calling with a non-Attention cell is defensive — should refuse.
         cell = (1, "scalar", "d_F_full")
         assert _compute_attention_score(cell, captures, {"final": 2}) is None
+
+
+class TestMultistepAttention:
+    """Multi-step attention panel — steps 2-4 added 2026-05-15 evening."""
+
+    def test_multistep_steps_constant(self):
+        assert ATTENTION_STEPS_DEFAULT == (1,)
+        assert ATTENTION_STEPS_MULTISTEP == (1, 2, 3, 4)
+
+    def test_multistep_panel_has_48_cells(self):
+        # 3 layers × 4 metrics × 4 steps = 48
+        assert len(ATTENTION_PANEL_MULTISTEP) == 48
+
+    def test_multistep_panel_supersets_default_panel(self):
+        default_set = set(ATTENTION_PANEL)
+        multistep_set = set(ATTENTION_PANEL_MULTISTEP)
+        assert default_set.issubset(multistep_set)
+
+    def test_multistep_steps_cover_one_through_four(self):
+        steps = {cell[0] for cell in ATTENTION_PANEL_MULTISTEP}
+        assert steps == {1, 2, 3, 4}
+
+    def test_multistep_cells_unique(self):
+        # No duplicate (step, family, label) tuples.
+        assert len(set(ATTENTION_PANEL_MULTISTEP)) == 48
+
+    def test_make_attention_panel_default_matches_constant(self):
+        rebuilt = make_attention_panel(ATTENTION_STEPS_DEFAULT)
+        assert rebuilt == ATTENTION_PANEL
+
+    def test_make_attention_panel_custom_steps(self):
+        # User-defined panel — e.g. just step 2 + step 4
+        panel = make_attention_panel(steps=(2, 4))
+        assert len(panel) == 24  # 2 steps × 3 layers × 4 metrics
+        steps = {cell[0] for cell in panel}
+        assert steps == {2, 4}
+
+    def test_compute_attention_score_step_2(self):
+        # Step 2 needs captures[layer] to have at least 3 entries
+        # (prefix + 2 gen forwards). Build captures with 3 entries.
+        w0 = np.zeros((1, 1), dtype=np.float64)  # prefix placeholder
+        w1 = np.ones((2, 4), dtype=np.float64) / 4  # step 1
+        w2 = np.zeros((2, 4), dtype=np.float64)  # step 2 — heads concentrate on different positions
+        w2[0, 0] = 1.0
+        w2[1, 3] = 1.0
+        captures = {"final": [w0, w1, w2]}
+        cell_step1 = (1, ATTENTION_FAMILY, "final_js")
+        cell_step2 = (2, ATTENTION_FAMILY, "final_js")
+        score1 = _compute_attention_score(cell_step1, captures, {"final": 2})
+        score2 = _compute_attention_score(cell_step2, captures, {"final": 2})
+        assert score1 is not None
+        assert score2 is not None
+        assert score1 == pytest.approx(0.0, abs=1e-6)  # uniform heads
+        assert score2 > 0.0  # divergent heads
 
 
 # ─────────────────────────────────────────────────────────────────────────────

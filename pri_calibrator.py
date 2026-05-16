@@ -94,18 +94,37 @@ PanelCell = Tuple[int, str, str]
 
 # ─── Attention cell family (added 2026-05-15; v4-candidate #5) ───────────────
 # First non-`compute_step` cell family. Cells map to metrics computed from
-# captured attention weights at gen_step=1 across three target decoder blocks
-# (final, mid, last_minus_1). Capture is opt-in: ATTENTION_PANEL is appended
-# to DEFAULT_PANEL only when --attention is passed (or callers pass an
-# extended panel). When the panel contains any Attention cell, the
-# per-sample trace is wrapped in scripts.diagnose_inter_head_disagreement's
-# observational attention_capture context manager; the wrapper handles each
-# model family's native attention layout (Phi qkv_proj fusion, Qwen3/Gemma
-# q_norm/k_norm). Wrapper module hash is recorded in provenance so detector
-# strict mode can verify capture invariance.
+# captured attention weights across three target decoder blocks (final, mid,
+# last_minus_1) at one or more gen_steps. Capture is opt-in: the relevant
+# ATTENTION_PANEL is appended to DEFAULT_PANEL only when --attention is
+# passed (or callers pass an extended panel). When the panel contains any
+# Attention cell, the per-sample trace is wrapped in
+# scripts.diagnose_inter_head_disagreement's observational attention_capture
+# context manager; the wrapper handles each model family's native attention
+# layout (Phi qkv_proj fusion, Qwen3/Gemma q_norm/k_norm). Wrapper module
+# hash is recorded in provenance so detector strict mode can verify capture
+# invariance.
 ATTENTION_FAMILY = "Attention"
 ATTENTION_LAYERS: Tuple[str, ...] = ("final", "mid", "last_minus_1")
 ATTENTION_METRICS: Tuple[str, ...] = ("js", "js_kv_groups", "js_no_bos", "bos_mass")
+ATTENTION_STEPS_DEFAULT: Tuple[int, ...] = (1,)              # commit step only (v3 sealed plane)
+ATTENTION_STEPS_MULTISTEP: Tuple[int, ...] = (1, 2, 3, 4)    # multistep: commit + 3 post-commit
+
+
+def make_attention_panel(
+    steps: Tuple[int, ...] = ATTENTION_STEPS_DEFAULT,
+    layers: Tuple[str, ...] = ATTENTION_LAYERS,
+    metrics: Tuple[str, ...] = ATTENTION_METRICS,
+) -> List[PanelCell]:
+    """Build an Attention panel as `len(steps) × len(layers) × len(metrics)`
+    cells. Multi-step expansion (`steps=(1,2,3,4)`) is the multistep variant.
+    """
+    return [
+        (step, ATTENTION_FAMILY, f"{layer}_{metric}")
+        for step in steps
+        for layer in layers
+        for metric in metrics
+    ]
 
 DEFAULT_PANEL: List[PanelCell] = [
     # ─── Direct (raw) cells from compute_step ──────────────────────────
@@ -143,13 +162,16 @@ DEFAULT_PANEL: List[PanelCell] = [
 ]
 
 
-# 12-cell opt-in attention extension. Appended to DEFAULT_PANEL via the
-# `--attention` CLI flag or by passing `panel=DEFAULT_PANEL + ATTENTION_PANEL`.
-ATTENTION_PANEL: List[PanelCell] = [
-    (1, ATTENTION_FAMILY, f"{layer}_{metric}")
-    for layer in ATTENTION_LAYERS
-    for metric in ATTENTION_METRICS
-]
+# 12-cell opt-in attention extension (gen_step=1 only). Appended to
+# DEFAULT_PANEL via the `--attention` CLI flag or by passing
+# `panel=DEFAULT_PANEL + ATTENTION_PANEL`.
+ATTENTION_PANEL: List[PanelCell] = make_attention_panel(ATTENTION_STEPS_DEFAULT)
+
+# 48-cell multistep variant (gen_step ∈ {1,2,3,4}). Opt-in via
+# `--attention-multistep`. Multi-testing burden is 4× larger so the OOB
+# warnings will fire more aggressively at small n; that's correct
+# behavior, not noise.
+ATTENTION_PANEL_MULTISTEP: List[PanelCell] = make_attention_panel(ATTENTION_STEPS_MULTISTEP)
 
 
 # Families that are DERIVED (not present as a direct compute_step column).
@@ -242,29 +264,35 @@ def _compute_attention_score(
     """Compute one Attention-family cell's score from captured weights.
 
     `captures[tag]` is a list of attention-weight arrays (one per forward
-    call); `captures[tag][1]` is the first generation forward, whose
-    last-query row is the commit-step (gen_step=1) attention slice that the
-    diagnostic's wrapper already extracts. Shape: (n_heads, T_kv).
+    call); index 0 is the prefix forward, index k≥1 is gen_step=k's
+    last-query row. The diagnostic's wrapper already slices to (H, T_kv).
 
-    Returns None if the cell can't be evaluated (label unparseable, step≠1,
-    captures missing/too-short, or n_kv_heads unknown for js_kv_groups).
-    Deferred imports break the import cycle with the diagnostic module.
+    For a cell `(step, "Attention", "<layer>_<metric>")` we read
+    `captures[layer][step]`. If the model EOS'd before reaching gen_step=k
+    the captures list is shorter and we return None — that's how short
+    generations are tolerated (the calibration sample is then NaN for
+    this cell and contributes nothing to that cell's AUROC).
+
+    Returns None if the cell can't be evaluated (wrong family, step < 1,
+    label unparseable, captures missing/too-short, or n_kv_heads unknown
+    for js_kv_groups). Deferred imports break the import cycle with the
+    diagnostic module.
     """
     from diagnose_inter_head_disagreement import (
         _js_radius, _js_radius_kv_groups, _js_radius_no_bos, _mean_bos_mass,
     )
 
     step, fam, label = cell
-    if step != 1 or fam != ATTENTION_FAMILY:
+    if fam != ATTENTION_FAMILY or step < 1:
         return None
     parsed = _split_attention_label(label)
     if parsed is None:
         return None
     layer, metric = parsed
     caps = captures.get(layer)
-    if not caps or len(caps) < 2:
+    if not caps or len(caps) <= step:
         return None
-    w = caps[1]
+    w = caps[step]
     try:
         if metric == "js":
             v = _js_radius(w)
@@ -1247,15 +1275,30 @@ def main() -> int:
              "manager; ~2× per-sample wall.",
     )
     p.add_argument(
+        "--attention-multistep", action="store_true",
+        help="extend the panel with the 48-cell ATTENTION_PANEL_MULTISTEP (3 layers × 4 metrics × "
+             "gen_step ∈ {1,2,3,4}). Probes post-commit attention dynamics in addition to the "
+             "commit step. Multi-testing burden is 4× larger so OOB safety warnings fire more "
+             "aggressively at small n — that's correct behavior, not noise. Implies --attention.",
+    )
+    p.add_argument(
         "--attention-only", action="store_true",
-        help="use ATTENTION_PANEL alone (no DEFAULT_PANEL cells). Implies --attention.",
+        help="use the attention panel alone (no DEFAULT_PANEL cells). Combines with "
+             "--attention / --attention-multistep to pick which attention panel.",
     )
     args = p.parse_args()
 
+    if args.attention_multistep:
+        attn_panel = list(ATTENTION_PANEL_MULTISTEP)
+    elif args.attention or args.attention_only:
+        attn_panel = list(ATTENTION_PANEL)
+    else:
+        attn_panel = []
+
     if args.attention_only:
-        panel = list(ATTENTION_PANEL)
-    elif args.attention:
-        panel = list(DEFAULT_PANEL) + list(ATTENTION_PANEL)
+        panel = list(attn_panel) if attn_panel else list(ATTENTION_PANEL)
+    elif attn_panel:
+        panel = list(DEFAULT_PANEL) + attn_panel
     else:
         panel = None  # use DEFAULT_PANEL
 
