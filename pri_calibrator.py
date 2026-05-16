@@ -91,6 +91,22 @@ SCHEMA_VERSION = "1.2"
 # evaluates these 8 cells (multiple-testing burden at n=10-50 is tractable).
 PanelCell = Tuple[int, str, str]
 
+
+# ─── Attention cell family (added 2026-05-15; v4-candidate #5) ───────────────
+# First non-`compute_step` cell family. Cells map to metrics computed from
+# captured attention weights at gen_step=1 across three target decoder blocks
+# (final, mid, last_minus_1). Capture is opt-in: ATTENTION_PANEL is appended
+# to DEFAULT_PANEL only when --attention is passed (or callers pass an
+# extended panel). When the panel contains any Attention cell, the
+# per-sample trace is wrapped in scripts.diagnose_inter_head_disagreement's
+# observational attention_capture context manager; the wrapper handles each
+# model family's native attention layout (Phi qkv_proj fusion, Qwen3/Gemma
+# q_norm/k_norm). Wrapper module hash is recorded in provenance so detector
+# strict mode can verify capture invariance.
+ATTENTION_FAMILY = "Attention"
+ATTENTION_LAYERS: Tuple[str, ...] = ("final", "mid", "last_minus_1")
+ATTENTION_METRICS: Tuple[str, ...] = ("js", "js_kv_groups", "js_no_bos", "bos_mass")
+
 DEFAULT_PANEL: List[PanelCell] = [
     # ─── Direct (raw) cells from compute_step ──────────────────────────
     (1, "scalar", "d_F_full"),         # most task-stable across N=11
@@ -127,6 +143,15 @@ DEFAULT_PANEL: List[PanelCell] = [
 ]
 
 
+# 12-cell opt-in attention extension. Appended to DEFAULT_PANEL via the
+# `--attention` CLI flag or by passing `panel=DEFAULT_PANEL + ATTENTION_PANEL`.
+ATTENTION_PANEL: List[PanelCell] = [
+    (1, ATTENTION_FAMILY, f"{layer}_{metric}")
+    for layer in ATTENTION_LAYERS
+    for metric in ATTENTION_METRICS
+]
+
+
 # Families that are DERIVED (not present as a direct compute_step column).
 # Residualized cells use the base family's column + a regression against
 # d_F_full. Composite cells combine compute_step columns (S_t / d_F_full
@@ -147,6 +172,10 @@ def _column_name(cell: PanelCell) -> str:
     of the *base* signal — the residualization or composition logic is
     applied by `_compute_panel_scores_for_sample` and the post-loop
     residualization pass in `calibrate_with_state`.
+
+    Attention cells return a synthetic `attention::<layer>_<metric>`
+    namespace; they do not appear in `compute_step` output and are scored
+    from captured attention weights instead.
     """
     step, fam, label = cell
     if fam == "scalar":
@@ -156,6 +185,8 @@ def _column_name(cell: PanelCell) -> str:
         # the label itself; the dispatcher in _compute_panel_scores_for_sample
         # parses it and composes from primitive columns.
         return f"composite::{label}"
+    if fam == ATTENTION_FAMILY:
+        return f"attention::{label}"
     base_fam = _resid_base_family(fam) if fam in DERIVED_RESID_FAMILIES else fam
     rank = int(label.split("=")[1])
     if base_fam == "Fisher":
@@ -174,7 +205,85 @@ def _cell_label(cell: PanelCell) -> str:
         return f"{label} @ step {step}"
     if fam == DERIVED_COMPOSITE_FAMILY:
         return f"composite[{label}] @ step {step}"
+    if fam == ATTENTION_FAMILY:
+        return f"attention[{label}] @ step {step}"
     return f"{fam} {label} @ step {step}"
+
+
+def _is_attention_cell(cell: PanelCell) -> bool:
+    return cell[1] == ATTENTION_FAMILY
+
+
+def _requires_attention_capture(panel: List[PanelCell]) -> bool:
+    return any(_is_attention_cell(c) for c in panel)
+
+
+def _split_attention_label(label: str) -> Optional[Tuple[str, str]]:
+    """Split an Attention-cell label `<layer>_<metric>` into (layer, metric).
+
+    Metrics with underscores (`js_kv_groups`, `js_no_bos`, `bos_mass`) require
+    careful parsing — we anchor on the ATTENTION_LAYERS prefix list, not on
+    the rightmost-underscore.
+    """
+    for layer in ATTENTION_LAYERS:
+        prefix = f"{layer}_"
+        if label.startswith(prefix):
+            metric = label[len(prefix):]
+            if metric in ATTENTION_METRICS:
+                return layer, metric
+    return None
+
+
+def _compute_attention_score(
+    cell: PanelCell,
+    captures: Dict[str, List[Any]],
+    n_kv_heads_by_layer: Dict[str, int],
+) -> Optional[float]:
+    """Compute one Attention-family cell's score from captured weights.
+
+    `captures[tag]` is a list of attention-weight arrays (one per forward
+    call); `captures[tag][1]` is the first generation forward, whose
+    last-query row is the commit-step (gen_step=1) attention slice that the
+    diagnostic's wrapper already extracts. Shape: (n_heads, T_kv).
+
+    Returns None if the cell can't be evaluated (label unparseable, step≠1,
+    captures missing/too-short, or n_kv_heads unknown for js_kv_groups).
+    Deferred imports break the import cycle with the diagnostic module.
+    """
+    from diagnose_inter_head_disagreement import (
+        _js_radius, _js_radius_kv_groups, _js_radius_no_bos, _mean_bos_mass,
+    )
+
+    step, fam, label = cell
+    if step != 1 or fam != ATTENTION_FAMILY:
+        return None
+    parsed = _split_attention_label(label)
+    if parsed is None:
+        return None
+    layer, metric = parsed
+    caps = captures.get(layer)
+    if not caps or len(caps) < 2:
+        return None
+    w = caps[1]
+    try:
+        if metric == "js":
+            v = _js_radius(w)
+        elif metric == "js_no_bos":
+            v = _js_radius_no_bos(w)
+        elif metric == "bos_mass":
+            v = _mean_bos_mass(w)
+        elif metric == "js_kv_groups":
+            n_kv = n_kv_heads_by_layer.get(layer)
+            if n_kv is None:
+                return None
+            v = _js_radius_kv_groups(w, n_kv)
+        else:
+            return None
+    except Exception:
+        return None
+    if v is None or not np.isfinite(v):
+        return None
+    return float(v)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -263,12 +372,22 @@ def _compute_panel_scores_for_sample(
     panel: List[PanelCell],
     alpha: float = 1.0,
     v3_rank_values: Tuple[int, ...] = (1, 2, 4, 21),
+    *,
+    attention_captures: Optional[Dict[str, List[Any]]] = None,
+    attention_n_kv_heads: Optional[Dict[str, int]] = None,
 ) -> Dict[PanelCell, Optional[float]]:
     """For one calibration sample's trace, compute every panel cell's value.
     Returns dict mapping panel cell → score (or None if the model EOS'd
     before the panel step). The same `compute_step` invocation at a given
     step emits ALL column families, so we cache by step rather than
     re-computing.
+
+    For Attention-family cells, `attention_captures` is the dict produced by
+    the diagnostic module's `attention_capture` context manager wrapping the
+    trace (keyed by layer tag), and `attention_n_kv_heads` maps each layer
+    tag to its decoder block's n_kv_heads (needed for the GQA-aware metric).
+    Both default to None; if any panel cell is an Attention cell and these
+    aren't provided, that cell returns None.
     """
     gen_hidden = trace["gen_hidden"][layer_name]
     n_gen = len(gen_hidden)
@@ -277,7 +396,10 @@ def _compute_panel_scores_for_sample(
     last_prefix = trace["last_prefix_hidden"][layer_name]
 
     # Cache per-step compute_step output. parquet gen_step 1 → idx 0.
-    steps_needed = sorted(set(step for step, _, _ in panel))
+    # Skip steps only used by Attention cells (those don't need compute_step).
+    steps_needed = sorted({
+        step for step, fam, _ in panel if fam != ATTENTION_FAMILY
+    })
     step_to_result: Dict[int, Optional[Dict[str, float]]] = {}
     for step in steps_needed:
         idx = step - 1
@@ -305,6 +427,17 @@ def _compute_panel_scores_for_sample(
     out: Dict[PanelCell, Optional[float]] = {}
     for cell in panel:
         step, fam, label = cell
+
+        # ── Attention: read from captures rather than compute_step ─────
+        if fam == ATTENTION_FAMILY:
+            if attention_captures is None:
+                out[cell] = None
+                continue
+            out[cell] = _compute_attention_score(
+                cell, attention_captures, attention_n_kv_heads or {},
+            )
+            continue
+
         res = step_to_result.get(step)
         if res is None:
             out[cell] = None
@@ -840,17 +973,59 @@ def calibrate_with_state(
     print(f"[calibrate] n_calibration={n_calibration} (pos={n_pos}, neg={n_neg})")
     print(f"[calibrate] panel={[_cell_label(c) for c in panel]}")
 
+    # ── Attention setup (only if panel contains Attention cells) ───────
+    # Wraps the per-sample trace_sample in the diagnostic module's
+    # observational attention_capture context manager. Doubles per-sample
+    # wall (~2× — manual SDPA at 3 target blocks vs fused kernel) so this
+    # path is gated on actually needing attention captures.
+    capture_attention = _requires_attention_capture(panel)
+    attention_target_map: Dict[str, int] = {}
+    attention_n_kv_heads: Dict[str, int] = {}
+    if capture_attention:
+        # Deferred import — breaks circular import with the diagnostic.
+        from diagnose_inter_head_disagreement import (
+            _find_layers, _target_layer_map, attention_capture,
+        )
+        decoder_layers = _find_layers(state.model)
+        attention_target_map = _target_layer_map(len(decoder_layers))
+        for tag, idx in attention_target_map.items():
+            n_kv = getattr(decoder_layers[idx].self_attn, "n_kv_heads", None)
+            if n_kv is None:
+                # MHA models: fall back to n_heads (q heads). Means
+                # js_kv_groups == js for these; that's the right answer
+                # since there are no KV groups to collapse over.
+                n_kv = getattr(decoder_layers[idx].self_attn, "n_heads", None)
+            if n_kv is not None:
+                attention_n_kv_heads[tag] = int(n_kv)
+        print(f"[calibrate] attention capture active: target_map={attention_target_map} "
+              f"n_kv_heads={attention_n_kv_heads}")
+
     # Per-sample × per-cell score matrix.
     n_cells = len(panel)
     score_matrix = np.full((n_calibration, n_cells), np.nan, dtype=np.float64)
     print(f"[calibrate] tracing {n_calibration} samples...")
     for i, prompt in enumerate(prompts):
-        trace = _trace_one_prompt(
-            state.model, state.tokenizer, state.projection, state.layer_indices,
-            prompt, state.prompt_strategy, max_new_tokens,
-        )
+        if capture_attention:
+            with attention_capture(decoder_layers, attention_target_map) as caps:
+                trace = _trace_one_prompt(
+                    state.model, state.tokenizer, state.projection, state.layer_indices,
+                    prompt, state.prompt_strategy, max_new_tokens,
+                )
+                # Snapshot captures while still inside the context — the
+                # wrapper restores native attention on exit, so we read
+                # the per-call list refs before that point.
+                sample_captures = {tag: list(caps[tag]) for tag in caps}
+        else:
+            trace = _trace_one_prompt(
+                state.model, state.tokenizer, state.projection, state.layer_indices,
+                prompt, state.prompt_strategy, max_new_tokens,
+            )
+            sample_captures = None
+
         per_cell = _compute_panel_scores_for_sample(
             state.pri_computer, trace, state.layer_name, panel, alpha=alpha,
+            attention_captures=sample_captures,
+            attention_n_kv_heads=attention_n_kv_heads if capture_attention else None,
         )
         for j, cell in enumerate(panel):
             v = per_cell.get(cell)
@@ -947,6 +1122,7 @@ def calibrate_with_state(
     pipeline_path = REPO_ROOT / "pri_v2_mlx_pipeline.py"
     io_plugins_path = REPO_ROOT / "pri_v2_io_plugins.py"
     model_adapters_path = REPO_ROOT / "model_adapters.py"
+    attention_wrapper_path = REPO_ROOT / "scripts" / "diagnose_inter_head_disagreement.py"
     model_snapshot_sha = _resolve_model_snapshot_sha(state.model_slug)
     profile = CalibrationProfile(
         schema_version=SCHEMA_VERSION,
@@ -999,6 +1175,12 @@ def calibrate_with_state(
             "io_plugins_module_hash_sha256": _hash_file(io_plugins_path),
             "model_adapters_module_hash_sha256": _hash_file(model_adapters_path),
             "calibrator_module_hash_sha256": _hash_file(REPO_ROOT / "pri_calibrator.py"),
+            # None when no Attention cell was in the panel; detector strict
+            # mode only checks this when the loaded profile's winner is an
+            # Attention cell (the wrapper module isn't a runtime dep otherwise).
+            "attention_wrapper_module_hash_sha256": (
+                _hash_file(attention_wrapper_path) if capture_attention else None
+            ),
             "model_snapshot_sha": model_snapshot_sha,  # may be None if uncached
             "calibrated_at_iso": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "max_new_tokens": int(max_new_tokens),
@@ -1047,7 +1229,7 @@ def calibrate(
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="PRI calibrator (v1.0 schema)")
+    p = argparse.ArgumentParser(description="PRI calibrator (v1.2 schema)")
     p.add_argument("--model", required=True, help="model slug, e.g. mlx-community/Mistral-Nemo-Instruct-2407-4bit")
     p.add_argument("--data", required=True, help="calibration jsonl path")
     p.add_argument("--out", required=True, help="output profile json path")
@@ -1058,12 +1240,30 @@ def main() -> int:
                    help="generation budget per sample (default 8 — covers panel steps 1..4 + safety)")
     p.add_argument("--layer", default="final", help="capture layer (default: final)")
     p.add_argument("--alpha", type=float, default=1.0)
+    p.add_argument(
+        "--attention", action="store_true",
+        help="extend the panel with the 12-cell ATTENTION_PANEL (3 layers × 4 metrics × gen_step=1). "
+             "Wraps trace_sample in the diagnostic module's observational attention_capture context "
+             "manager; ~2× per-sample wall.",
+    )
+    p.add_argument(
+        "--attention-only", action="store_true",
+        help="use ATTENTION_PANEL alone (no DEFAULT_PANEL cells). Implies --attention.",
+    )
     args = p.parse_args()
+
+    if args.attention_only:
+        panel = list(ATTENTION_PANEL)
+    elif args.attention:
+        panel = list(DEFAULT_PANEL) + list(ATTENTION_PANEL)
+    else:
+        panel = None  # use DEFAULT_PANEL
 
     profile = calibrate(
         model_slug=args.model,
         calibration_jsonl_path=args.data,
         task_label=args.task_label,
+        panel=panel,
         seed=args.seed,
         n_bootstrap=args.n_bootstrap,
         max_new_tokens=args.max_new_tokens,
