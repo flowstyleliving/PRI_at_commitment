@@ -189,6 +189,15 @@ def _capture_last_query_weights(
     n_repeats = int(attn.n_heads) // int(attn.n_kv_heads)
     if n_repeats > 1:
         keys = mx.repeat(keys, n_repeats, axis=1)
+    # Cast to fp32 BEFORE the matmul to avoid overflow at deep layers.
+    # On Qwen 2.5 7B's final block (layer 27), `q @ kᵀ` in float16 produces
+    # scores up to ~1800 with sporadic +inf in unmasked positions, which then
+    # propagate through softmax → NaN in 180/200 ANLI R1 captures. fp32 keeps
+    # the dynamic range safe at trivial wall cost (capture path only — the
+    # model's native forward stays in its original dtype because we return
+    # `attn(x, mask, cache)` unmodified). Fix dated 2026-05-15.
+    queries = queries.astype(mx.float32)
+    keys = keys.astype(mx.float32)
     scores = (queries @ keys.transpose(0, 1, 3, 2)) * attn.scale
     scores = _apply_attention_mask(scores, mask)
     weights = mx.softmax(scores, axis=-1, precise=True).astype(mx.float32)
