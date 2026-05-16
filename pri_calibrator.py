@@ -377,7 +377,13 @@ def _compute_attention_score(
                 return None
         else:
             return None
-    except Exception:
+    except Exception as _exc:
+        import warnings
+        warnings.warn(
+            f"_compute_attention_score: metric '{metric}' raised "
+            f"{type(_exc).__name__}: {_exc}",
+            stacklevel=2,
+        )
         return None
     if v is None or not np.isfinite(v):
         return None
