@@ -100,6 +100,11 @@ class _WrapAttention:
     the most-recent query position over all key positions. For gen_step=k, this
     is the just-appended token's attention pattern.
 
+    When `v_norm_capture_list` is provided, the wrapper also records per-head
+    per-position L2 norms of the value projection (shape (n_kv_heads, T)) into
+    that parallel list. Used by the calibrator's V-norm cells (SinkProbe-style
+    features); when None, the V projection is not computed (no overhead).
+
     Why manual weights but native output: mlx.fast.scaled_dot_product_attention
     is a fused kernel that does not return weights. We mirror the attention
     module's q/k preprocessing closely enough to recover the softmax output,
@@ -107,9 +112,15 @@ class _WrapAttention:
     diagnostic cannot perturb next-token generation.
     """
 
-    def __init__(self, orig: Any, capture_list: List[np.ndarray]) -> None:
+    def __init__(
+        self,
+        orig: Any,
+        capture_list: List[np.ndarray],
+        v_norm_capture_list: Optional[List[np.ndarray]] = None,
+    ) -> None:
         self._orig = orig
         self._capture = capture_list
+        self._v_norm_capture = v_norm_capture_list
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._orig, name)
@@ -117,6 +128,8 @@ class _WrapAttention:
     def __call__(self, x: mx.array, mask: Optional[Any] = None, cache: Optional[Any] = None) -> mx.array:
         attn = self._orig
         self._capture.append(_capture_last_query_weights(attn, x, mask, cache))
+        if self._v_norm_capture is not None:
+            self._v_norm_capture.append(_capture_value_norms(attn, x))
         return attn(x, mask, cache)
 
 
@@ -206,6 +219,56 @@ def _capture_last_query_weights(
     return np.array(weights)[0, :, -1, :]
 
 
+def _project_values(attn: Any, x: mx.array) -> mx.array:
+    """Mirror the native attention module's v projection path.
+
+    Supports the same families as `_project_queries_keys`:
+      - separate `v_proj`
+      - packed `qkv_proj` (Phi3 / Phi4-mini) — value is the third slice
+    Returns the value tensor reshaped to (B, n_kv_heads, T, head_dim).
+    """
+    batch, seqlen, _ = x.shape
+    if hasattr(attn, "qkv_proj"):
+        head_dim = int(getattr(attn, "head_dim"))
+        qkv = attn.qkv_proj(x)
+        query_pos = attn.n_heads * head_dim
+        key_pos = query_pos + attn.n_kv_heads * head_dim
+        _q_raw, _k_raw, v_raw = mx.split(qkv, [query_pos, key_pos], axis=-1)
+    elif hasattr(attn, "v_proj"):
+        v_raw = attn.v_proj(x)
+    else:
+        raise RuntimeError(
+            f"unsupported attention projection layout for V on {type(attn).__name__}"
+        )
+    return _reshape_heads(v_raw, batch, seqlen, int(attn.n_kv_heads))
+
+
+def _capture_value_norms(
+    attn: Any,
+    x: mx.array,
+) -> np.ndarray:
+    """Compute per-head per-position L2 norm of the value vectors for this
+    forward call.
+
+    Returns shape (n_kv_heads, T) — value norm for each token position from
+    each KV head. GQA isn't expanded here (norms are KV-group-level by
+    construction). The caller is responsible for expansion if it wants
+    per-Q-head norms.
+
+    Cast to fp32 BEFORE the elementwise square so float16's narrow exponent
+    range doesn't clip large value vectors (same overflow class as the
+    attention scores fix above).
+    """
+    batch, _seqlen, _ = x.shape
+    if batch != 1:
+        raise RuntimeError(f"expected batch size 1 during trace, got {batch}")
+    values = _project_values(attn, x)  # (1, n_kv_heads, T, head_dim)
+    values_fp32 = values.astype(mx.float32)
+    norms = mx.sqrt(mx.sum(values_fp32 * values_fp32, axis=-1))  # (1, n_kv_heads, T)
+    mx.eval(norms)
+    return np.array(norms)[0]  # (n_kv_heads, T)
+
+
 @contextmanager
 def attention_capture(layers: List[Any], target_indices: Dict[str, int]):
     """Wraps target layers' self_attn with capture proxies for the duration of
@@ -219,6 +282,40 @@ def attention_capture(layers: List[Any], target_indices: Dict[str, int]):
             originals[tag] = layer.self_attn
             layer.self_attn = _WrapAttention(layer.self_attn, captures[tag])
         yield captures
+    finally:
+        for tag, idx in target_indices.items():
+            layers[idx].self_attn = originals[tag]
+
+
+@contextmanager
+def attention_capture_with_values(layers: List[Any], target_indices: Dict[str, int]):
+    """Like `attention_capture` but also collects per-head per-position L2
+    norms of the value projection on every forward call.
+
+    Yields a 2-tuple `(weights_captures, v_norm_captures)`:
+      * `weights_captures[tag][k]` — attention weights at forward call k,
+        shape `(n_heads, T_kv)` (last query row only). Same as
+        `attention_capture`.
+      * `v_norm_captures[tag][k]` — value norms at forward call k, shape
+        `(n_kv_heads, T)` — one L2 norm per (KV head, token position).
+
+    Used by the calibrator when V-norm cells are in the panel (SinkProbe-
+    style features). Adds one V projection + sqrt-sum-sq per target layer
+    per forward call; typically <5% overhead vs `attention_capture` alone.
+    """
+    captures: Dict[str, List[np.ndarray]] = {tag: [] for tag in target_indices}
+    v_norm_captures: Dict[str, List[np.ndarray]] = {tag: [] for tag in target_indices}
+    originals: Dict[str, Any] = {}
+    try:
+        for tag, idx in target_indices.items():
+            layer = layers[idx]
+            originals[tag] = layer.self_attn
+            layer.self_attn = _WrapAttention(
+                layer.self_attn,
+                captures[tag],
+                v_norm_capture_list=v_norm_captures[tag],
+            )
+        yield captures, v_norm_captures
     finally:
         for tag, idx in target_indices.items():
             layers[idx].self_attn = originals[tag]
@@ -312,6 +409,64 @@ def _attention_entropy(weights: np.ndarray) -> float:
     p /= p.sum(axis=1, keepdims=True)
     H = -np.sum(p * np.log(p), axis=1)
     return float(H.mean())
+
+
+# ─── V-norm metrics (SinkProbe refinement; added 2026-05-15 evening) ─────────
+# Captured V-norms have shape (n_kv_heads, T) — one L2 norm per (KV head,
+# token position). Below helpers reduce these to a single scalar per sample.
+
+def _mean_v_norm_bos(v_norms: np.ndarray) -> float:
+    """Mean over KV heads of the L2 norm of the value vector at token 0
+    (the BOS sink). Single scalar per layer per forward.
+
+    SinkProbe motivation: high ‖V_0‖ + high attention mass on token 0 →
+    BOS sink is computationally active → hallucination-correlated.
+    """
+    if v_norms.ndim != 2 or v_norms.shape[1] < 1:
+        return float("nan")
+    return float(v_norms[:, 0].astype(np.float64).mean())
+
+
+def _mean_v_norm_max(v_norms: np.ndarray) -> float:
+    """Mean over KV heads of the maximum L2 norm across all token
+    positions. Captures "is there ANY computationally active sink in this
+    head's value sequence". Robust to sink-position drift across samples.
+    """
+    if v_norms.ndim != 2 or v_norms.shape[1] < 1:
+        return float("nan")
+    return float(v_norms.astype(np.float64).max(axis=1).mean())
+
+
+def _lastq_weighted_v_norm(weights: np.ndarray, v_norms: np.ndarray) -> float:
+    """Σ_i A^h_{q=-1, i} · ‖V_i^h‖ averaged over Q heads.
+
+    The closest single-scalar analog to SinkProbe's "sinks with large
+    value-vector norms dominate the attention output". For each Q head h,
+    weight the V norm at each key position by the head's attention to that
+    position from the last (committed-token) query. Then average across
+    heads. For GQA models, V norms are expanded from KV-group level to
+    Q-head level by repetition (each Q head sees its KV group's V).
+    """
+    if weights.ndim != 2 or v_norms.ndim != 2:
+        return float("nan")
+    n_q, t_kv = weights.shape
+    n_kv, t_v = v_norms.shape
+    if t_kv != t_v or n_q < 1 or n_kv < 1:
+        return float("nan")
+    if n_q % n_kv != 0:
+        return float("nan")
+    repeats = n_q // n_kv
+    # Expand v_norms to per-Q-head: (n_kv, T) → (n_kv, repeats, T) →
+    # (n_q, T) preserving the within-group ordering.
+    v_per_q = np.repeat(v_norms.astype(np.float64), repeats, axis=0)
+    p = weights.astype(np.float64)
+    denom = p.sum(axis=1, keepdims=True)
+    valid = denom.squeeze(-1) > 0
+    if not np.all(valid):
+        return float("nan")
+    p /= denom
+    weighted = np.sum(p * v_per_q, axis=1)  # (n_q,)
+    return float(weighted.mean())
 
 
 def _raw_auroc(labels: np.ndarray, scores: np.ndarray) -> Tuple[float, str]:

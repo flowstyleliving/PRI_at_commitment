@@ -106,7 +106,16 @@ PanelCell = Tuple[int, str, str]
 # invariance.
 ATTENTION_FAMILY = "Attention"
 ATTENTION_LAYERS: Tuple[str, ...] = ("final", "mid", "last_minus_1")
+# Default 4 metrics — derived from attention weights only.
 ATTENTION_METRICS: Tuple[str, ...] = ("js", "js_kv_groups", "js_no_bos", "bos_mass")
+# 3 SinkProbe-style metrics — require value-vector norms in addition to
+# weights. Enabled in panels built with `with_v_norms=True` or the
+# `--attention-with-v-norms` CLI flag.
+ATTENTION_METRICS_V_NORMS: Tuple[str, ...] = (
+    "v_norm_bos",            # ‖V_0‖ averaged over KV heads
+    "v_norm_max",            # max_i ‖V_i‖ averaged over KV heads
+    "v_norm_lastq_weighted", # Σ_i A^h_{q=-1,i} · ‖V_i^h‖ averaged over Q heads
+)
 ATTENTION_STEPS_DEFAULT: Tuple[int, ...] = (1,)              # commit step only (v3 sealed plane)
 ATTENTION_STEPS_MULTISTEP: Tuple[int, ...] = (1, 2, 3, 4)    # multistep: commit + 3 post-commit
 
@@ -115,15 +124,23 @@ def make_attention_panel(
     steps: Tuple[int, ...] = ATTENTION_STEPS_DEFAULT,
     layers: Tuple[str, ...] = ATTENTION_LAYERS,
     metrics: Tuple[str, ...] = ATTENTION_METRICS,
+    *,
+    with_v_norms: bool = False,
 ) -> List[PanelCell]:
     """Build an Attention panel as `len(steps) × len(layers) × len(metrics)`
     cells. Multi-step expansion (`steps=(1,2,3,4)`) is the multistep variant.
+    When `with_v_norms=True`, also appends `len(steps) × len(layers) ×
+    len(ATTENTION_METRICS_V_NORMS)` cells covering the SinkProbe-style
+    value-norm metrics; calibration will switch to attention_capture_with_values.
     """
+    all_metrics: Tuple[str, ...] = metrics
+    if with_v_norms:
+        all_metrics = tuple(metrics) + tuple(ATTENTION_METRICS_V_NORMS)
     return [
         (step, ATTENTION_FAMILY, f"{layer}_{metric}")
         for step in steps
         for layer in layers
-        for metric in metrics
+        for metric in all_metrics
     ]
 
 DEFAULT_PANEL: List[PanelCell] = [
@@ -172,6 +189,14 @@ ATTENTION_PANEL: List[PanelCell] = make_attention_panel(ATTENTION_STEPS_DEFAULT)
 # warnings will fire more aggressively at small n; that's correct
 # behavior, not noise.
 ATTENTION_PANEL_MULTISTEP: List[PanelCell] = make_attention_panel(ATTENTION_STEPS_MULTISTEP)
+
+# 21-cell variant adding 3 SinkProbe-style value-norm metrics at the
+# commit step (gen_step=1). Opt-in via `--attention-with-v-norms`.
+# Requires the value-norm capture path (attention_capture_with_values);
+# slightly more wall per sample but typically <5% overhead.
+ATTENTION_PANEL_WITH_V_NORMS: List[PanelCell] = make_attention_panel(
+    ATTENTION_STEPS_DEFAULT, with_v_norms=True,
+)
 
 
 # Families that are DERIVED (not present as a direct compute_step column).
@@ -243,23 +268,48 @@ def _requires_attention_capture(panel: List[PanelCell]) -> bool:
 def _split_attention_label(label: str) -> Optional[Tuple[str, str]]:
     """Split an Attention-cell label `<layer>_<metric>` into (layer, metric).
 
-    Metrics with underscores (`js_kv_groups`, `js_no_bos`, `bos_mass`) require
-    careful parsing — we anchor on the ATTENTION_LAYERS prefix list, not on
+    Metrics with underscores (`js_kv_groups`, `js_no_bos`, `bos_mass`,
+    `v_norm_bos`, `v_norm_max`, `v_norm_lastq_weighted`) require careful
+    parsing — we anchor on the ATTENTION_LAYERS prefix list, not on
     the rightmost-underscore.
     """
+    known_metrics = set(ATTENTION_METRICS) | set(ATTENTION_METRICS_V_NORMS)
     for layer in ATTENTION_LAYERS:
         prefix = f"{layer}_"
         if label.startswith(prefix):
             metric = label[len(prefix):]
-            if metric in ATTENTION_METRICS:
+            if metric in known_metrics:
                 return layer, metric
     return None
+
+
+def _is_v_norm_metric(metric: str) -> bool:
+    return metric in ATTENTION_METRICS_V_NORMS
+
+
+def _requires_v_norm_capture(panel: List[PanelCell]) -> bool:
+    """True iff any panel cell uses a V-norm metric (and therefore the
+    calibrator needs to use `attention_capture_with_values` instead of the
+    weights-only `attention_capture`).
+    """
+    for cell in panel:
+        if cell[1] != ATTENTION_FAMILY:
+            continue
+        parsed = _split_attention_label(cell[2])
+        if parsed is None:
+            continue
+        _layer, metric = parsed
+        if _is_v_norm_metric(metric):
+            return True
+    return False
 
 
 def _compute_attention_score(
     cell: PanelCell,
     captures: Dict[str, List[Any]],
     n_kv_heads_by_layer: Dict[str, int],
+    *,
+    v_norm_captures: Optional[Dict[str, List[Any]]] = None,
 ) -> Optional[float]:
     """Compute one Attention-family cell's score from captured weights.
 
@@ -273,13 +323,18 @@ def _compute_attention_score(
     generations are tolerated (the calibration sample is then NaN for
     this cell and contributes nothing to that cell's AUROC).
 
+    V-norm metrics additionally require `v_norm_captures[tag][step]`
+    (shape (n_kv_heads, T)); if `v_norm_captures` is None, those cells
+    return None.
+
     Returns None if the cell can't be evaluated (wrong family, step < 1,
     label unparseable, captures missing/too-short, or n_kv_heads unknown
-    for js_kv_groups). Deferred imports break the import cycle with the
-    diagnostic module.
+    for js_kv_groups, or v_norm_captures missing for a v-norm metric).
+    Deferred imports break the import cycle with the diagnostic module.
     """
     from diagnose_inter_head_disagreement import (
         _js_radius, _js_radius_kv_groups, _js_radius_no_bos, _mean_bos_mass,
+        _mean_v_norm_bos, _mean_v_norm_max, _lastq_weighted_v_norm,
     )
 
     step, fam, label = cell
@@ -305,6 +360,21 @@ def _compute_attention_score(
             if n_kv is None:
                 return None
             v = _js_radius_kv_groups(w, n_kv)
+        elif metric in ATTENTION_METRICS_V_NORMS:
+            if v_norm_captures is None:
+                return None
+            v_caps = v_norm_captures.get(layer)
+            if not v_caps or len(v_caps) <= step:
+                return None
+            v_norms = v_caps[step]
+            if metric == "v_norm_bos":
+                v = _mean_v_norm_bos(v_norms)
+            elif metric == "v_norm_max":
+                v = _mean_v_norm_max(v_norms)
+            elif metric == "v_norm_lastq_weighted":
+                v = _lastq_weighted_v_norm(w, v_norms)
+            else:
+                return None
         else:
             return None
     except Exception:
@@ -403,6 +473,7 @@ def _compute_panel_scores_for_sample(
     *,
     attention_captures: Optional[Dict[str, List[Any]]] = None,
     attention_n_kv_heads: Optional[Dict[str, int]] = None,
+    attention_v_norm_captures: Optional[Dict[str, List[Any]]] = None,
 ) -> Dict[PanelCell, Optional[float]]:
     """For one calibration sample's trace, compute every panel cell's value.
     Returns dict mapping panel cell → score (or None if the model EOS'd
@@ -463,6 +534,7 @@ def _compute_panel_scores_for_sample(
                 continue
             out[cell] = _compute_attention_score(
                 cell, attention_captures, attention_n_kv_heads or {},
+                v_norm_captures=attention_v_norm_captures,
             )
             continue
 
@@ -1007,12 +1079,14 @@ def calibrate_with_state(
     # wall (~2× — manual SDPA at 3 target blocks vs fused kernel) so this
     # path is gated on actually needing attention captures.
     capture_attention = _requires_attention_capture(panel)
+    capture_v_norms = _requires_v_norm_capture(panel) if capture_attention else False
     attention_target_map: Dict[str, int] = {}
     attention_n_kv_heads: Dict[str, int] = {}
     if capture_attention:
         # Deferred import — breaks circular import with the diagnostic.
         from diagnose_inter_head_disagreement import (
             _find_layers, _target_layer_map, attention_capture,
+            attention_capture_with_values,
         )
         decoder_layers = _find_layers(state.model)
         attention_target_map = _target_layer_map(len(decoder_layers))
@@ -1026,14 +1100,25 @@ def calibrate_with_state(
             if n_kv is not None:
                 attention_n_kv_heads[tag] = int(n_kv)
         print(f"[calibrate] attention capture active: target_map={attention_target_map} "
-              f"n_kv_heads={attention_n_kv_heads}")
+              f"n_kv_heads={attention_n_kv_heads}  v_norms={capture_v_norms}")
 
     # Per-sample × per-cell score matrix.
     n_cells = len(panel)
     score_matrix = np.full((n_calibration, n_cells), np.nan, dtype=np.float64)
     print(f"[calibrate] tracing {n_calibration} samples...")
     for i, prompt in enumerate(prompts):
-        if capture_attention:
+        sample_v_norm_captures: Optional[Dict[str, List[Any]]] = None
+        if capture_attention and capture_v_norms:
+            with attention_capture_with_values(
+                decoder_layers, attention_target_map,
+            ) as (caps, v_caps):
+                trace = _trace_one_prompt(
+                    state.model, state.tokenizer, state.projection, state.layer_indices,
+                    prompt, state.prompt_strategy, max_new_tokens,
+                )
+                sample_captures = {tag: list(caps[tag]) for tag in caps}
+                sample_v_norm_captures = {tag: list(v_caps[tag]) for tag in v_caps}
+        elif capture_attention:
             with attention_capture(decoder_layers, attention_target_map) as caps:
                 trace = _trace_one_prompt(
                     state.model, state.tokenizer, state.projection, state.layer_indices,
@@ -1054,6 +1139,7 @@ def calibrate_with_state(
             state.pri_computer, trace, state.layer_name, panel, alpha=alpha,
             attention_captures=sample_captures,
             attention_n_kv_heads=attention_n_kv_heads if capture_attention else None,
+            attention_v_norm_captures=sample_v_norm_captures,
         )
         for j, cell in enumerate(panel):
             v = per_cell.get(cell)
@@ -1282,14 +1368,24 @@ def main() -> int:
              "aggressively at small n — that's correct behavior, not noise. Implies --attention.",
     )
     p.add_argument(
+        "--attention-with-v-norms", action="store_true",
+        help="extend the panel with the 21-cell ATTENTION_PANEL_WITH_V_NORMS — adds 3 SinkProbe-"
+             "style value-norm metrics (v_norm_bos, v_norm_max, v_norm_lastq_weighted) at the "
+             "commit step on top of the 12 default attention cells. Switches to the "
+             "attention_capture_with_values capture path; <5% extra wall vs --attention.",
+    )
+    p.add_argument(
         "--attention-only", action="store_true",
         help="use the attention panel alone (no DEFAULT_PANEL cells). Combines with "
-             "--attention / --attention-multistep to pick which attention panel.",
+             "--attention / --attention-multistep / --attention-with-v-norms to pick "
+             "which attention panel.",
     )
     args = p.parse_args()
 
     if args.attention_multistep:
         attn_panel = list(ATTENTION_PANEL_MULTISTEP)
+    elif args.attention_with_v_norms:
+        attn_panel = list(ATTENTION_PANEL_WITH_V_NORMS)
     elif args.attention or args.attention_only:
         attn_panel = list(ATTENTION_PANEL)
     else:

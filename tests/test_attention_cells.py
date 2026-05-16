@@ -20,8 +20,10 @@ from pri_calibrator import (
     ATTENTION_FAMILY,
     ATTENTION_LAYERS,
     ATTENTION_METRICS,
+    ATTENTION_METRICS_V_NORMS,
     ATTENTION_PANEL,
     ATTENTION_PANEL_MULTISTEP,
+    ATTENTION_PANEL_WITH_V_NORMS,
     ATTENTION_STEPS_DEFAULT,
     ATTENTION_STEPS_MULTISTEP,
     DEFAULT_PANEL,
@@ -30,7 +32,9 @@ from pri_calibrator import (
     _column_name,
     _compute_attention_score,
     _is_attention_cell,
+    _is_v_norm_metric,
     _requires_attention_capture,
+    _requires_v_norm_capture,
     _split_attention_label,
     make_attention_panel,
 )
@@ -304,6 +308,113 @@ class TestMultistepAttention:
         assert score2 > 0.0  # divergent heads
 
 
+class TestVNormAttention:
+    """V-norm SinkProbe-style metrics — added 2026-05-15 evening."""
+
+    @staticmethod
+    def _make_captures(weights_by_layer, v_norms_by_layer=None):
+        """Build (captures, v_norm_captures) in the wrapper's per-call list
+        shape. Both maps are layer → list of arrays where index 0 is the
+        prefix placeholder and index 1 is the gen_step=1 forward."""
+        captures = {
+            layer: [np.zeros((1, 1)), w] for layer, w in weights_by_layer.items()
+        }
+        if v_norms_by_layer is None:
+            return captures, None
+        v_caps = {
+            layer: [np.zeros((1, 1)), v] for layer, v in v_norms_by_layer.items()
+        }
+        return captures, v_caps
+
+    def test_v_norms_panel_has_21_cells(self):
+        assert len(ATTENTION_PANEL_WITH_V_NORMS) == 21  # 3 layers × (4 + 3) metrics
+
+    def test_v_norms_panel_includes_default_cells(self):
+        # The default 12 attention cells should be in the v-norms panel.
+        assert set(ATTENTION_PANEL).issubset(set(ATTENTION_PANEL_WITH_V_NORMS))
+
+    def test_v_norm_metric_names(self):
+        assert ATTENTION_METRICS_V_NORMS == (
+            "v_norm_bos", "v_norm_max", "v_norm_lastq_weighted",
+        )
+
+    def test_is_v_norm_metric_positive(self):
+        for m in ATTENTION_METRICS_V_NORMS:
+            assert _is_v_norm_metric(m)
+
+    def test_is_v_norm_metric_negative(self):
+        for m in ATTENTION_METRICS:
+            assert not _is_v_norm_metric(m)
+
+    def test_requires_v_norm_capture_true(self):
+        panel = [(1, ATTENTION_FAMILY, "final_v_norm_bos")]
+        assert _requires_v_norm_capture(panel)
+
+    def test_requires_v_norm_capture_false_for_weight_only(self):
+        assert not _requires_v_norm_capture(ATTENTION_PANEL)
+
+    def test_requires_v_norm_capture_false_for_default(self):
+        assert not _requires_v_norm_capture(DEFAULT_PANEL)
+
+    def test_v_norm_label_split(self):
+        for metric in ATTENTION_METRICS_V_NORMS:
+            for layer in ATTENTION_LAYERS:
+                parsed = _split_attention_label(f"{layer}_{metric}")
+                assert parsed == (layer, metric)
+
+    def test_v_norm_bos_correctness(self):
+        # ‖V_0‖ averaged over 4 KV heads. v_norms[:, 0] = [1.0, 2.0, 3.0, 4.0],
+        # mean = 2.5.
+        v = np.array(
+            [[1.0, 0.5, 0.2], [2.0, 0.5, 0.2], [3.0, 0.5, 0.2], [4.0, 0.5, 0.2]],
+            dtype=np.float64,
+        )
+        w = np.ones((4, 3), dtype=np.float64) / 3
+        captures, v_caps = self._make_captures({"final": w}, {"final": v})
+        cell = (1, ATTENTION_FAMILY, "final_v_norm_bos")
+        score = _compute_attention_score(
+            cell, captures, {"final": 4}, v_norm_captures=v_caps,
+        )
+        assert score == pytest.approx(2.5, abs=1e-6)
+
+    def test_v_norm_max_correctness(self):
+        # max_i v_norms[h, i] for each h, then mean over h.
+        # Per-head maxes: h0 max=1, h1 max=2, h2 max=3, h3 max=4 → mean = 2.5.
+        v = np.array(
+            [[0.1, 0.5, 1.0], [0.1, 2.0, 0.5], [0.1, 0.5, 3.0], [4.0, 0.5, 0.1]],
+            dtype=np.float64,
+        )
+        w = np.ones((4, 3), dtype=np.float64) / 3
+        captures, v_caps = self._make_captures({"final": w}, {"final": v})
+        cell = (1, ATTENTION_FAMILY, "final_v_norm_max")
+        score = _compute_attention_score(
+            cell, captures, {"final": 4}, v_norm_captures=v_caps,
+        )
+        assert score == pytest.approx(2.5, abs=1e-6)
+
+    def test_v_norm_lastq_weighted_correctness(self):
+        # 2 KV heads, 2 Q heads (MHA case, n_q == n_kv == 2). Heads:
+        # h0 attends fully to position 0; h1 attends fully to position 2.
+        # ‖V‖ per head: h0=[10, 1, 1], h1=[1, 1, 100].
+        # Per-head Σ A_i · ‖V_i‖ = h0: 10, h1: 100. Mean over heads = 55.
+        v = np.array([[10.0, 1.0, 1.0], [1.0, 1.0, 100.0]], dtype=np.float64)
+        w = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+        captures, v_caps = self._make_captures({"final": w}, {"final": v})
+        cell = (1, ATTENTION_FAMILY, "final_v_norm_lastq_weighted")
+        score = _compute_attention_score(
+            cell, captures, {"final": 2}, v_norm_captures=v_caps,
+        )
+        assert score == pytest.approx(55.0, abs=1e-6)
+
+    def test_v_norm_metric_returns_none_without_v_captures(self):
+        # If v_norm_captures is None, v-norm cells should return None.
+        w = np.ones((2, 4), dtype=np.float64) / 4
+        captures, _ = self._make_captures({"final": w})
+        cell = (1, ATTENTION_FAMILY, "final_v_norm_bos")
+        score = _compute_attention_score(cell, captures, {"final": 2}, v_norm_captures=None)
+        assert score is None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Slow integration test — Gemma-3-1B end-to-end
 # ─────────────────────────────────────────────────────────────────────────────
@@ -343,3 +454,31 @@ class TestAttentionEndToEnd:
         profile.to_json(str(profile_path))
         rc = _self_test(str(profile_path), str(puzzle_calibration_jsonl))
         assert rc == 0, "detector self-test failed for attention winner profile"
+
+    def test_calibrate_then_self_test_with_v_norms(
+        self, gemma_3_1b_slug, puzzle_calibration_jsonl, tmp_path
+    ):
+        """V-norm panel end-to-end. Exercises the
+        attention_capture_with_values context-manager wiring on both the
+        calibration side (calibrate_with_state) and the deploy side
+        (Detector._score_attention's v-norm branch).
+        """
+        from pri_calibrator import calibrate
+        from pri_detector import _self_test
+
+        profile = calibrate(
+            model_slug=gemma_3_1b_slug,
+            calibration_jsonl_path=str(puzzle_calibration_jsonl),
+            task_label="attention_v_norms_e2e_smoke",
+            panel=list(ATTENTION_PANEL_WITH_V_NORMS),
+            n_bootstrap=50,
+            max_new_tokens=4,
+        )
+
+        assert profile.detector["metric"]["family"] == ATTENTION_FAMILY
+        assert profile.provenance.get("attention_wrapper_module_hash_sha256") is not None
+
+        profile_path = tmp_path / "gemma_3_1b_attention_v_norms.profile.json"
+        profile.to_json(str(profile_path))
+        rc = _self_test(str(profile_path), str(puzzle_calibration_jsonl))
+        assert rc == 0, "detector self-test failed for v-norm attention winner profile"

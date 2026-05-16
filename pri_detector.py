@@ -104,14 +104,16 @@ class Detector:
         # When the calibrated winner is an Attention-family cell, score()
         # wraps trace_sample in the diagnostic module's attention_capture
         # context manager. The compute_step path is skipped entirely for
-        # the attention winner; the score comes from captured weights.
+        # the attention winner; the score comes from captured weights
+        # (and value-vector norms, for v-norm winners).
         from pri_calibrator import (
-            ATTENTION_FAMILY, _split_attention_label,
+            ATTENTION_FAMILY, ATTENTION_METRICS_V_NORMS, _split_attention_label,
         )
         metric_family = profile.detector["metric"].get("family")
         self._is_attention_winner = metric_family == ATTENTION_FAMILY
         self._attention_layer: Optional[str] = None
         self._attention_metric: Optional[str] = None
+        self._attention_needs_v_norms: bool = False
         self._attention_target_map: Dict[str, int] = {}
         self._attention_n_kv_heads: Dict[str, int] = {}
         if self._is_attention_winner:
@@ -122,6 +124,7 @@ class Detector:
                     f"{profile.detector['metric']['label']!r}"
                 )
             self._attention_layer, self._attention_metric = parsed
+            self._attention_needs_v_norms = self._attention_metric in ATTENTION_METRICS_V_NORMS
             # Resolve decoder layers + target_map + n_kv_heads lazily so the
             # diagnostic-module import doesn't run on every Detector init.
             from diagnose_inter_head_disagreement import (
@@ -327,27 +330,45 @@ class Detector:
 
     def _score_attention(self, wrapped_prompt: str, budget: int) -> float:
         """Attention-winner score path. Wraps trace_sample in the diagnostic
-        module's observational attention_capture context manager, extracts
-        the calibrated layer's gen_step=1 attention weights, and computes
-        the calibrated metric (js / js_kv_groups / js_no_bos / bos_mass).
-
-        The compute_step path is skipped entirely for Attention winners.
+        module's observational attention_capture (or
+        attention_capture_with_values for v-norm winners) context manager,
+        extracts the calibrated layer's gen_step=k attention slice, and
+        computes the calibrated metric. The compute_step path is skipped
+        entirely for Attention winners.
         """
-        from diagnose_inter_head_disagreement import attention_capture
+        from diagnose_inter_head_disagreement import (
+            attention_capture, attention_capture_with_values,
+        )
         from pri_calibrator import _compute_attention_score, ATTENTION_FAMILY
 
-        with attention_capture(
-            self._attention_decoder_layers, self._attention_target_map,
-        ) as captures:
-            pipeline.trace_sample(
-                model=self.model,
-                tokenizer=self.tokenizer,
-                prompt=wrapped_prompt,
-                layer_indices=self.layer_indices,
-                output_projection=self.projection,
-                max_new_tokens=budget,
-            )
-            sample_captures = {tag: list(captures[tag]) for tag in captures}
+        sample_v_norm_captures: Optional[Dict[str, List[Any]]] = None
+        if self._attention_needs_v_norms:
+            with attention_capture_with_values(
+                self._attention_decoder_layers, self._attention_target_map,
+            ) as (captures, v_caps):
+                pipeline.trace_sample(
+                    model=self.model,
+                    tokenizer=self.tokenizer,
+                    prompt=wrapped_prompt,
+                    layer_indices=self.layer_indices,
+                    output_projection=self.projection,
+                    max_new_tokens=budget,
+                )
+                sample_captures = {tag: list(captures[tag]) for tag in captures}
+                sample_v_norm_captures = {tag: list(v_caps[tag]) for tag in v_caps}
+        else:
+            with attention_capture(
+                self._attention_decoder_layers, self._attention_target_map,
+            ) as captures:
+                pipeline.trace_sample(
+                    model=self.model,
+                    tokenizer=self.tokenizer,
+                    prompt=wrapped_prompt,
+                    layer_indices=self.layer_indices,
+                    output_projection=self.projection,
+                    max_new_tokens=budget,
+                )
+                sample_captures = {tag: list(captures[tag]) for tag in captures}
 
         # Reconstruct the panel cell and call the calibrator's scoring
         # helper — same code path the calibration loop used, so a perfect
@@ -359,13 +380,15 @@ class Detector:
         )
         raw = _compute_attention_score(
             cell, sample_captures, self._attention_n_kv_heads,
+            v_norm_captures=sample_v_norm_captures,
         )
         if raw is None or not np.isfinite(raw):
             raise RuntimeError(
                 f"attention metric '{self._metric_column}' could not be "
                 f"computed; check that captures[{self._attention_layer!r}] "
-                f"has at least 2 entries (prefix + 1 gen forward) and that "
-                f"the model didn't EOS before the commit step"
+                f"has at least {self._gen_step + 1} entries (prefix + "
+                f"{self._gen_step} gen forwards) and that the model didn't "
+                f"EOS before that step"
             )
         return float(raw) * self._sign
 
