@@ -303,8 +303,11 @@ def build_head_to_head(
         fixed = {k: v for k, v in (
             ("ours", ours_cmp), ("rauq", rq["auroc"] if rq else None),
             ("sinkprobe", sk["auroc"] if sk else None)) if v is not None}
+        # ours has no sign-free concept (calibrator AUROC is direction-locked);
+        # use the SAME OOB-gated comparator as winner_fixed so the secondary
+        # column can't name an un-OOB'd "ours" the primary column excludes.
         sf = {k: v for k, v in (
-            ("ours", ob["auroc"] if ob else None), ("rauq", rq["sf"] if rq else None),
+            ("ours", ours_cmp), ("rauq", rq["sf"] if rq else None),
             ("sinkprobe", sk["sf"] if sk else None)) if v is not None}
         out.append({
             "model": m.split("/")[-1],

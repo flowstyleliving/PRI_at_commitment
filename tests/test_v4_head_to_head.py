@@ -130,6 +130,7 @@ def test_build_head_to_head_integration(tmp_path):
     assert row["data_hash_ok"] == "TRUE"           # calib == rauq == sink
     assert row["sink_auroc_fixed"] == 0.81
     assert row["winner_fixed"] == "sinkprobe"       # 0.81 > ours OOB 0.60 > rauq 0.58
+    assert row["winner_signfree"] == "sinkprobe"    # sink sf 0.81 > ours OOB 0.60 > rauq sf 0.58
     assert row["ours_trust"] == "clean"
 
 
@@ -190,8 +191,10 @@ def test_no_oob_winner_not_contradictory(tmp_path, capsys):
     assert row["ours_oob"] is None
     assert row["ours_cell"] != _OURS_BASELINE_ONLY        # winner DOES exist
     assert row["ours_auroc"] == 0.99
-    # in-sample 0.99 must NOT win — ours excluded from the winner race
+    # in-sample 0.99 must NOT win EITHER column — ours excluded from both
+    # races when un-OOB'd (winner_fixed AND winner_signfree symmetric).
     assert row["winner_fixed"] == "rauq"                   # 0.62 > sink 0.55
+    assert row["winner_signfree"] == "rauq"                # ours excluded from sf too
     emit_head_to_head_markdown([row])
     out = capsys.readouterr().out
     assert "in-sample (no OOB)" in out
