@@ -17,6 +17,7 @@ from scripts.build_v4_coverage_matrix import (
     _f,
     _ours_best,
     build_head_to_head,
+    emit_markdown_summary,
 )
 
 
@@ -128,3 +129,31 @@ def test_build_head_to_head_integration(tmp_path):
     assert row["sink_auroc_fixed"] == 0.81
     assert row["winner_fixed"] == "sinkprobe"       # 0.81 > ours OOB 0.60 > rauq 0.58
     assert row["ours_trust"] == "clean"
+
+
+def _summary_row(sign, **kw):
+    base = dict(model="mlx-community/M", panel="v_norms", layer="final",
+                metric="js", gen_step="1", auroc="0.660", sign=sign,
+                oob_median="0.600", oob_ci_lo="0.55", oob_ci_hi="0.72",
+                winner_stability="0.80", warnings_count="0", is_winner="TRUE")
+    base.update(kw)
+    return base
+
+
+def test_emit_markdown_summary_empty_sign_does_not_crash(capsys):
+    """Greptile PR#16 finding: r['sign'] defaults to '' when absent from the
+    profile; the old f'{...:+d}' raised ValueError. Must render '—' instead."""
+    rows = [
+        _summary_row(""),                              # absent → "" (the regression)
+        _summary_row("-1", model="mlx-community/N"),   # numeric-string sign
+        _summary_row(1, model="mlx-community/P"),       # int sign
+        _summary_row("", model="mlx-community/Q", is_winner="FALSE"),  # filtered out
+    ]
+    emit_markdown_summary(rows)                          # must NOT raise
+    out = capsys.readouterr().out
+    assert "—" in out and "-1" in out and "+1" in out
+    assert "mlx" not in out or "M" in out  # short model name rendered
+
+
+def test_emit_markdown_summary_no_winners_no_crash():
+    emit_markdown_summary([_summary_row("", is_winner="FALSE")])

@@ -149,8 +149,12 @@ def emit_markdown_summary(rows: List[Dict[str, Any]]) -> None:
             if r["oob_ci_lo"] != "" and r["oob_ci_hi"] != ""
             else "—"
         )
+        try:
+            sign_str = f"{int(r['sign']):+d}"
+        except (TypeError, ValueError):
+            sign_str = "—"  # sign absent from profile JSON → defaulted to ""
         print(
-            f"| {short_model} | {r['panel']} | {cell} | {r['auroc']} | {r['sign']:+d} | "
+            f"| {short_model} | {r['panel']} | {cell} | {r['auroc']} | {sign_str} | "
             f"{r['oob_median']} | {ci} | {r['winner_stability']} | {r['warnings_count']} |"
         )
 
@@ -190,9 +194,15 @@ def _ours_best(all_rows: List[Dict[str, Any]], model: str) -> Optional[Dict[str,
     if not wins:
         return None
 
-    def _key(r: Dict[str, Any]) -> float:
+    def _key(r: Dict[str, Any]) -> Tuple[int, float]:
+        # Never compare OOB-scale against in-sample-scale across rows: any
+        # winner WITH an OOB median outranks every winner without one; the
+        # in-sample auroc is only used to break ties among winners that all
+        # lack OOB. Preserves the documented "OOB-median-first" intent.
         oob = _f(r.get("oob_median"))
-        return oob if oob is not None else (_f(r.get("auroc")) or 0.0)
+        if oob is not None:
+            return (1, oob)
+        return (0, _f(r.get("auroc")) or 0.0)
 
     best = max(wins, key=_key)
     lo, hi, stab = _f(best.get("oob_ci_lo")), _f(best.get("oob_ci_hi")), _f(best.get("winner_stability"))
