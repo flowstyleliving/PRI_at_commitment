@@ -172,6 +172,9 @@ def emit_markdown_summary(rows: List[Dict[str, Any]]) -> None:
 RAUQ_DIR_DEFAULT = REPO_ROOT / "experiments" / "v4-baselines" / "2026-05-16" / "run-01" / "rauq"
 SINK_DIR_DEFAULT = REPO_ROOT / "experiments" / "v4-baselines" / "2026-05-16" / "run-01" / "sinkprobe"
 JS_METRICS = ("js", "js_kv_groups", "js_no_bos")
+# Sentinel for "no Step-1 calibrator winner exists for this model" (e.g.
+# Llama-3.1-8B, baseline-only). Distinct from "winner exists but has no OOB".
+_OURS_BASELINE_ONLY = "N/A (baseline-only)"
 
 
 def _f(v: Any) -> Optional[float]:
@@ -293,7 +296,10 @@ def build_head_to_head(
         ch = _calib_data_hash(prow["profile_path"]) if prow else ""
         hashes = [h for h in (ch, rq["data_hash"] if rq else "", sk["data_hash"] if sk else "") if h]
         data_hash_ok = len(hashes) >= 2 and len(set(hashes)) == 1
-        ours_cmp = (ob["oob"] if ob and ob.get("oob") is not None else (ob["auroc"] if ob else None))
+        # OOB-only: a winner without an OOB median must NOT compete on
+        # in-sample AUROC (that re-introduces the scale-mix the _key fix
+        # closed, and would let "ours" win a row the markdown labels N/A).
+        ours_cmp = ob["oob"] if (ob and ob.get("oob") is not None) else None
         fixed = {k: v for k, v in (
             ("ours", ours_cmp), ("rauq", rq["auroc"] if rq else None),
             ("sinkprobe", sk["auroc"] if sk else None)) if v is not None}
@@ -302,7 +308,7 @@ def build_head_to_head(
             ("sinkprobe", sk["sf"] if sk else None)) if v is not None}
         out.append({
             "model": m.split("/")[-1],
-            "ours_cell": ob["cell"] if ob else "N/A (baseline-only)",
+            "ours_cell": ob["cell"] if ob else _OURS_BASELINE_ONLY,
             "ours_auroc": ob["auroc"] if ob else None,
             "ours_oob": ob["oob"] if ob else None,
             "ours_trust": ob["trust"] if ob else "n/a",
@@ -347,10 +353,12 @@ def emit_head_to_head_markdown(rows: List[Dict[str, Any]]) -> None:
     for r in rows:
         def fmt(v):
             return "—" if v is None else f"{float(v):.3f}"
-        ours = (
-            f"{fmt(r['ours_oob'])} ({r['ours_trust']})"
-            if r["ours_oob"] is not None else "N/A (baseline-only)"
-        )
+        if r["ours_cell"] == _OURS_BASELINE_ONLY:
+            ours = _OURS_BASELINE_ONLY                       # no calibrator winner
+        elif r["ours_oob"] is not None:
+            ours = f"{fmt(r['ours_oob'])} ({r['ours_trust']})"
+        else:                                                # winner exists, un-OOB'd
+            ours = f"{fmt(r['ours_auroc'])} in-sample (no OOB)"
         print(
             f"| {r['model']} | {ours} | {r['rauq_cell']} {fmt(r['rauq_auroc_fixed'])}/{fmt(r['rauq_sf'])} "
             f"| {r['sink_cell']} {fmt(r['sink_auroc_fixed'])}/{fmt(r['sink_sf'])} "

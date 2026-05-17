@@ -13,10 +13,12 @@ from __future__ import annotations
 import json
 
 from scripts.build_v4_coverage_matrix import (
+    _OURS_BASELINE_ONLY,
     _baseline_best,
     _f,
     _ours_best,
     build_head_to_head,
+    emit_head_to_head_markdown,
     emit_markdown_summary,
 )
 
@@ -157,3 +159,40 @@ def test_emit_markdown_summary_empty_sign_does_not_crash(capsys):
 
 def test_emit_markdown_summary_no_winners_no_crash():
     emit_markdown_summary([_summary_row("", is_winner="FALSE")])
+
+
+def test_no_oob_winner_not_contradictory(tmp_path, capsys):
+    """Greptile PR#16 round-2: a calibrator winner with NO OOB must not (a)
+    win on in-sample AUROC nor (b) be mislabeled 'N/A (baseline-only)'."""
+    slug = "mlx-community/W"
+    calib = tmp_path / "W.profile.json"
+    calib.write_text(json.dumps({"task": {"data_hash_sha256": "H"}}))
+    rdir, sdir = tmp_path / "r", tmp_path / "s"
+    rdir.mkdir(); sdir.mkdir()
+    (rdir / "W.rauq.json").write_text(json.dumps({
+        "model": {"slug": slug}, "data": {"data_hash_sha256": "H"},
+        "results": {"1a_commit_only": {"per_layer": {"final": {
+            "auroc": 0.62, "direction": "hi", "auroc_signfree": 0.62}},
+            "aggregate_max": {}}, "1b_prompt_recurrence": {"per_layer": {},
+            "aggregate_max": {}}}}))
+    (sdir / "W.sinkprobe.json").write_text(json.dumps({
+        "model": {"slug": slug}, "data": {"data_hash_sha256": "H"},
+        "results": {"final": {"sink_bos": {"auroc": 0.55, "direction": "hi",
+                                           "auroc_signfree": 0.55}}}}))
+    # Calibrator winner present but oob_median + CI + stability all absent.
+    all_rows = [{
+        "model": slug, "panel": "v_norms", "gen_step": "1", "layer": "final",
+        "metric": "js", "auroc": "0.99", "oob_median": "", "oob_ci_lo": "",
+        "oob_ci_hi": "", "winner_stability": "", "is_winner": "TRUE",
+        "profile_path": str(calib),
+    }]
+    row = build_head_to_head(all_rows, rdir, sdir)[0]
+    assert row["ours_oob"] is None
+    assert row["ours_cell"] != _OURS_BASELINE_ONLY        # winner DOES exist
+    assert row["ours_auroc"] == 0.99
+    # in-sample 0.99 must NOT win — ours excluded from the winner race
+    assert row["winner_fixed"] == "rauq"                   # 0.62 > sink 0.55
+    emit_head_to_head_markdown([row])
+    out = capsys.readouterr().out
+    assert "in-sample (no OOB)" in out
+    assert _OURS_BASELINE_ONLY not in out                  # not mislabeled
