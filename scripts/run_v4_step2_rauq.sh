@@ -20,7 +20,7 @@
 # Usage: bash scripts/run_v4_step2_rauq.sh
 set -euo pipefail
 
-REPO_ROOT=/Users/msrk/Documents/PRI_at_commitment
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 DATA="$REPO_ROOT/experiments/anli-sweep/2026-05-15/run-02/anli_R1_seed20260513_n100.jsonl"
@@ -76,7 +76,7 @@ done
 echo "[step2-rauq] Phase 0 PASSED (set -e would have aborted on any DIFF)" | tee -a "$LOG"
 
 echo "" | tee -a "$LOG"
-echo "[step2-rauq] === Phase 1: 9-model RAUQ scoring ===" | tee -a "$LOG"
+echo "[step2-rauq] === Phase 1: 10-model RAUQ scoring ===" | tee -a "$LOG"
 echo "[step2-rauq] phase 1 start: $(date)" | tee -a "$LOG"
 for M in "${MODELS[@]}"; do
   NAME="${M##*/}"
