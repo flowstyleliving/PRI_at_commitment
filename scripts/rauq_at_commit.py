@@ -497,6 +497,10 @@ def main() -> int:
     if out_path is not None and out_path.exists() and out_path.is_dir():
         raise SystemExit(f"--out is a directory, expected a file: {out_path}")
 
+    # Capture at run START, before the (multi-minute per-model) trace — not
+    # at payload-assembly, which would record completion time. Provenance
+    # field must reflect when the run began. (Greptile PR #14 round-2 finding.)
+    run_started_at = datetime.now(timezone.utc).isoformat()
     traced = _trace_features(
         args.model, args.data, limit=args.limit, max_new_tokens=args.max_new_tokens
     )
@@ -520,7 +524,7 @@ def main() -> int:
             "script_hash_sha256": _hash_file(Path(__file__).resolve()),
             "diagnose_helpers_hash_sha256": _hash_file(DIAGNOSE_PATH),
             "pipeline_module_hash_sha256": _hash_file(PIPELINE_PATH),
-            "started_at_iso": datetime.now(timezone.utc).isoformat(),
+            "started_at_iso": run_started_at,
             "run_id": _run_id_from_out(out_path),
             "host": socket.gethostname(),
         },
