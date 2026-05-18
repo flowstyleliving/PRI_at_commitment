@@ -173,6 +173,13 @@ def _gate_against_locked(
                     f"prob drift {d:.2e} > {CANARY_PROB_ABS_TOL:.0e} -- aborted"
                 )
         n_canary += 1
+    if n_canary == 0:
+        raise RuntimeError(
+            f"[{model_slug}] integrity gate FAILED: frozen canary "
+            f"{canary_path} has no samples to check -- the top-10 "
+            f"token-order verification did not run; refusing to report "
+            f"the gate as passed on a corrupt/truncated canary"
+        )
     return {
         "passed": True,
         "n_rows_checked": len(audit_rows),
@@ -326,6 +333,12 @@ def run_model_audit(args: argparse.Namespace) -> int:
                 top1["token_id"] in answerlike_nonliteral_set
             ),
         })
+
+    if not rows:
+        raise SystemExit(
+            f"empty data slice -- no prompts to audit for {args.model}; "
+            f"check --data ({data_path})"
+        )
 
     gate = _gate_against_locked(
         model_slug=args.model,
