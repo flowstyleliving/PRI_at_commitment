@@ -779,8 +779,9 @@ def prefix_readout(
         )
     prefix_probs = np.stack([safe_softmax(z) for z in prefix_logits_2d], axis=0)
     return {
+        # token_ids is the plain Python list; the raw mx.array input_ids is
+        # intentionally not surfaced (non-serializable MLX object, no callers).
         "token_ids": list(token_ids),
-        "input_ids": input_ids,
         "prefix_logits_2d": prefix_logits_2d,
         "prefix_probs": prefix_probs,
         "last_logits": prefix_logits_2d[-1].copy(),

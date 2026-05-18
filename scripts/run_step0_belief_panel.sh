@@ -2,8 +2,11 @@
 # Run the compact t=0 belief-readout panel in strict canary/score phases.
 #
 # Usage:
-#   scripts/run_step0_belief_panel.sh canary <data.jsonl> <out_dir> [prereg.md] [log_file]
-#   scripts/run_step0_belief_panel.sh score  <data.jsonl> <out_dir> [prereg.md] [log_file]
+#   scripts/run_step0_belief_panel.sh canary <data.jsonl> <out_dir> <prereg.md> [log_file]
+#   scripts/run_step0_belief_panel.sh score  <data.jsonl> <out_dir> <prereg.md> [log_file]
+#
+# prereg.md is required (it lives in the vault; repo files carry no
+# vault-path defaults — repo<->wiki separation).
 #
 # Expects to be invoked from the PRI_at_commitment repo root.
 set -euo pipefail
@@ -11,7 +14,7 @@ set -euo pipefail
 PHASE="$1"
 DATA="$2"
 OUT_DIR="$3"
-PREREG="${4:-/Users/msrk/Desktop/the_GOAT/wiki/results/step0-belief-readout-prereg-2026-05-17.md}"
+PREREG="${4:?[belief-panel] prereg doc path required as arg 4 (no vault default — repo<->wiki separation)}"
 LOG="${5:-/dev/stdout}"
 PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"
 

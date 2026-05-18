@@ -39,7 +39,8 @@ from pri_calibrator import _load_calibration_jsonl
 
 
 DEFAULT_DATA = REPO_ROOT / "experiments" / "anli-sweep" / "2026-05-15" / "run-02" / "anli_R1_seed20260513_n100.jsonl"
-DEFAULT_PREREG = Path("/Users/msrk/Desktop/the_GOAT/wiki/results/step0-belief-readout-prereg-2026-05-17.md")
+# --prereg is required (no default): the prereg doc lives in the vault, and
+# repo files must not carry vault-path refs (repo<->wiki separation).
 DEFAULT_BOOTSTRAP_N = 1000
 DEFAULT_BOOTSTRAP_SEED = 20260423
 EPS = 1e-12
@@ -1109,7 +1110,7 @@ def build_parser() -> argparse.ArgumentParser:
     canary.add_argument("--model", required=True)
     canary.add_argument("--data", default=str(DEFAULT_DATA))
     canary.add_argument("--out-dir", required=True)
-    canary.add_argument("--prereg", default=str(DEFAULT_PREREG))
+    canary.add_argument("--prereg", required=True)
     canary.add_argument("--limit", type=int, default=3)
     canary.set_defaults(func=run_canary)
 
@@ -1118,7 +1119,7 @@ def build_parser() -> argparse.ArgumentParser:
     score.add_argument("--data", default=str(DEFAULT_DATA))
     score.add_argument("--out-dir", required=True)
     score.add_argument("--spec", default="")
-    score.add_argument("--prereg", default=str(DEFAULT_PREREG))
+    score.add_argument("--prereg", required=True)
     score.add_argument("--limit", type=int, default=0)
     score.add_argument("--n-bootstrap", type=int, default=DEFAULT_BOOTSTRAP_N)
     score.add_argument("--bootstrap-seed", type=int, default=DEFAULT_BOOTSTRAP_SEED)
