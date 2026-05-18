@@ -37,6 +37,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 import pri_calibrator  # noqa: E402
+from scripts.sweep_locking import claim_next_run_dir, hold_out_dir_lock  # noqa: E402
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -72,6 +73,18 @@ MODEL_PRESETS: Dict[str, List[str]] = {
 }
 
 ROUNDS = ["R1", "R2", "R3"]
+
+WINNERS_FULL_FILENAME = "summary_winners_full.csv"
+WINNERS_PUBLISHABLE_FILENAME = "summary_winners_publishable.csv"
+WINNERS_BLOCKED_FILENAME = "summary_winners_blocked.csv"
+DEPRECATED_WINNERS_FILENAME = "summary_winners.csv"
+
+PUBLISHABLE_MIN_IN_SAMPLE_AUROC = 0.65
+PUBLISHABLE_MAX_CI_WIDTH = 0.30
+PUBLISHABLE_MIN_OOB_AUROC = 0.60
+PUBLISHABLE_MAX_OOB_GAP = 0.15
+PUBLISHABLE_MIN_WINNER_STABILITY = 0.70
+PUBLISHABLE_MIN_WINNER_COVERAGE = 0.80
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -275,6 +288,116 @@ def _panel_lookup(profile: pri_calibrator.CalibrationProfile, family: str, rank_
     return None
 
 
+def _winner_panel_entry(profile: pri_calibrator.CalibrationProfile) -> Optional[Dict[str, Any]]:
+    metric = profile.detector["metric"]
+    return _panel_lookup(
+        profile,
+        family=metric["family"],
+        rank_label=metric["label"],
+        step=profile.detector["gen_step"],
+    )
+
+
+def _winner_coverage_ratio(profile: pri_calibrator.CalibrationProfile) -> Optional[float]:
+    entry = _winner_panel_entry(profile)
+    if not entry:
+        return None
+    n_calibration = profile.task.get("n_calibration")
+    n_eval = entry.get("n_evaluated")
+    if not n_calibration or n_eval is None:
+        return None
+    return float(n_eval) / float(n_calibration)
+
+
+def publishability_reasons(profile: pri_calibrator.CalibrationProfile) -> List[str]:
+    """Winner-specific deployability gate derived from structured stats only."""
+    reasons: List[str] = []
+    stats = profile.calibration_stats
+
+    in_auc = float(stats.get("auroc", float("nan")))
+    if not np.isfinite(in_auc) or in_auc < PUBLISHABLE_MIN_IN_SAMPLE_AUROC:
+        reasons.append(
+            f"low_auroc (best={in_auc:.3f}; <{PUBLISHABLE_MIN_IN_SAMPLE_AUROC:.2f} likely not deployable)"
+            if np.isfinite(in_auc)
+            else "low_auroc (best=nan; in-sample AUROC missing)"
+        )
+
+    ci_lo = float(stats.get("auroc_bootstrap_ci_lo", float("nan")))
+    ci_hi = float(stats.get("auroc_bootstrap_ci_hi", float("nan")))
+    if np.isfinite(ci_lo) and np.isfinite(ci_hi):
+        width = ci_hi - ci_lo
+        if width > PUBLISHABLE_MAX_CI_WIDTH:
+            reasons.append(
+                f"wide_ci (95% CI width={width:.2f}; >{PUBLISHABLE_MAX_CI_WIDTH:.2f} implies n too small)"
+            )
+
+    oob = float(stats.get("oob_auroc_median", float("nan")))
+    if not np.isfinite(oob):
+        reasons.append("oob_estimate_missing (winner OOB deployment estimate unavailable)")
+    elif oob < PUBLISHABLE_MIN_OOB_AUROC:
+        reasons.append(
+            f"oob_low_auroc (oob_median={oob:.3f}; <{PUBLISHABLE_MIN_OOB_AUROC:.2f} means the cell selection didn't generalize)"
+        )
+    if np.isfinite(in_auc) and np.isfinite(oob):
+        gap = in_auc - oob
+        if gap > PUBLISHABLE_MAX_OOB_GAP:
+            reasons.append(
+                f"large_oob_in_sample_gap (in_sample={in_auc:.3f}, oob_median={oob:.3f}, gap={gap:.3f}; in-sample AUROC is materially over-stated)"
+            )
+
+    winner_stability = float(stats.get("winner_stability", float("nan")))
+    if not np.isfinite(winner_stability):
+        reasons.append("winner_stability_missing (winner stability unavailable)")
+    elif winner_stability < PUBLISHABLE_MIN_WINNER_STABILITY:
+        reasons.append(
+            f"winner_unstable (winner_stability={winner_stability:.2f}; <{PUBLISHABLE_MIN_WINNER_STABILITY:.2f} means the selected cell is noise-driven at this n)"
+        )
+
+    coverage_ratio = _winner_coverage_ratio(profile)
+    entry = _winner_panel_entry(profile)
+    if coverage_ratio is None or entry is None:
+        reasons.append("winner_coverage_missing (could not recover winning-cell coverage)")
+    elif coverage_ratio < PUBLISHABLE_MIN_WINNER_COVERAGE:
+        n_eval = entry.get("n_evaluated")
+        n_calibration = profile.task.get("n_calibration")
+        reasons.append(
+            f"insufficient_coverage_at_winner (n_evaluated={n_eval}/{n_calibration}; <{int(PUBLISHABLE_MIN_WINNER_COVERAGE * 100)}% of calibration rows reached the winning cell)"
+        )
+    return reasons
+
+
+def is_publishable_winner(profile: pri_calibrator.CalibrationProfile) -> bool:
+    return len(publishability_reasons(profile)) == 0
+
+
+def _winner_summary_row(
+    model_short: str,
+    round_id: str,
+    profile: pri_calibrator.CalibrationProfile,
+) -> Dict[str, Any]:
+    d = profile.detector
+    s = profile.calibration_stats
+    cell = f"{d['metric']['family']} {d['metric']['label']} @ st {d['gen_step']}"
+    reasons = publishability_reasons(profile)
+    return {
+        "model": model_short,
+        "round": round_id,
+        "winning_cell": cell,
+        "sign": d["sign"],
+        "in_sample_auroc": s["auroc"],
+        "in_sample_ci_lo": s["auroc_bootstrap_ci_lo"],
+        "in_sample_ci_hi": s["auroc_bootstrap_ci_hi"],
+        "oob_median": s["oob_auroc_median"],
+        "oob_ci_lo": s["oob_auroc_ci_lo"],
+        "oob_ci_hi": s["oob_auroc_ci_hi"],
+        "winner_stability": s["winner_stability"],
+        "n_warnings": len(profile.warnings),
+        "warnings": "; ".join(profile.warnings),
+        "publishable": "yes" if not reasons else "no",
+        "publishability_reasons": "; ".join(reasons),
+    }
+
+
 def collect_profiles(
     out_dir: Path,
     *,
@@ -328,8 +451,20 @@ def collect_profiles(
     return out
 
 
-def emit_summary(profiles: Dict[Tuple[str, str], pri_calibrator.CalibrationProfile], out_dir: Path) -> None:
-    """Print and write the two summary tables."""
+def emit_summary(
+    profiles: Dict[Tuple[str, str], pri_calibrator.CalibrationProfile],
+    out_dir: Path,
+) -> None:
+    """Print and write the summary tables.
+
+    New runs emit explicit winner-table artifacts:
+      - summary_winners_full.csv
+      - summary_winners_publishable.csv
+      - summary_winners_blocked.csv
+
+    `summary_winners.csv` is deprecated and intentionally NOT emitted for new
+    runs so readers must opt into one of the explicit contracts.
+    """
     if not profiles:
         print("[summary] no profiles found")
         return
@@ -341,46 +476,62 @@ def emit_summary(profiles: Dict[Tuple[str, str], pri_calibrator.CalibrationProfi
     print("\n" + "=" * 110)
     print("  WINNING CELL per (model, round)")
     print("=" * 110)
-    header = f"{'model':<38s}  {'round':<5s}  {'winning cell':<30s}  {'sign':>4s}  {'in-AUROC':>9s}  {'OOB med':>8s}  {'OOB CI':<18s}  {'stab':>5s}  {'warn':>4s}"
+    header = (
+        f"{'model':<38s}  {'round':<5s}  {'winning cell':<30s}  {'sign':>4s}  "
+        f"{'in-AUROC':>9s}  {'OOB med':>8s}  {'OOB CI':<18s}  {'stab':>5s}  "
+        f"{'warn':>4s}  {'pub':>4s}"
+    )
     print(header)
-    winners_csv = [["model", "round", "winning_cell", "sign", "in_sample_auroc",
-                    "in_sample_ci_lo", "in_sample_ci_hi",
-                    "oob_median", "oob_ci_lo", "oob_ci_hi",
-                    "winner_stability", "n_warnings", "warnings"]]
+    winner_header = [
+        "model", "round", "winning_cell", "sign", "in_sample_auroc",
+        "in_sample_ci_lo", "in_sample_ci_hi",
+        "oob_median", "oob_ci_lo", "oob_ci_hi",
+        "winner_stability", "n_warnings", "warnings",
+        "publishable", "publishability_reasons",
+    ]
+    winners_full_rows: List[Dict[str, Any]] = []
+    winners_publishable_rows: List[Dict[str, Any]] = []
+    winners_blocked_rows: List[Dict[str, Any]] = []
+    missing_pairs = 0
     for m in models_seen:
         for r in rounds_seen:
             p = profiles.get((m, r))
             if not p:
                 print(f"{m:<38s}  {r:<5s}  {'-- missing --':<30s}")
+                missing_pairs += 1
                 continue
-            d = p.detector
-            s = p.calibration_stats
-            cell = f"{d['metric']['family']} {d['metric']['label']} @ st {d['gen_step']}"
-            sign = d["sign"]
-            in_auc = s["auroc"]
-            oob = s["oob_auroc_median"]
-            ci_lo = s["oob_auroc_ci_lo"]
-            ci_hi = s["oob_auroc_ci_hi"]
-            stab = s["winner_stability"]
+            row = _winner_summary_row(m, r, p)
+            in_auc = float(row["in_sample_auroc"])
+            oob = float(row["oob_median"])
+            ci_lo = float(row["oob_ci_lo"])
+            ci_hi = float(row["oob_ci_hi"])
+            stab = float(row["winner_stability"])
+            sign = int(row["sign"])
             n_warn = len(p.warnings)
-            print(f"{m:<38s}  {r:<5s}  {cell:<30s}  {sign:>+4d}  "
-                  f"{in_auc:>9.4f}  {oob:>8.4f}  "
-                  f"[{ci_lo:.3f}, {ci_hi:.3f}]  "
-                  f"{stab:>5.2f}  {n_warn:>4d}")
-            winners_csv.append([m, r, cell, sign, in_auc,
-                                s["auroc_bootstrap_ci_lo"], s["auroc_bootstrap_ci_hi"],
-                                oob, ci_lo, ci_hi, stab, n_warn,
-                                "; ".join(p.warnings)])
+            is_publishable = row["publishable"] == "yes"
+            print(
+                f"{m:<38s}  {r:<5s}  {row['winning_cell']:<30s}  {sign:>+4d}  "
+                f"{in_auc:>9.4f}  {oob:>8.4f}  "
+                f"[{ci_lo:.3f}, {ci_hi:.3f}]  "
+                f"{stab:>5.2f}  {n_warn:>4d}  {('yes' if is_publishable else 'no'):>4s}"
+            )
+            winners_full_rows.append(row)
+            (winners_publishable_rows if is_publishable else winners_blocked_rows).append(row)
 
     # 2026-05-15 Codex fix: use csv.writer for proper quoting. Warning
     # strings contain commas (e.g. "large_oob_in_sample_gap (gap=0.151;
     # in-sample AUROC is materially over-stated by selection bias)"),
     # which the prior naive join broke into extra columns and made the
     # most-problematic rows unparseable downstream.
-    with (out_dir / "summary_winners.csv").open("w", newline="") as f:
-        w = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
-        for row in winners_csv:
-            w.writerow(row)
+    for fname, rows in (
+        (WINNERS_FULL_FILENAME, winners_full_rows),
+        (WINNERS_PUBLISHABLE_FILENAME, winners_publishable_rows),
+        (WINNERS_BLOCKED_FILENAME, winners_blocked_rows),
+    ):
+        with (out_dir / fname).open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=winner_header, quoting=csv.QUOTE_MINIMAL)
+            writer.writeheader()
+            writer.writerows(rows)
 
     # ─── Fisher r=2 @ step 3 focus table ─────────────────────────────────
     print("\n" + "=" * 110)
@@ -436,7 +587,29 @@ def emit_summary(profiles: Dict[Tuple[str, str], pri_calibrator.CalibrationProfi
         print(f"  AUROC: min={min(finite_aurocs):.3f}  median={np.median(finite_aurocs):.3f}  "
               f"max={max(finite_aurocs):.3f}  (sign-agnostic)")
 
-    print(f"\n[summary] CSVs written to {out_dir}/summary_*.csv")
+    publishable_winners = len(winners_publishable_rows)
+    blocked_winners = len(winners_blocked_rows)
+    total_winners = len(winners_full_rows)
+    deprecated_exists = (out_dir / DEPRECATED_WINNERS_FILENAME).exists()
+    print(f"\n[summary] publishable winners: {publishable_winners}")
+    print(f"[summary] blocked winners: {blocked_winners}")
+    print(f"[summary] total winner rows: {total_winners}")
+    print(f"[summary] missing model/round pairs: {missing_pairs}")
+    print(f"[summary] CSVs written to {out_dir}/summary_*.csv")
+    print(
+        f"[summary] canonical winner tables: {WINNERS_FULL_FILENAME}, "
+        f"{WINNERS_PUBLISHABLE_FILENAME}, {WINNERS_BLOCKED_FILENAME}"
+    )
+    if deprecated_exists:
+        print(
+            f"[summary] note: existing {DEPRECATED_WINNERS_FILENAME} left untouched "
+            "for backward inspection; new runs no longer emit it."
+        )
+    if blocked_winners > 0 or missing_pairs > 0:
+        print(
+            f"[summary] note: inspect {WINNERS_PUBLISHABLE_FILENAME} for the "
+            f"filtered view and {WINNERS_BLOCKED_FILENAME} for excluded rows."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -482,45 +655,46 @@ def main() -> int:
 
     # Resolve out-dir
     if args.out_dir:
-        out_dir = Path(args.out_dir)
+        out_dir = Path(args.out_dir).expanduser().resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
     else:
         date_str = datetime.now().strftime("%Y-%m-%d")
         base = REPO_ROOT / "experiments" / "anli-sweep" / date_str
-        base.mkdir(parents=True, exist_ok=True)
-        existing = sorted(base.glob("run-*"))
-        run_num = (int(existing[-1].name.split("-")[1]) + 1) if existing else 1
-        out_dir = base / f"run-{run_num:02d}"
-    out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = claim_next_run_dir(base).resolve()
 
-    print("=" * 80)
-    print(f"ANLI sweep — {len(models)} models × {len(rounds)} rounds = {len(models)*len(rounds)} profiles")
-    print(f"  n_per_class={args.n_per_class}  (n_calibration={2*args.n_per_class}/profile)")
-    print(f"  seed={args.seed}  n_bootstrap={args.n_bootstrap}")
-    print(f"  out_dir={out_dir}")
-    print(f"  models: {[short_model_name(m) for m in models]}")
-    print(f"  rounds: {rounds}")
-    print("=" * 80)
+    try:
+        with hold_out_dir_lock(out_dir):
+            print("=" * 80)
+            print(f"ANLI sweep — {len(models)} models × {len(rounds)} rounds = {len(models)*len(rounds)} profiles")
+            print(f"  n_per_class={args.n_per_class}  (n_calibration={2*args.n_per_class}/profile)")
+            print(f"  seed={args.seed}  n_bootstrap={args.n_bootstrap}")
+            print(f"  out_dir={out_dir}")
+            print(f"  models: {[short_model_name(m) for m in models]}")
+            print(f"  rounds: {rounds}")
+            print("=" * 80)
 
-    if not args.summary_only:
-        for slug in models:
-            calibrate_model_on_rounds(
-                slug, rounds, out_dir,
-                n_per_class=args.n_per_class,
-                seed=args.seed,
-                n_bootstrap=args.n_bootstrap,
-                max_new_tokens=args.max_new_tokens,
-                skip_existing=args.skip_existing,
+            if not args.summary_only:
+                for slug in models:
+                    calibrate_model_on_rounds(
+                        slug, rounds, out_dir,
+                        n_per_class=args.n_per_class,
+                        seed=args.seed,
+                        n_bootstrap=args.n_bootstrap,
+                        max_new_tokens=args.max_new_tokens,
+                        skip_existing=args.skip_existing,
+                    )
+
+            print("\n" + "=" * 80)
+            print("  Building summary tables...")
+            print("=" * 80)
+            profiles = collect_profiles(
+                out_dir,
+                expected_seed=args.seed,
+                expected_n_calibration=2 * args.n_per_class,
             )
-
-    print("\n" + "=" * 80)
-    print("  Building summary tables...")
-    print("=" * 80)
-    profiles = collect_profiles(
-        out_dir,
-        expected_seed=args.seed,
-        expected_n_calibration=2 * args.n_per_class,
-    )
-    emit_summary(profiles, out_dir)
+            emit_summary(profiles, out_dir)
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
     return 0
 
 

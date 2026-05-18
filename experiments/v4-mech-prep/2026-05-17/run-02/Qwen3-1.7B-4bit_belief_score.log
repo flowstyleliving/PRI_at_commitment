@@ -1,0 +1,9 @@
+/Users/msrk/Documents/PRI_at_commitment/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+  Loading model: mlx-community/Qwen3-1.7B-4bit
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files: 100%|██████████| 9/9 [00:00<00:00, 149796.57it/s]
+     Layers: 28 | Probed: {'final': 27} | Output projection: tied_embed (V=151936, D=2048)
+[belief-score] wrote /Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/run-02/Qwen3-1.7B-4bit_belief_readout.csv
+[belief-score] wrote /Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/run-02/Qwen3-1.7B-4bit_belief_readout.json
+[belief-score] verdict=Recoverable-for-M eligible_coverage=1.000 undetermined_coverage=0.000 max_significant_coverage=1.000

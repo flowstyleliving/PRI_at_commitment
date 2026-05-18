@@ -70,6 +70,8 @@ import pri_v2_io_plugins as io_plugins
 from pri_calibrator import _load_calibration_jsonl
 
 MIN_CORR_SAMPLES = 3
+PATH_COLLAPSE_CORR_THRESHOLD = 0.95
+EVALUATE_CURVATURE_CORR_THRESHOLD = 0.7
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -458,14 +460,23 @@ def main() -> int:
     if corr_fixed_reason is not None:
         print(f"  → Inconclusive — {corr_fixed_reason}.")
         print(f"    No replacement-grade chord-vs-path verdict should be drawn from this run.")
-    elif corr_fixed > 0.95:
-        print(f"  → corr_fixed > 0.95 — path collapses to chord; current chord-based")
+    elif corr_fixed > PATH_COLLAPSE_CORR_THRESHOLD:
+        print(
+            f"  → corr_fixed > {PATH_COLLAPSE_CORR_THRESHOLD:.2f} — "
+            "path collapses to chord; current chord-based"
+        )
         print(f"    primitives retain primacy. Path proposal is decorative.")
-    elif corr_fixed > 0.7:
-        print(f"  → 0.7 < corr_fixed ≤ 0.95 — path adds independent information.")
+    elif corr_fixed > EVALUATE_CURVATURE_CORR_THRESHOLD:
+        print(
+            f"  → {EVALUATE_CURVATURE_CORR_THRESHOLD:.1f} < corr_fixed ≤ "
+            f"{PATH_COLLAPSE_CORR_THRESHOLD:.2f} — path adds independent information."
+        )
         print(f"    Worth evaluating `curvature_fixed` as a single sealed cell.")
     else:
-        print(f"  → corr_fixed ≤ 0.7 — chord throws away significant signal.")
+        print(
+            f"  → corr_fixed ≤ {EVALUATE_CURVATURE_CORR_THRESHOLD:.1f} — "
+            "chord throws away significant signal."
+        )
         print(f"    Replacement-grade question opens: re-derive panel on path.")
     return 0
 

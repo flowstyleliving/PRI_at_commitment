@@ -701,6 +701,13 @@ def decode_ids(tokenizer: Any, token_ids: List[int]) -> str:
     return ""
 
 
+def tokenizer_config_for_model(model_name: str) -> Dict[str, Any]:
+    """Return tokenizer kwargs required for known model-family quirks."""
+    if "Mistral-Nemo" in model_name:
+        return {"fix_mistral_regex": True}
+    return {}
+
+
 def get_eos_token_id(tokenizer: Any) -> Optional[int]:
     for attr in ["eos_token_id", "eod_id"]:
         if hasattr(tokenizer, attr):
@@ -726,7 +733,11 @@ def load_model(
     # it through, preserving backward compat.
     active_cfg = config if config is not None else cfg
     print(f"\n  Loading model: {model_name}")
-    model, tokenizer = mlx_load(model_name)
+    tokenizer_config = tokenizer_config_for_model(model_name)
+    model, tokenizer = mlx_load(
+        model_name,
+        tokenizer_config=tokenizer_config or None,
+    )
 
     # Multimodal wrapper reach-through (e.g. gemma3.Model for Gemma 3 4B+):
     # the outer class holds the text decoder under `.language_model` with no
@@ -748,6 +759,34 @@ def load_model(
     )
 
     return model, tokenizer, projection, layer_indices
+
+
+def prefix_readout(
+    model: Any,
+    tokenizer: Any,
+    prompt: str,
+) -> Dict[str, Any]:
+    """Return prompt-token ids plus prefix logits/probs up to the last position."""
+    token_ids = encode_text(tokenizer, prompt)
+    if not token_ids:
+        raise RuntimeError("Could not encode prompt into any token ids.")
+    input_ids = mx.array([token_ids], dtype=mx.int32)
+    prefix_logits = model(input_ids)
+    prefix_logits_2d = to_numpy(prefix_logits[0].astype(mx.float32))
+    if prefix_logits_2d.ndim != 2 or prefix_logits_2d.shape[0] != len(token_ids):
+        raise RuntimeError(
+            f"Unexpected prefix logits shape {prefix_logits_2d.shape}; expected [T, V]."
+        )
+    prefix_probs = np.stack([safe_softmax(z) for z in prefix_logits_2d], axis=0)
+    return {
+        # token_ids is the plain Python list; the raw mx.array input_ids is
+        # intentionally not surfaced (non-serializable MLX object, no callers).
+        "token_ids": list(token_ids),
+        "prefix_logits_2d": prefix_logits_2d,
+        "prefix_probs": prefix_probs,
+        "last_logits": prefix_logits_2d[-1].copy(),
+        "last_probs": prefix_probs[-1].copy(),
+    }
 
 
 # ╔════════════════════════════════════════════════════════════════╗

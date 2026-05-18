@@ -1,0 +1,487 @@
+{
+  "control_floor_multiplier": 5.0,
+  "control_tokens": [
+    "\t",
+    "\n",
+    "\r",
+    " ",
+    "  ",
+    "    ",
+    "\n\n",
+    "   ",
+    "        ",
+    "       ",
+    "\t\t",
+    "           ",
+    "                ",
+    "     ",
+    "               ",
+    "                   ",
+    "\t\t\t\t",
+    "         ",
+    "                       ",
+    "\t\t\t",
+    "             ",
+    "                                ",
+    "      ",
+    "                           ",
+    "\n\n\n",
+    "                 ",
+    "                               ",
+    "\t\t\t\t\t",
+    "            ",
+    "          ",
+    "                                   ",
+    "\t\t\t\t\t\t",
+    "                     ",
+    "              ",
+    "\t\t\t\t\t\t\t\t",
+    "                                       ",
+    "                         ",
+    "\t\t\t\t\t\t\t",
+    "                                           ",
+    "\t   ",
+    "                    ",
+    "                             ",
+    "                  ",
+    "                                               ",
+    "\t ",
+    "                      ",
+    "                        ",
+    "\t\t\t\t\t\t\t\t\t",
+    "                                 ",
+    "\n\n\n\n",
+    "                          ",
+    "                                                   ",
+    "                            ",
+    "                                     ",
+    "                              ",
+    "\t\t\t\t\t\t\t\t\t\t",
+    "\t\t   ",
+    " \t",
+    "                                                       ",
+    "                                                                ",
+    "\t\t ",
+    "    \t",
+    "\t       ",
+    "                                         ",
+    "                                  ",
+    "\t\t\t\t\t\t\t\t\t\t\t",
+    "                                    ",
+    "\t  ",
+    "                                      ",
+    "                                                           ",
+    "\t    ",
+    "\t     ",
+    "                                             ",
+    "\t\t\t\t\t\t\t\t\t\t\t\t",
+    "                                        ",
+    " \t\t",
+    "\t\t\t ",
+    "\t\t\t   ",
+    "                                          ",
+    "                                            ",
+    "                                                               ",
+    "\t           ",
+    "\t\t  ",
+    "                                                 ",
+    "\t\t\t\t ",
+    "\t\t\t\t\t\t\t\t\t\t\t\t\t",
+    "    \t\t",
+    "                                              ",
+    "        \t",
+    "                                                                           ",
+    "                                                     ",
+    "\t\t       ",
+    "                                                ",
+    "\t\t\t\t\t\t\t\t\t\t\t\t\t\t",
+    "                                                                   ",
+    "\n\n\n\n\n",
+    "\t\t\t  ",
+    "                                                  ",
+    "\t\t    ",
+    "\t\t\t\t   ",
+    "  \t",
+    " \t\t\t",
+    "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t",
+    "\t\t     ",
+    "\t      ",
+    "\t               ",
+    "                                                    ",
+    "\t\t\t\t\t ",
+    "                                                                       ",
+    "                                                         ",
+    "                                                      ",
+    "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t",
+    "\t        ",
+    "\t\t\t\t  ",
+    "                                                        ",
+    "                                                             "
+  ],
+  "data_hash_sha256": "94825f3d2029c0049f2a087b0093117edc576ada84f2a073b4eccdbf8e3fe3d5",
+  "literal_no_token_ids": [
+    1836,
+    2649,
+    3501,
+    4753,
+    14089,
+    16071
+  ],
+  "literal_no_tokens": [
+    " no",
+    "no",
+    " No",
+    "No",
+    " NO",
+    "NO"
+  ],
+  "literal_yes_token_ids": [
+    13059,
+    13830,
+    14842,
+    16860,
+    51935,
+    57445
+  ],
+  "literal_yes_tokens": [
+    "yes",
+    " Yes",
+    " yes",
+    "Yes",
+    "YES",
+    " YES"
+  ],
+  "model": "mlx-community/Mistral-Nemo-Instruct-2407-4bit",
+  "out_of_scope": "Downstream self-retraction / trajectory self-contradiction is a separate later-gen-step experiment and is forbidden from entering this metric.",
+  "prereg_path": "/Users/msrk/Desktop/the_GOAT/wiki/results/step0-belief-readout-prereg-2026-05-17.md",
+  "prompt_probe_input_sha256": "b7f4f02b26a3c9d9086a741e03829ce1b962627687c099512b54ac3282be772e",
+  "prompt_probe_output_sha256": "c466e61ccd475a7f3446b235f02fc5c80ec3d32faa7b738003bf62deefe7875a",
+  "prompt_strategy_name": "apply_chat_template",
+  "prompt_strategy_source_sha256": "839b859e10a18c07ca22c410bb527992695f75db3a161e1ede50742b4375c2cf",
+  "samples": [
+    {
+      "above_floor": true,
+      "control_mass": 4.115608156662683e-08,
+      "decidedness": 0.9891406153465114,
+      "decidedness_floor": 2.0578040783313414e-07,
+      "gold_yes_no": "NO",
+      "label_B": 1,
+      "lean": -0.3727856391125854,
+      "p_no": 0.5857017269381695,
+      "p_yes": 0.40343888840834197,
+      "sample_idx": 0,
+      "semantic_decidedness": 0.9891425043417014,
+      "semantic_offliteral_mass": 1.8889951899359048e-06,
+      "top10": [
+        {
+          "decoded": "NO",
+          "normalized": "no",
+          "prob": 0.5766605734825134,
+          "rank": 1,
+          "token_id": 16071
+        },
+        {
+          "decoded": "YES",
+          "normalized": "yes",
+          "prob": 0.39633262157440186,
+          "rank": 2,
+          "token_id": 51935
+        },
+        {
+          "decoded": "No",
+          "normalized": "no",
+          "prob": 0.009034077636897564,
+          "rank": 3,
+          "token_id": 4753
+        },
+        {
+          "decoded": "Yes",
+          "normalized": "yes",
+          "prob": 0.007035746239125729,
+          "rank": 4,
+          "token_id": 16860
+        },
+        {
+          "decoded": "**",
+          "normalized": "**",
+          "prob": 0.004835593048483133,
+          "rank": 5,
+          "token_id": 1438
+        },
+        {
+          "decoded": "The",
+          "normalized": "the",
+          "prob": 0.003073689993470907,
+          "rank": 6,
+          "token_id": 1784
+        },
+        {
+          "decoded": "Based",
+          "normalized": "based",
+          "prob": 0.0022841724567115307,
+          "rank": 7,
+          "token_id": 35957
+        },
+        {
+          "decoded": "\"No",
+          "normalized": "\"no",
+          "prob": 0.00010517589544178918,
+          "rank": 8,
+          "token_id": 45344
+        },
+        {
+          "decoded": "Answer",
+          "normalized": "answer",
+          "prob": 7.516581536037847e-05,
+          "rank": 9,
+          "token_id": 31106
+        },
+        {
+          "decoded": "To",
+          "normalized": "to",
+          "prob": 5.456453436636366e-05,
+          "rank": 10,
+          "token_id": 2892
+        }
+      ]
+    },
+    {
+      "above_floor": true,
+      "control_mass": 2.542009153301232e-08,
+      "decidedness": 0.9957363487632553,
+      "decidedness_floor": 1.2710045766506161e-07,
+      "gold_yes_no": "YES",
+      "label_B": 0,
+      "lean": 1.3752529922187837,
+      "p_no": 0.20091218472172453,
+      "p_yes": 0.7948241640415308,
+      "sample_idx": 1,
+      "semantic_decidedness": 0.9957375433250254,
+      "semantic_offliteral_mass": 1.1945617700570565e-06,
+      "top10": [
+        {
+          "decoded": "YES",
+          "normalized": "yes",
+          "prob": 0.7869018316268921,
+          "rank": 1,
+          "token_id": 51935
+        },
+        {
+          "decoded": "NO",
+          "normalized": "no",
+          "prob": 0.19895994663238525,
+          "rank": 2,
+          "token_id": 16071
+        },
+        {
+          "decoded": "Yes",
+          "normalized": "yes",
+          "prob": 0.007836000062525272,
+          "rank": 3,
+          "token_id": 16860
+        },
+        {
+          "decoded": "The",
+          "normalized": "the",
+          "prob": 0.002794011728838086,
+          "rank": 4,
+          "token_id": 1784
+        },
+        {
+          "decoded": "No",
+          "normalized": "no",
+          "prob": 0.0019505347590893507,
+          "rank": 5,
+          "token_id": 4753
+        },
+        {
+          "decoded": "**",
+          "normalized": "**",
+          "prob": 0.0005856566713191569,
+          "rank": 6,
+          "token_id": 1438
+        },
+        {
+          "decoded": "Based",
+          "normalized": "based",
+          "prob": 0.0005249792593531311,
+          "rank": 7,
+          "token_id": 35957
+        },
+        {
+          "decoded": " YES",
+          "normalized": "yes",
+          "prob": 6.519751332234591e-05,
+          "rank": 8,
+          "token_id": 57445
+        },
+        {
+          "decoded": "Answer",
+          "normalized": "answer",
+          "prob": 3.714842023327947e-05,
+          "rank": 9,
+          "token_id": 31106
+        },
+        {
+          "decoded": "\"Yes",
+          "normalized": "\"yes",
+          "prob": 2.613718061184045e-05,
+          "rank": 10,
+          "token_id": 58918
+        }
+      ]
+    },
+    {
+      "above_floor": true,
+      "control_mass": 2.3582212215011208e-08,
+      "decidedness": 0.9981516247548766,
+      "decidedness_floor": 1.1791106107505604e-07,
+      "gold_yes_no": "YES",
+      "label_B": 0,
+      "lean": 2.789276143294954,
+      "p_no": 0.05779939858162691,
+      "p_yes": 0.9403522261732498,
+      "sample_idx": 2,
+      "semantic_decidedness": 0.9981522378684524,
+      "semantic_offliteral_mass": 6.131135757980744e-07,
+      "top10": [
+        {
+          "decoded": "YES",
+          "normalized": "yes",
+          "prob": 0.9339809417724609,
+          "rank": 1,
+          "token_id": 51935
+        },
+        {
+          "decoded": "NO",
+          "normalized": "no",
+          "prob": 0.056973204016685486,
+          "rank": 2,
+          "token_id": 16071
+        },
+        {
+          "decoded": "Yes",
+          "normalized": "yes",
+          "prob": 0.006293114274740219,
+          "rank": 3,
+          "token_id": 16860
+        },
+        {
+          "decoded": "No",
+          "normalized": "no",
+          "prob": 0.0008254769491031766,
+          "rank": 4,
+          "token_id": 4753
+        },
+        {
+          "decoded": "**",
+          "normalized": "**",
+          "prob": 0.0006843444425612688,
+          "rank": 5,
+          "token_id": 1438
+        },
+        {
+          "decoded": "The",
+          "normalized": "the",
+          "prob": 0.0006428820779547095,
+          "rank": 6,
+          "token_id": 1784
+        },
+        {
+          "decoded": "Based",
+          "normalized": "based",
+          "prob": 0.0003720716049429029,
+          "rank": 7,
+          "token_id": 35957
+        },
+        {
+          "decoded": " YES",
+          "normalized": "yes",
+          "prob": 6.266708805924281e-05,
+          "rank": 8,
+          "token_id": 57445
+        },
+        {
+          "decoded": "yes",
+          "normalized": "yes",
+          "prob": 1.5357230950030498e-05,
+          "rank": 9,
+          "token_id": 13059
+        },
+        {
+          "decoded": "To",
+          "normalized": "to",
+          "prob": 1.2932084246131126e-05,
+          "rank": 10,
+          "token_id": 2892
+        }
+      ]
+    }
+  ],
+  "schema_version": "belief_canary_v1",
+  "semantic_affirmative_forms": [
+    "correct",
+    "right",
+    "true",
+    "yeah",
+    "yep",
+    "yes"
+  ],
+  "semantic_negative_forms": [
+    "false",
+    "incorrect",
+    "no",
+    "nope",
+    "wrong"
+  ],
+  "semantic_no_tokens": [
+    " no",
+    "no",
+    " false",
+    " No",
+    "No",
+    " wrong",
+    "false",
+    " False",
+    "False",
+    " NO",
+    "NO",
+    " incorrect",
+    " FALSE",
+    "Wrong",
+    " Wrong",
+    "FALSE",
+    "wrong",
+    " nope",
+    "Incorrect"
+  ],
+  "semantic_yes_tokens": [
+    " true",
+    " right",
+    "right",
+    "true",
+    " correct",
+    "True",
+    " True",
+    "yes",
+    "Right",
+    " Yes",
+    " yes",
+    "Yes",
+    " Right",
+    " TRUE",
+    " Yeah",
+    " yeah",
+    "YES",
+    "correct",
+    "Yeah",
+    " YES",
+    "Correct",
+    "TRUE",
+    " Correct",
+    " RIGHT"
+  ],
+  "tokenizer_fix_flags": {
+    "fix_mistral_regex": true
+  }
+}

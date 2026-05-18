@@ -1,0 +1,80 @@
+{
+  "model": "mlx-community/Qwen2.5-7B-Instruct-4bit",
+  "data_hash": "94825f3d2029c0049f2a087b0093117edc576ada84f2a073b4eccdbf8e3fe3d5",
+  "n_total": 200,
+  "label_balance": {
+    "label1_contradiction": 100,
+    "label0_consistent": 100
+  },
+  "joint_2x2": {
+    "correct|label0": 16,
+    "correct|label1": 59,
+    "wrong|label0": 7,
+    "wrong|label1": 1,
+    "abstain|label0": 77,
+    "abstain|label1": 40
+  },
+  "n_model_error_A": 8,
+  "n_label1_B": 100,
+  "error_on_contradiction": 1,
+  "error_on_consistent": 7,
+  "abstain_total": 117,
+  "mapping_sanitycheck_samples": [
+    {
+      "idx": 0,
+      "label": 1,
+      "gold": "NO",
+      "pred": null,
+      "raw": " To determine if the hypothesis is"
+    },
+    {
+      "idx": 1,
+      "label": 0,
+      "gold": "YES",
+      "pred": null,
+      "raw": " To determine if the hypothesis is"
+    },
+    {
+      "idx": 2,
+      "label": 0,
+      "gold": "YES",
+      "pred": null,
+      "raw": " To determine if the hypothesis is"
+    },
+    {
+      "idx": 3,
+      "label": 0,
+      "gold": "YES",
+      "pred": null,
+      "raw": " To determine if the hypothesis is"
+    },
+    {
+      "idx": 4,
+      "label": 0,
+      "gold": "YES",
+      "pred": null,
+      "raw": " To determine whether the hypothesis is"
+    },
+    {
+      "idx": 5,
+      "label": 0,
+      "gold": "YES",
+      "pred": null,
+      "raw": " To determine if the hypothesis is"
+    },
+    {
+      "idx": 6,
+      "label": 0,
+      "gold": "YES",
+      "pred": null,
+      "raw": " To determine if the hypothesis is"
+    },
+    {
+      "idx": 7,
+      "label": 0,
+      "gold": "YES",
+      "pred": null,
+      "raw": " To determine if the hypothesis is"
+    }
+  ]
+}

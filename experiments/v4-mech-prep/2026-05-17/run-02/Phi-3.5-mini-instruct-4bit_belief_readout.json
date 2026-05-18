@@ -1,0 +1,308 @@
+{
+  "anchor": null,
+  "anchor_rationale": "Mistral-Nemo is the immediate-commit validity anchor. Agreement stays at 0.95 because this check is guarding the measurement premise itself, not a descriptive downstream claim.",
+  "auxiliary_C": {
+    "accuracy": 0.8918918918918919,
+    "coverage_defined": 0.185,
+    "label_source": "gold_yes_no_from_B_prompt_contract",
+    "n_defined": 37
+  },
+  "control_floor_multiplier": 5.0,
+  "curve": [
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.015,
+      "min_decidedness": 0.9133188996661943,
+      "n_prefix": 3
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.02,
+      "min_decidedness": 0.9103416009386247,
+      "n_prefix": 4
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.025,
+      "min_decidedness": 0.9040259257563932,
+      "n_prefix": 5
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.03,
+      "min_decidedness": 0.9013752620821833,
+      "n_prefix": 6
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.035,
+      "min_decidedness": 0.8970253223776075,
+      "n_prefix": 7
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.04,
+      "min_decidedness": 0.8946695384698227,
+      "n_prefix": 8
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.045,
+      "min_decidedness": 0.8889721543281439,
+      "n_prefix": 9
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.05,
+      "min_decidedness": 0.8851440161580273,
+      "n_prefix": 10
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.055,
+      "min_decidedness": 0.8827547660984675,
+      "n_prefix": 11
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.06,
+      "min_decidedness": 0.8826388569546779,
+      "n_prefix": 12
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.065,
+      "min_decidedness": 0.8820192634094504,
+      "n_prefix": 13
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.07,
+      "min_decidedness": 0.882013793349697,
+      "n_prefix": 14
+    },
+    {
+      "auroc_b_signed": 0.9444444444444444,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7777777777777778,
+      "coverage": 0.075,
+      "min_decidedness": 0.881493520420932,
+      "n_prefix": 15
+    },
+    {
+      "auroc_b_signed": 0.9523809523809524,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8,
+      "coverage": 0.08,
+      "min_decidedness": 0.8756594099048698,
+      "n_prefix": 16
+    },
+    {
+      "auroc_b_signed": 0.9571428571428572,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8333333333333334,
+      "coverage": 0.085,
+      "min_decidedness": 0.8733555781037059,
+      "n_prefix": 17
+    },
+    {
+      "auroc_b_signed": 0.9480519480519481,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7915178571428573,
+      "coverage": 0.09,
+      "min_decidedness": 0.8677040238512745,
+      "n_prefix": 18
+    },
+    {
+      "auroc_b_signed": 0.9204545454545454,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7498611111111111,
+      "coverage": 0.095,
+      "min_decidedness": 0.859622130518801,
+      "n_prefix": 19
+    },
+    {
+      "auroc_b_signed": 0.9270833333333333,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7878246753246753,
+      "coverage": 0.1,
+      "min_decidedness": 0.8581562678471997,
+      "n_prefix": 20
+    },
+    {
+      "auroc_b_signed": 0.9351851851851851,
+      "ci_hi": 1.0,
+      "ci_lo": 0.809055944055944,
+      "coverage": 0.105,
+      "min_decidedness": 0.8553693596495595,
+      "n_prefix": 21
+    },
+    {
+      "auroc_b_signed": 0.9416666666666667,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8285182998819361,
+      "coverage": 0.11,
+      "min_decidedness": 0.8542764989902594,
+      "n_prefix": 22
+    },
+    {
+      "auroc_b_signed": 0.9384615384615385,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8083333333333333,
+      "coverage": 0.115,
+      "min_decidedness": 0.8507790948592628,
+      "n_prefix": 23
+    },
+    {
+      "auroc_b_signed": 0.944055944055944,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8359319196428572,
+      "coverage": 0.12,
+      "min_decidedness": 0.8502446634074445,
+      "n_prefix": 24
+    },
+    {
+      "auroc_b_signed": 0.948051948051948,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8375541125541126,
+      "coverage": 0.125,
+      "min_decidedness": 0.8485343332541039,
+      "n_prefix": 25
+    },
+    {
+      "auroc_b_signed": 0.9515151515151514,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8484632034632035,
+      "coverage": 0.13,
+      "min_decidedness": 0.8474996168528732,
+      "n_prefix": 26
+    },
+    {
+      "auroc_b_signed": 0.9545454545454545,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8588235294117648,
+      "coverage": 0.135,
+      "min_decidedness": 0.8442570742683619,
+      "n_prefix": 27
+    },
+    {
+      "auroc_b_signed": 0.9572192513368983,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8666666666666667,
+      "coverage": 0.14,
+      "min_decidedness": 0.8401722083510679,
+      "n_prefix": 28
+    },
+    {
+      "auroc_b_signed": 0.9607843137254902,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8904511278195489,
+      "coverage": 0.145,
+      "min_decidedness": 0.8384083482681461,
+      "n_prefix": 29
+    },
+    {
+      "auroc_b_signed": 0.962962962962963,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8844398148148147,
+      "coverage": 0.15,
+      "min_decidedness": 0.8358782284871266,
+      "n_prefix": 30
+    },
+    {
+      "auroc_b_signed": 0.9605263157894737,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8749107142857143,
+      "coverage": 0.155,
+      "min_decidedness": 0.8312537201769032,
+      "n_prefix": 31
+    },
+    {
+      "auroc_b_signed": 0.9583333333333334,
+      "ci_hi": 1.0,
+      "ci_lo": 0.875,
+      "coverage": 0.16,
+      "min_decidedness": 0.8292843891695156,
+      "n_prefix": 32
+    },
+    {
+      "auroc_b_signed": 0.9576923076923076,
+      "ci_hi": 1.0,
+      "ci_lo": 0.884297520661157,
+      "coverage": 0.165,
+      "min_decidedness": 0.8286776100039788,
+      "n_prefix": 33
+    },
+    {
+      "auroc_b_signed": 0.9428571428571428,
+      "ci_hi": 0.9965277777777778,
+      "ci_lo": 0.8498164878599661,
+      "coverage": 0.17,
+      "min_decidedness": 0.8211993134639215,
+      "n_prefix": 34
+    },
+    {
+      "auroc_b_signed": 0.9421768707482994,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8514237272389447,
+      "coverage": 0.175,
+      "min_decidedness": 0.8192688295794142,
+      "n_prefix": 35
+    },
+    {
+      "auroc_b_signed": 0.9415584415584416,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8508863636363637,
+      "coverage": 0.18,
+      "min_decidedness": 0.805212388530812,
+      "n_prefix": 36
+    },
+    {
+      "auroc_b_signed": 0.9424242424242425,
+      "ci_hi": 0.9970588235294117,
+      "ci_lo": 0.8525641025641025,
+      "coverage": 0.185,
+      "min_decidedness": 0.7871831402153475,
+      "n_prefix": 37
+    }
+  ],
+  "data_hash_sha256": "94825f3d2029c0049f2a087b0093117edc576ada84f2a073b4eccdbf8e3fe3d5",
+  "eligible_coverage": 0.185,
+  "eps": 1e-12,
+  "high_coverage_bar": 0.8,
+  "max_significant_coverage": 0.185,
+  "model": "mlx-community/Phi-3.5-mini-instruct-4bit",
+  "n_total": 200,
+  "out_of_scope": "Downstream self-retraction / trajectory self-contradiction is a separate later-gen-step experiment and is forbidden from entering this metric.",
+  "prereg_path": "/Users/msrk/Desktop/the_GOAT/wiki/results/step0-belief-readout-prereg-2026-05-17.md",
+  "prompt_strategy_name": "raw_passthrough",
+  "schema_version": "belief_readout_v1",
+  "scoring_mode": "token_partition_v1",
+  "spec_path": "/Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/run-02/Phi-3.5-mini-instruct-4bit_belief_spec.json",
+  "undetermined_coverage": 0.0,
+  "verdict": "Low-decidedness-for-M"
+}

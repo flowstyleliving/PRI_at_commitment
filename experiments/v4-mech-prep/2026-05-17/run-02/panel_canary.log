@@ -1,0 +1,38 @@
+[belief-panel] phase=canary
+[belief-panel] data=experiments/anli-sweep/2026-05-15/run-02/anli_R1_seed20260513_n100.jsonl
+[belief-panel] prereg=/Users/msrk/Desktop/the_GOAT/wiki/results/step0-belief-readout-prereg-2026-05-17.md
+[belief-panel] out_dir=experiments/v4-mech-prep/2026-05-17/run-02
+[belief-panel] models=10
+[belief-panel] start: Sun May 17 23:19:39 PDT 2026
+
+[belief-panel] (1/10) mlx-community/Qwen3-1.7B-4bit started at Sun May 17 23:19:39 PDT 2026
+[belief-panel] (1/10) Qwen3-1.7B-4bit status=ok  canary=experiments/v4-mech-prep/2026-05-17/run-02/Qwen3-1.7B-4bit_belief_canary.json spec=experiments/v4-mech-prep/2026-05-17/run-02/Qwen3-1.7B-4bit_belief_spec.json
+
+[belief-panel] (2/10) mlx-community/Llama-3.2-3B-Instruct-4bit started at Sun May 17 23:19:44 PDT 2026
+[belief-panel] (2/10) Llama-3.2-3B-Instruct-4bit status=ok  canary=experiments/v4-mech-prep/2026-05-17/run-02/Llama-3.2-3B-Instruct-4bit_belief_canary.json spec=experiments/v4-mech-prep/2026-05-17/run-02/Llama-3.2-3B-Instruct-4bit_belief_spec.json
+
+[belief-panel] (3/10) mlx-community/gemma-3-4b-it-4bit started at Sun May 17 23:19:50 PDT 2026
+[belief-panel] (3/10) gemma-3-4b-it-4bit status=ok  canary=experiments/v4-mech-prep/2026-05-17/run-02/gemma-3-4b-it-4bit_belief_canary.json spec=experiments/v4-mech-prep/2026-05-17/run-02/gemma-3-4b-it-4bit_belief_spec.json
+
+[belief-panel] (4/10) mlx-community/Phi-3.5-mini-instruct-4bit started at Sun May 17 23:19:58 PDT 2026
+[belief-panel] (4/10) Phi-3.5-mini-instruct-4bit status=ok  canary=experiments/v4-mech-prep/2026-05-17/run-02/Phi-3.5-mini-instruct-4bit_belief_canary.json spec=experiments/v4-mech-prep/2026-05-17/run-02/Phi-3.5-mini-instruct-4bit_belief_spec.json
+
+[belief-panel] (5/10) mlx-community/Phi-4-mini-instruct-4bit started at Sun May 17 23:20:03 PDT 2026
+[belief-panel] (5/10) Phi-4-mini-instruct-4bit status=ok  canary=experiments/v4-mech-prep/2026-05-17/run-02/Phi-4-mini-instruct-4bit_belief_canary.json spec=experiments/v4-mech-prep/2026-05-17/run-02/Phi-4-mini-instruct-4bit_belief_spec.json
+
+[belief-panel] (6/10) mlx-community/Mistral-7B-Instruct-v0.3-4bit started at Sun May 17 23:20:09 PDT 2026
+[belief-panel] (6/10) Mistral-7B-Instruct-v0.3-4bit status=ok  canary=experiments/v4-mech-prep/2026-05-17/run-02/Mistral-7B-Instruct-v0.3-4bit_belief_canary.json spec=experiments/v4-mech-prep/2026-05-17/run-02/Mistral-7B-Instruct-v0.3-4bit_belief_spec.json
+
+[belief-panel] (7/10) mlx-community/Qwen2.5-7B-Instruct-4bit started at Sun May 17 23:20:16 PDT 2026
+[belief-panel] (7/10) Qwen2.5-7B-Instruct-4bit status=ok  canary=experiments/v4-mech-prep/2026-05-17/run-02/Qwen2.5-7B-Instruct-4bit_belief_canary.json spec=experiments/v4-mech-prep/2026-05-17/run-02/Qwen2.5-7B-Instruct-4bit_belief_spec.json
+
+[belief-panel] (8/10) mlx-community/Qwen3-8B-4bit started at Sun May 17 23:20:24 PDT 2026
+[belief-panel] (8/10) Qwen3-8B-4bit status=ok  canary=experiments/v4-mech-prep/2026-05-17/run-02/Qwen3-8B-4bit_belief_canary.json spec=experiments/v4-mech-prep/2026-05-17/run-02/Qwen3-8B-4bit_belief_spec.json
+
+[belief-panel] (9/10) mlx-community/Llama-3.1-8B-Instruct-4bit started at Sun May 17 23:20:33 PDT 2026
+[belief-panel] (9/10) Llama-3.1-8B-Instruct-4bit status=ok  canary=experiments/v4-mech-prep/2026-05-17/run-02/Llama-3.1-8B-Instruct-4bit_belief_canary.json spec=experiments/v4-mech-prep/2026-05-17/run-02/Llama-3.1-8B-Instruct-4bit_belief_spec.json
+
+[belief-panel] (10/10) mlx-community/Mistral-Nemo-Instruct-2407-4bit started at Sun May 17 23:20:41 PDT 2026
+[belief-panel] (10/10) Mistral-Nemo-Instruct-2407-4bit status=ok  canary=experiments/v4-mech-prep/2026-05-17/run-02/Mistral-Nemo-Instruct-2407-4bit_belief_canary.json spec=experiments/v4-mech-prep/2026-05-17/run-02/Mistral-Nemo-Instruct-2407-4bit_belief_spec.json
+
+[belief-panel] all 10 models finished successfully at Sun May 17 23:20:52 PDT 2026
