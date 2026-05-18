@@ -1,0 +1,133 @@
+{
+  "model": "mlx-community/Qwen2.5-7B-Instruct-4bit",
+  "data_hash": "94825f3d2029c0049f2a087b0093117edc576ada84f2a073b4eccdbf8e3fe3d5",
+  "n_total": 20,
+  "cap": 128,
+  "joint_2x2": {
+    "correct|label0": 2,
+    "correct|label1": 3,
+    "wrong|label0": 1,
+    "wrong|label1": 0
+  },
+  "abstain": {
+    "label0": 11,
+    "label1": 3,
+    "total": 14
+  },
+  "commit_step_buckets": {
+    "step1": 3,
+    "step2_4": 0,
+    "step5_16": 0,
+    "step17_64": 0,
+    "step65_cap": 2,
+    "weak_only": 1
+  },
+  "frac_immediate_step1": 0.15,
+  "frac_cot_step_gt1": 0.15,
+  "frac_abstain": 0.7,
+  "median_commit_step": 1,
+  "max_commit_step": 112,
+  "n_model_error": 1,
+  "samples": [
+    {
+      "idx": 0,
+      "label": 1,
+      "gold": "NO",
+      "final": "NO",
+      "commit_step": 112,
+      "bucket": "step65_cap",
+      "n_gen": 128,
+      "raw": " To determine if the hypothesis is entailed by the premise, let's break down the information provided:  1. The premise states that the film "
+    },
+    {
+      "idx": 1,
+      "label": 0,
+      "gold": "YES",
+      "final": "YES",
+      "commit_step": null,
+      "bucket": "weak_only",
+      "n_gen": 128,
+      "raw": " To determine if the hypothesis is entailed by the premise, let's break down and compare the key points:  1. **Event Name and Year:**    - P"
+    },
+    {
+      "idx": 2,
+      "label": 0,
+      "gold": "YES",
+      "final": null,
+      "commit_step": null,
+      "bucket": "abstain",
+      "n_gen": 128,
+      "raw": " To determine if the hypothesis is entailed by the premise, let's break down the relevant information:  1. **Premise Information**:    - The"
+    },
+    {
+      "idx": 3,
+      "label": 0,
+      "gold": "YES",
+      "final": null,
+      "commit_step": null,
+      "bucket": "abstain",
+      "n_gen": 128,
+      "raw": " To determine if the hypothesis is entailed by the premise, let's break down the information provided:  1. Pendle is a constituency in the H"
+    },
+    {
+      "idx": 4,
+      "label": 0,
+      "gold": "YES",
+      "final": null,
+      "commit_step": null,
+      "bucket": "abstain",
+      "n_gen": 128,
+      "raw": " To determine whether the hypothesis is entailed by the premise, we need to examine the information provided in the premise and see if it su"
+    },
+    {
+      "idx": 5,
+      "label": 0,
+      "gold": "YES",
+      "final": null,
+      "commit_step": null,
+      "bucket": "abstain",
+      "n_gen": 128,
+      "raw": " To determine if the hypothesis is entailed by the premise, let's break down the information provided:  1. **Premise**: Agustin \"Gus\" Guerre"
+    },
+    {
+      "idx": 6,
+      "label": 0,
+      "gold": "YES",
+      "final": null,
+      "commit_step": null,
+      "bucket": "abstain",
+      "n_gen": 128,
+      "raw": " To determine if the hypothesis is entailed by the premise, let's break down the information provided:  1. \"Kaun Tujhe\" is a Hindi song from"
+    },
+    {
+      "idx": 7,
+      "label": 0,
+      "gold": "YES",
+      "final": null,
+      "commit_step": null,
+      "bucket": "abstain",
+      "n_gen": 128,
+      "raw": " To determine if the hypothesis is entailed by the premise, let's break down the key points:  1. The premise states that \"Don't Worry 'Bout "
+    },
+    {
+      "idx": 8,
+      "label": 0,
+      "gold": "YES",
+      "final": null,
+      "commit_step": null,
+      "bucket": "abstain",
+      "n_gen": 128,
+      "raw": " To determine if the hypothesis is entailed by the premise, let's break down the information provided:  1. Rebel \"Reb\" Porter worked for the"
+    },
+    {
+      "idx": 9,
+      "label": 0,
+      "gold": "YES",
+      "final": null,
+      "commit_step": null,
+      "bucket": "abstain",
+      "n_gen": 128,
+      "raw": " To determine if the hypothesis is entailed by the premise, let's break down the key information:  1. The premise states that Andrey Ermakov"
+    }
+  ]
+}
