@@ -1,0 +1,10 @@
+/Users/msrk/Documents/PRI_at_commitment/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+  Loading model: mlx-community/Phi-4-mini-instruct-4bit
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 155344.59it/s]
+     Layers: 32 | Probed: {'final': 31} | Output projection: tied_embed (V=200064, D=3072)
+[t0-audit] wrote /Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/audit-t0-recoverability/Phi-4-mini-instruct-4bit_t0_audit.csv
+[t0-audit] wrote /Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/audit-t0-recoverability/Phi-4-mini-instruct-4bit_t0_audit.json
+[t0-audit] gate OK max|dp|=0.00e+00 max|dlean|=0.00e+00 max|dcanary|=0.00e+00
+[t0-audit] verdict=literal-panel-basically-complete frac_answerlike>literal=0.000 frac_materially=0.000 frac_top1_answerlike=0.000 recovered_only_by_semantic=0.000

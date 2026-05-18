@@ -79,8 +79,7 @@ def _format_existing_lock(lock_path: Path) -> str:
     return base
 
 
-@contextmanager
-def hold_out_dir_lock(out_dir: Path) -> Iterator[Path]:
+def acquire_out_dir_lock(out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     lock_path = out_dir / LOCK_FILENAME
     try:
@@ -88,16 +87,26 @@ def hold_out_dir_lock(out_dir: Path) -> Iterator[Path]:
     except FileExistsError as exc:
         raise RuntimeError(_format_existing_lock(lock_path)) from exc
 
+    with os.fdopen(fd, "w") as f:
+        json.dump(_lock_metadata(), f, indent=2, sort_keys=True)
+        f.write("\n")
+    return lock_path
+
+
+def release_out_dir_lock(lock_path: Path) -> None:
     try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(_lock_metadata(), f, indent=2, sort_keys=True)
-            f.write("\n")
+        lock_path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+@contextmanager
+def hold_out_dir_lock(out_dir: Path) -> Iterator[Path]:
+    lock_path = acquire_out_dir_lock(out_dir)
+    try:
         yield lock_path
     finally:
-        try:
-            lock_path.unlink()
-        except FileNotFoundError:
-            pass
+        release_out_dir_lock(lock_path)
 
 
 def claim_next_run_dir(base_dir: Path, *, prefix: str = "run-", width: int = 2) -> Path:

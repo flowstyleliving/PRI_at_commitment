@@ -1,0 +1,11 @@
+model	status	summary_json_path	reason
+mlx-community/Qwen3-1.7B-4bit	ok	experiments/v4-mech-prep/2026-05-17/run-02/Qwen3-1.7B-4bit_belief_readout.json	
+mlx-community/Llama-3.2-3B-Instruct-4bit	ok	experiments/v4-mech-prep/2026-05-17/run-02/Llama-3.2-3B-Instruct-4bit_belief_readout.json	
+mlx-community/gemma-3-4b-it-4bit	ok	experiments/v4-mech-prep/2026-05-17/run-02/gemma-3-4b-it-4bit_belief_readout.json	
+mlx-community/Phi-3.5-mini-instruct-4bit	ok	experiments/v4-mech-prep/2026-05-17/run-02/Phi-3.5-mini-instruct-4bit_belief_readout.json	
+mlx-community/Phi-4-mini-instruct-4bit	ok	experiments/v4-mech-prep/2026-05-17/run-02/Phi-4-mini-instruct-4bit_belief_readout.json	
+mlx-community/Mistral-7B-Instruct-v0.3-4bit	ok	experiments/v4-mech-prep/2026-05-17/run-02/Mistral-7B-Instruct-v0.3-4bit_belief_readout.json	
+mlx-community/Qwen2.5-7B-Instruct-4bit	ok	experiments/v4-mech-prep/2026-05-17/run-02/Qwen2.5-7B-Instruct-4bit_belief_readout.json	
+mlx-community/Qwen3-8B-4bit	ok	experiments/v4-mech-prep/2026-05-17/run-02/Qwen3-8B-4bit_belief_readout.json	
+mlx-community/Llama-3.1-8B-Instruct-4bit	ok	experiments/v4-mech-prep/2026-05-17/run-02/Llama-3.1-8B-Instruct-4bit_belief_readout.json	
+mlx-community/Mistral-Nemo-Instruct-2407-4bit	ok	experiments/v4-mech-prep/2026-05-17/run-02/Mistral-Nemo-Instruct-2407-4bit_belief_readout.json	

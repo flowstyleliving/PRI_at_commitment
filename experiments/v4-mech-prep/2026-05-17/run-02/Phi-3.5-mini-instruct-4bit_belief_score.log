@@ -1,0 +1,9 @@
+/Users/msrk/Documents/PRI_at_commitment/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+  Loading model: mlx-community/Phi-3.5-mini-instruct-4bit
+Fetching 11 files:   0%|          | 0/11 [00:00<?, ?it/s]Fetching 11 files: 100%|██████████| 11/11 [00:00<00:00, 18543.95it/s]
+     Layers: 32 | Probed: {'final': 31} | Output projection: lm_head (V=32064, D=3072)
+[belief-score] wrote /Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/run-02/Phi-3.5-mini-instruct-4bit_belief_readout.csv
+[belief-score] wrote /Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/run-02/Phi-3.5-mini-instruct-4bit_belief_readout.json
+[belief-score] verdict=Low-decidedness-for-M eligible_coverage=0.185 undetermined_coverage=0.000 max_significant_coverage=0.185

@@ -1,0 +1,1580 @@
+{
+  "anchor": null,
+  "anchor_rationale": "Mistral-Nemo is the immediate-commit validity anchor. Agreement stays at 0.95 because this check is guarding the measurement premise itself, not a descriptive downstream claim.",
+  "auxiliary_C": {
+    "accuracy": 0.8418367346938775,
+    "coverage_defined": 0.98,
+    "label_source": "gold_yes_no_from_B_prompt_contract",
+    "n_defined": 196
+  },
+  "control_floor_multiplier": 5.0,
+  "curve": [
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.015,
+      "min_decidedness": 0.882428933486879,
+      "n_prefix": 3
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.02,
+      "min_decidedness": 0.877928063518654,
+      "n_prefix": 4
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.025,
+      "min_decidedness": 0.8706857390638943,
+      "n_prefix": 5
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.03,
+      "min_decidedness": 0.8653911087934625,
+      "n_prefix": 6
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.035,
+      "min_decidedness": 0.8619391498924317,
+      "n_prefix": 7
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.04,
+      "min_decidedness": 0.8613692862802971,
+      "n_prefix": 8
+    },
+    {
+      "auroc_b_signed": 1.0,
+      "ci_hi": 1.0,
+      "ci_lo": 1.0,
+      "coverage": 0.045,
+      "min_decidedness": 0.8535949076668459,
+      "n_prefix": 9
+    },
+    {
+      "auroc_b_signed": 0.8125,
+      "ci_hi": 1.0,
+      "ci_lo": 0.375,
+      "coverage": 0.05,
+      "min_decidedness": 0.846339999082479,
+      "n_prefix": 10
+    },
+    {
+      "auroc_b_signed": 0.7777777777777778,
+      "ci_hi": 1.0,
+      "ci_lo": 0.375,
+      "coverage": 0.055,
+      "min_decidedness": 0.8430884416041875,
+      "n_prefix": 11
+    },
+    {
+      "auroc_b_signed": 0.8,
+      "ci_hi": 1.0,
+      "ci_lo": 0.4,
+      "coverage": 0.06,
+      "min_decidedness": 0.837842855240433,
+      "n_prefix": 12
+    },
+    {
+      "auroc_b_signed": 0.8181818181818181,
+      "ci_hi": 1.0,
+      "ci_lo": 0.4166666666666667,
+      "coverage": 0.065,
+      "min_decidedness": 0.8349283968542754,
+      "n_prefix": 13
+    },
+    {
+      "auroc_b_signed": 0.7916666666666667,
+      "ci_hi": 1.0,
+      "ci_lo": 0.39000000000000007,
+      "coverage": 0.07,
+      "min_decidedness": 0.8334253978606633,
+      "n_prefix": 14
+    },
+    {
+      "auroc_b_signed": 0.7692307692307692,
+      "ci_hi": 1.0,
+      "ci_lo": 0.3573571428571429,
+      "coverage": 0.075,
+      "min_decidedness": 0.8332924228275853,
+      "n_prefix": 15
+    },
+    {
+      "auroc_b_signed": 0.75,
+      "ci_hi": 1.0,
+      "ci_lo": 0.3076923076923077,
+      "coverage": 0.08,
+      "min_decidedness": 0.824882289798126,
+      "n_prefix": 16
+    },
+    {
+      "auroc_b_signed": 0.7666666666666666,
+      "ci_hi": 1.0,
+      "ci_lo": 0.35714285714285715,
+      "coverage": 0.085,
+      "min_decidedness": 0.8202986301404017,
+      "n_prefix": 17
+    },
+    {
+      "auroc_b_signed": 0.75,
+      "ci_hi": 1.0,
+      "ci_lo": 0.35294117647058826,
+      "coverage": 0.09,
+      "min_decidedness": 0.8165218599621533,
+      "n_prefix": 18
+    },
+    {
+      "auroc_b_signed": 0.7352941176470589,
+      "ci_hi": 1.0,
+      "ci_lo": 0.3333333333333333,
+      "coverage": 0.095,
+      "min_decidedness": 0.8157195256931438,
+      "n_prefix": 19
+    },
+    {
+      "auroc_b_signed": 0.7222222222222222,
+      "ci_hi": 1.0,
+      "ci_lo": 0.2777777777777778,
+      "coverage": 0.1,
+      "min_decidedness": 0.8152542659339806,
+      "n_prefix": 20
+    },
+    {
+      "auroc_b_signed": 0.7105263157894737,
+      "ci_hi": 1.0,
+      "ci_lo": 0.25,
+      "coverage": 0.105,
+      "min_decidedness": 0.8128182382232453,
+      "n_prefix": 21
+    },
+    {
+      "auroc_b_signed": 0.7,
+      "ci_hi": 1.0,
+      "ci_lo": 0.25,
+      "coverage": 0.11,
+      "min_decidedness": 0.8067419033166934,
+      "n_prefix": 22
+    },
+    {
+      "auroc_b_signed": 0.7142857142857143,
+      "ci_hi": 1.0,
+      "ci_lo": 0.2727272727272727,
+      "coverage": 0.115,
+      "min_decidedness": 0.8012476341699993,
+      "n_prefix": 23
+    },
+    {
+      "auroc_b_signed": 0.8095238095238095,
+      "ci_hi": 1.0,
+      "ci_lo": 0.36363636363636365,
+      "coverage": 0.12,
+      "min_decidedness": 0.7992518276236223,
+      "n_prefix": 24
+    },
+    {
+      "auroc_b_signed": 0.8030303030303031,
+      "ci_hi": 1.0,
+      "ci_lo": 0.34782608695652173,
+      "coverage": 0.125,
+      "min_decidedness": 0.7939245709058675,
+      "n_prefix": 25
+    },
+    {
+      "auroc_b_signed": 0.8115942028985508,
+      "ci_hi": 1.0,
+      "ci_lo": 0.391304347826087,
+      "coverage": 0.13,
+      "min_decidedness": 0.7935150460762858,
+      "n_prefix": 26
+    },
+    {
+      "auroc_b_signed": 0.8586956521739131,
+      "ci_hi": 1.0,
+      "ci_lo": 0.48950000000000005,
+      "coverage": 0.135,
+      "min_decidedness": 0.7885281461070403,
+      "n_prefix": 27
+    },
+    {
+      "auroc_b_signed": 0.8541666666666666,
+      "ci_hi": 1.0,
+      "ci_lo": 0.4897777777777778,
+      "coverage": 0.14,
+      "min_decidedness": 0.7883454238156145,
+      "n_prefix": 28
+    },
+    {
+      "auroc_b_signed": 0.85,
+      "ci_hi": 1.0,
+      "ci_lo": 0.45953177257525085,
+      "coverage": 0.145,
+      "min_decidedness": 0.7841114573626264,
+      "n_prefix": 29
+    },
+    {
+      "auroc_b_signed": 0.8461538461538461,
+      "ci_hi": 1.0,
+      "ci_lo": 0.42857142857142855,
+      "coverage": 0.15,
+      "min_decidedness": 0.7797880396526792,
+      "n_prefix": 30
+    },
+    {
+      "auroc_b_signed": 0.8425925925925926,
+      "ci_hi": 1.0,
+      "ci_lo": 0.48086206896551725,
+      "coverage": 0.155,
+      "min_decidedness": 0.7738679731259699,
+      "n_prefix": 31
+    },
+    {
+      "auroc_b_signed": 0.8740740740740741,
+      "ci_hi": 1.0,
+      "ci_lo": 0.5697802197802198,
+      "coverage": 0.16,
+      "min_decidedness": 0.7638105974336641,
+      "n_prefix": 32
+    },
+    {
+      "auroc_b_signed": 0.8950617283950617,
+      "ci_hi": 1.0,
+      "ci_lo": 0.6222222222222222,
+      "coverage": 0.165,
+      "min_decidedness": 0.7551430926631211,
+      "n_prefix": 33
+    },
+    {
+      "auroc_b_signed": 0.9100529100529101,
+      "ci_hi": 1.0,
+      "ci_lo": 0.6822745358090186,
+      "coverage": 0.17,
+      "min_decidedness": 0.7549792463759466,
+      "n_prefix": 34
+    },
+    {
+      "auroc_b_signed": 0.9081632653061225,
+      "ci_hi": 1.0,
+      "ci_lo": 0.6785714285714285,
+      "coverage": 0.175,
+      "min_decidedness": 0.7544535850238414,
+      "n_prefix": 35
+    },
+    {
+      "auroc_b_signed": 0.9064039408866996,
+      "ci_hi": 1.0,
+      "ci_lo": 0.6846063232120204,
+      "coverage": 0.18,
+      "min_decidedness": 0.7459288297494071,
+      "n_prefix": 36
+    },
+    {
+      "auroc_b_signed": 0.9047619047619049,
+      "ci_hi": 1.0,
+      "ci_lo": 0.6815982404692082,
+      "coverage": 0.185,
+      "min_decidedness": 0.7451359584660309,
+      "n_prefix": 37
+    },
+    {
+      "auroc_b_signed": 0.903225806451613,
+      "ci_hi": 1.0,
+      "ci_lo": 0.6718526785714286,
+      "coverage": 0.19,
+      "min_decidedness": 0.7432079561419227,
+      "n_prefix": 38
+    },
+    {
+      "auroc_b_signed": 0.9017857142857143,
+      "ci_hi": 1.0,
+      "ci_lo": 0.6592592592592592,
+      "coverage": 0.195,
+      "min_decidedness": 0.7394704533972831,
+      "n_prefix": 39
+    },
+    {
+      "auroc_b_signed": 0.9004329004329005,
+      "ci_hi": 1.0,
+      "ci_lo": 0.6388888888888888,
+      "coverage": 0.2,
+      "min_decidedness": 0.735849485266396,
+      "n_prefix": 40
+    },
+    {
+      "auroc_b_signed": 0.9128787878787878,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7158685064935065,
+      "coverage": 0.205,
+      "min_decidedness": 0.7358421408510158,
+      "n_prefix": 41
+    },
+    {
+      "auroc_b_signed": 0.8888888888888888,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7080584666298952,
+      "coverage": 0.21,
+      "min_decidedness": 0.7324399811917118,
+      "n_prefix": 42
+    },
+    {
+      "auroc_b_signed": 0.8888888888888888,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7071857571857572,
+      "coverage": 0.215,
+      "min_decidedness": 0.7312376752507196,
+      "n_prefix": 43
+    },
+    {
+      "auroc_b_signed": 0.8857142857142857,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7013541666666666,
+      "coverage": 0.22,
+      "min_decidedness": 0.7266710033874383,
+      "n_prefix": 44
+    },
+    {
+      "auroc_b_signed": 0.8971428571428572,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7235138627819548,
+      "coverage": 0.225,
+      "min_decidedness": 0.7260352791499723,
+      "n_prefix": 45
+    },
+    {
+      "auroc_b_signed": 0.8944444444444445,
+      "ci_hi": 1.0,
+      "ci_lo": 0.702574159525379,
+      "coverage": 0.23,
+      "min_decidedness": 0.7155535697838504,
+      "n_prefix": 46
+    },
+    {
+      "auroc_b_signed": 0.8945945945945947,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7080954638849376,
+      "coverage": 0.235,
+      "min_decidedness": 0.7049711993423136,
+      "n_prefix": 47
+    },
+    {
+      "auroc_b_signed": 0.8968058968058968,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7419250216125216,
+      "coverage": 0.24,
+      "min_decidedness": 0.6994309265102389,
+      "n_prefix": 48
+    },
+    {
+      "auroc_b_signed": 0.8995215311004785,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7478205128205129,
+      "coverage": 0.245,
+      "min_decidedness": 0.6933839016376027,
+      "n_prefix": 49
+    },
+    {
+      "auroc_b_signed": 0.8997668997668997,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7364932216905902,
+      "coverage": 0.25,
+      "min_decidedness": 0.6872994760326636,
+      "n_prefix": 50
+    },
+    {
+      "auroc_b_signed": 0.8977272727272727,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7383651716500553,
+      "coverage": 0.255,
+      "min_decidedness": 0.6850534602166956,
+      "n_prefix": 51
+    },
+    {
+      "auroc_b_signed": 0.8980044345898004,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7343489583333334,
+      "coverage": 0.26,
+      "min_decidedness": 0.6788817934383241,
+      "n_prefix": 52
+    },
+    {
+      "auroc_b_signed": 0.8982683982683982,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7424101479915434,
+      "coverage": 0.265,
+      "min_decidedness": 0.6746615724718247,
+      "n_prefix": 53
+    },
+    {
+      "auroc_b_signed": 0.8964059196617337,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7293069817779121,
+      "coverage": 0.27,
+      "min_decidedness": 0.6670646804753587,
+      "n_prefix": 54
+    },
+    {
+      "auroc_b_signed": 0.9050387596899225,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7555072463768115,
+      "coverage": 0.275,
+      "min_decidedness": 0.6637392582774663,
+      "n_prefix": 55
+    },
+    {
+      "auroc_b_signed": 0.9123434704830053,
+      "ci_hi": 1.0,
+      "ci_lo": 0.771699734374153,
+      "coverage": 0.28,
+      "min_decidedness": 0.6391203779626128,
+      "n_prefix": 56
+    },
+    {
+      "auroc_b_signed": 0.9186046511627907,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7944658541941151,
+      "coverage": 0.285,
+      "min_decidedness": 0.6380971600038255,
+      "n_prefix": 57
+    },
+    {
+      "auroc_b_signed": 0.9188311688311688,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7949029133492271,
+      "coverage": 0.29,
+      "min_decidedness": 0.6348554869731668,
+      "n_prefix": 58
+    },
+    {
+      "auroc_b_signed": 0.9174603174603174,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7821874999999999,
+      "coverage": 0.295,
+      "min_decidedness": 0.6345688982056842,
+      "n_prefix": 59
+    },
+    {
+      "auroc_b_signed": 0.9161490683229814,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7821979166666667,
+      "coverage": 0.3,
+      "min_decidedness": 0.6342314343343263,
+      "n_prefix": 60
+    },
+    {
+      "auroc_b_signed": 0.9164133738601823,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7788325471698113,
+      "coverage": 0.305,
+      "min_decidedness": 0.6214825334530037,
+      "n_prefix": 61
+    },
+    {
+      "auroc_b_signed": 0.9166666666666666,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7799972826086956,
+      "coverage": 0.31,
+      "min_decidedness": 0.6179895113877145,
+      "n_prefix": 62
+    },
+    {
+      "auroc_b_signed": 0.9154518950437318,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7833269230769231,
+      "coverage": 0.315,
+      "min_decidedness": 0.6146004342986777,
+      "n_prefix": 63
+    },
+    {
+      "auroc_b_signed": 0.9142857142857143,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7632909173697187,
+      "coverage": 0.32,
+      "min_decidedness": 0.6057448520996165,
+      "n_prefix": 64
+    },
+    {
+      "auroc_b_signed": 0.9131652661064426,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7765532544378698,
+      "coverage": 0.325,
+      "min_decidedness": 0.600003036404933,
+      "n_prefix": 65
+    },
+    {
+      "auroc_b_signed": 0.9189542483660131,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8,
+      "coverage": 0.33,
+      "min_decidedness": 0.5973501555623492,
+      "n_prefix": 66
+    },
+    {
+      "auroc_b_signed": 0.917948717948718,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7856547619047619,
+      "coverage": 0.335,
+      "min_decidedness": 0.5856717432573009,
+      "n_prefix": 67
+    },
+    {
+      "auroc_b_signed": 0.9169811320754717,
+      "ci_hi": 1.0,
+      "ci_lo": 0.7910438844831488,
+      "coverage": 0.34,
+      "min_decidedness": 0.584053770652349,
+      "n_prefix": 68
+    },
+    {
+      "auroc_b_signed": 0.9221698113207547,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8042183364637583,
+      "coverage": 0.345,
+      "min_decidedness": 0.5838018815371946,
+      "n_prefix": 69
+    },
+    {
+      "auroc_b_signed": 0.9267480577136515,
+      "ci_hi": 1.0,
+      "ci_lo": 0.82784261699963,
+      "coverage": 0.35,
+      "min_decidedness": 0.5774566039321186,
+      "n_prefix": 70
+    },
+    {
+      "auroc_b_signed": 0.9308176100628931,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8260029644268775,
+      "coverage": 0.355,
+      "min_decidedness": 0.5730728237776245,
+      "n_prefix": 71
+    },
+    {
+      "auroc_b_signed": 0.9300411522633745,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8180669447055139,
+      "coverage": 0.36,
+      "min_decidedness": 0.5659915277361585,
+      "n_prefix": 72
+    },
+    {
+      "auroc_b_signed": 0.9292929292929293,
+      "ci_hi": 1.0,
+      "ci_lo": 0.8216556603773585,
+      "coverage": 0.365,
+      "min_decidedness": 0.5600055932014454,
+      "n_prefix": 73
+    },
+    {
+      "auroc_b_signed": 0.9275793650793651,
+      "ci_hi": 1.0,
+      "ci_lo": 0.820218253968254,
+      "coverage": 0.37,
+      "min_decidedness": 0.5584950640865289,
+      "n_prefix": 74
+    },
+    {
+      "auroc_b_signed": 0.9238721804511278,
+      "ci_hi": 0.9976636615329655,
+      "ci_lo": 0.8184207856288448,
+      "coverage": 0.375,
+      "min_decidedness": 0.5564274090108242,
+      "n_prefix": 75
+    },
+    {
+      "auroc_b_signed": 0.9276785714285715,
+      "ci_hi": 0.9956740019240019,
+      "ci_lo": 0.8273120267889562,
+      "coverage": 0.38,
+      "min_decidedness": 0.5557623572593727,
+      "n_prefix": 76
+    },
+    {
+      "auroc_b_signed": 0.9228070175438596,
+      "ci_hi": 0.9948811560086709,
+      "ci_lo": 0.8191394415786457,
+      "coverage": 0.385,
+      "min_decidedness": 0.5473047997191194,
+      "n_prefix": 77
+    },
+    {
+      "auroc_b_signed": 0.9055973266499582,
+      "ci_hi": 0.9877265625,
+      "ci_lo": 0.8055459770114943,
+      "coverage": 0.39,
+      "min_decidedness": 0.5427095963921177,
+      "n_prefix": 78
+    },
+    {
+      "auroc_b_signed": 0.9098883572567783,
+      "ci_hi": 0.9889745484400656,
+      "ci_lo": 0.8109401149992014,
+      "coverage": 0.395,
+      "min_decidedness": 0.5424943296360227,
+      "n_prefix": 79
+    },
+    {
+      "auroc_b_signed": 0.9090909090909091,
+      "ci_hi": 0.9850087890625,
+      "ci_lo": 0.8070778906627964,
+      "coverage": 0.4,
+      "min_decidedness": 0.5304904787849446,
+      "n_prefix": 80
+    },
+    {
+      "auroc_b_signed": 0.9067796610169492,
+      "ci_hi": 0.9857665061922044,
+      "ci_lo": 0.802856928678518,
+      "coverage": 0.405,
+      "min_decidedness": 0.5180950904770945,
+      "n_prefix": 81
+    },
+    {
+      "auroc_b_signed": 0.9045454545454545,
+      "ci_hi": 0.9858138678451178,
+      "ci_lo": 0.8015952050795504,
+      "coverage": 0.41,
+      "min_decidedness": 0.5156048055834316,
+      "n_prefix": 82
+    },
+    {
+      "auroc_b_signed": 0.9023845007451565,
+      "ci_hi": 0.980989010989011,
+      "ci_lo": 0.8007264957264958,
+      "coverage": 0.415,
+      "min_decidedness": 0.5124702090876254,
+      "n_prefix": 83
+    },
+    {
+      "auroc_b_signed": 0.9002932551319648,
+      "ci_hi": 0.980791788856305,
+      "ci_lo": 0.7967379385964912,
+      "coverage": 0.42,
+      "min_decidedness": 0.5121583064924426,
+      "n_prefix": 84
+    },
+    {
+      "auroc_b_signed": 0.9039270687237027,
+      "ci_hi": 0.9799147580227743,
+      "ci_lo": 0.8012965846994535,
+      "coverage": 0.425,
+      "min_decidedness": 0.5086657220646575,
+      "n_prefix": 85
+    },
+    {
+      "auroc_b_signed": 0.9033816425120773,
+      "ci_hi": 0.9801183712121212,
+      "ci_lo": 0.7996758786063701,
+      "coverage": 0.43,
+      "min_decidedness": 0.5078987066978174,
+      "n_prefix": 86
+    },
+    {
+      "auroc_b_signed": 0.9028532608695653,
+      "ci_hi": 0.9798931458548331,
+      "ci_lo": 0.8067956349206349,
+      "coverage": 0.435,
+      "min_decidedness": 0.5020302624944404,
+      "n_prefix": 87
+    },
+    {
+      "auroc_b_signed": 0.90625,
+      "ci_hi": 0.9799818553916914,
+      "ci_lo": 0.8102941176470588,
+      "coverage": 0.44,
+      "min_decidedness": 0.49630744445586383,
+      "n_prefix": 88
+    },
+    {
+      "auroc_b_signed": 0.9064102564102564,
+      "ci_hi": 0.9840617848970252,
+      "ci_lo": 0.8079573133601267,
+      "coverage": 0.445,
+      "min_decidedness": 0.49380794920145904,
+      "n_prefix": 89
+    },
+    {
+      "auroc_b_signed": 0.9071969696969696,
+      "ci_hi": 0.9810682523997741,
+      "ci_lo": 0.815024877662132,
+      "coverage": 0.45,
+      "min_decidedness": 0.4845012369676134,
+      "n_prefix": 90
+    },
+    {
+      "auroc_b_signed": 0.9109090909090909,
+      "ci_hi": 0.9802861394557824,
+      "ci_lo": 0.8183273237179488,
+      "coverage": 0.455,
+      "min_decidedness": 0.47789615248094736,
+      "n_prefix": 91
+    },
+    {
+      "auroc_b_signed": 0.9137529137529137,
+      "ci_hi": 0.9837696634351565,
+      "ci_lo": 0.8272710561497326,
+      "coverage": 0.46,
+      "min_decidedness": 0.46969029271379714,
+      "n_prefix": 92
+    },
+    {
+      "auroc_b_signed": 0.9169472502805835,
+      "ci_hi": 0.9829418228829994,
+      "ci_lo": 0.8297081320450886,
+      "coverage": 0.465,
+      "min_decidedness": 0.4654905609760197,
+      "n_prefix": 93
+    },
+    {
+      "auroc_b_signed": 0.9193722943722943,
+      "ci_hi": 0.984156387600968,
+      "ci_lo": 0.8302350598199478,
+      "coverage": 0.47,
+      "min_decidedness": 0.4597607294478281,
+      "n_prefix": 94
+    },
+    {
+      "auroc_b_signed": 0.9179104477611939,
+      "ci_hi": 0.9788430474627616,
+      "ci_lo": 0.8348294253691515,
+      "coverage": 0.475,
+      "min_decidedness": 0.4577114081836988,
+      "n_prefix": 95
+    },
+    {
+      "auroc_b_signed": 0.9164915966386554,
+      "ci_hi": 0.9833338956365272,
+      "ci_lo": 0.8332325593475663,
+      "coverage": 0.48,
+      "min_decidedness": 0.4550490738071464,
+      "n_prefix": 96
+    },
+    {
+      "auroc_b_signed": 0.9193711967545639,
+      "ci_hi": 0.9802283418602679,
+      "ci_lo": 0.8407336420713989,
+      "coverage": 0.485,
+      "min_decidedness": 0.4509022952142517,
+      "n_prefix": 97
+    },
+    {
+      "auroc_b_signed": 0.9220588235294118,
+      "ci_hi": 0.9813677313677314,
+      "ci_lo": 0.8430302852199808,
+      "coverage": 0.49,
+      "min_decidedness": 0.4465180809225083,
+      "n_prefix": 98
+    },
+    {
+      "auroc_b_signed": 0.9188405797101449,
+      "ci_hi": 0.9809966023446416,
+      "ci_lo": 0.8436172019584416,
+      "coverage": 0.495,
+      "min_decidedness": 0.4379240913402782,
+      "n_prefix": 99
+    },
+    {
+      "auroc_b_signed": 0.9195238095238095,
+      "ci_hi": 0.9851240471485037,
+      "ci_lo": 0.8391190476190475,
+      "coverage": 0.5,
+      "min_decidedness": 0.42984684633467574,
+      "n_prefix": 100
+    },
+    {
+      "auroc_b_signed": 0.9183098591549296,
+      "ci_hi": 0.9821813392928406,
+      "ci_lo": 0.8345453547769176,
+      "coverage": 0.505,
+      "min_decidedness": 0.42511798776902654,
+      "n_prefix": 101
+    },
+    {
+      "auroc_b_signed": 0.9204906860517945,
+      "ci_hi": 0.9836528716668427,
+      "ci_lo": 0.8392713133640554,
+      "coverage": 0.51,
+      "min_decidedness": 0.4248785859970081,
+      "n_prefix": 102
+    },
+    {
+      "auroc_b_signed": 0.9184587813620071,
+      "ci_hi": 0.9794156532805429,
+      "ci_lo": 0.8251842275371688,
+      "coverage": 0.515,
+      "min_decidedness": 0.41634046859345775,
+      "n_prefix": 103
+    },
+    {
+      "auroc_b_signed": 0.9205729166666667,
+      "ci_hi": 0.9770519372208828,
+      "ci_lo": 0.8413517720306514,
+      "coverage": 0.52,
+      "min_decidedness": 0.39501233706207073,
+      "n_prefix": 104
+    },
+    {
+      "auroc_b_signed": 0.9225589225589226,
+      "ci_hi": 0.9815097989713722,
+      "ci_lo": 0.8356024184942397,
+      "coverage": 0.525,
+      "min_decidedness": 0.3848703861839205,
+      "n_prefix": 105
+    },
+    {
+      "auroc_b_signed": 0.9248366013071896,
+      "ci_hi": 0.9828495236122617,
+      "ci_lo": 0.8475603070175439,
+      "coverage": 0.53,
+      "min_decidedness": 0.3689344124437611,
+      "n_prefix": 106
+    },
+    {
+      "auroc_b_signed": 0.9269841269841269,
+      "ci_hi": 0.9847502737946667,
+      "ci_lo": 0.8531494968994968,
+      "coverage": 0.535,
+      "min_decidedness": 0.3641972380538945,
+      "n_prefix": 107
+    },
+    {
+      "auroc_b_signed": 0.9260273972602739,
+      "ci_hi": 0.9828563306605906,
+      "ci_lo": 0.8519670771479982,
+      "coverage": 0.54,
+      "min_decidedness": 0.3545698391522154,
+      "n_prefix": 108
+    },
+    {
+      "auroc_b_signed": 0.9277016742770168,
+      "ci_hi": 0.9827992277992277,
+      "ci_lo": 0.8637084884586745,
+      "coverage": 0.545,
+      "min_decidedness": 0.3536911921570141,
+      "n_prefix": 109
+    },
+    {
+      "auroc_b_signed": 0.9268018018018018,
+      "ci_hi": 0.9834939458391618,
+      "ci_lo": 0.8597696125969783,
+      "coverage": 0.55,
+      "min_decidedness": 0.3495742942382331,
+      "n_prefix": 110
+    },
+    {
+      "auroc_b_signed": 0.9259259259259259,
+      "ci_hi": 0.9772151599930057,
+      "ci_lo": 0.8483332556969572,
+      "coverage": 0.555,
+      "min_decidedness": 0.3482492527795503,
+      "n_prefix": 111
+    },
+    {
+      "auroc_b_signed": 0.9279279279279279,
+      "ci_hi": 0.9830404274298004,
+      "ci_lo": 0.858655812476026,
+      "coverage": 0.56,
+      "min_decidedness": 0.3396687909319902,
+      "n_prefix": 112
+    },
+    {
+      "auroc_b_signed": 0.9298245614035088,
+      "ci_hi": 0.9817688048984832,
+      "ci_lo": 0.8653555504889293,
+      "coverage": 0.565,
+      "min_decidedness": 0.33881869430572464,
+      "n_prefix": 113
+    },
+    {
+      "auroc_b_signed": 0.9283240997229917,
+      "ci_hi": 0.9806171906818261,
+      "ci_lo": 0.8635656130268199,
+      "coverage": 0.57,
+      "min_decidedness": 0.33636934370091387,
+      "n_prefix": 114
+    },
+    {
+      "auroc_b_signed": 0.9275461380724539,
+      "ci_hi": 0.9825778384032667,
+      "ci_lo": 0.8592010576553969,
+      "coverage": 0.575,
+      "min_decidedness": 0.32402540039612343,
+      "n_prefix": 115
+    },
+    {
+      "auroc_b_signed": 0.929070929070929,
+      "ci_hi": 0.9825593794329497,
+      "ci_lo": 0.8682794432156251,
+      "coverage": 0.58,
+      "min_decidedness": 0.32354152018266835,
+      "n_prefix": 116
+    },
+    {
+      "auroc_b_signed": 0.9308441558441558,
+      "ci_hi": 0.9797909407665505,
+      "ci_lo": 0.8658681042401973,
+      "coverage": 0.585,
+      "min_decidedness": 0.3133230203680233,
+      "n_prefix": 117
+    },
+    {
+      "auroc_b_signed": 0.9322141273360787,
+      "ci_hi": 0.9825006526733501,
+      "ci_lo": 0.8742679281780031,
+      "coverage": 0.59,
+      "min_decidedness": 0.3084352049926893,
+      "n_prefix": 118
+    },
+    {
+      "auroc_b_signed": 0.9335188620902908,
+      "ci_hi": 0.984087688211565,
+      "ci_lo": 0.8770565640687591,
+      "coverage": 0.595,
+      "min_decidedness": 0.29696031826885366,
+      "n_prefix": 119
+    },
+    {
+      "auroc_b_signed": 0.935064935064935,
+      "ci_hi": 0.9855804815395333,
+      "ci_lo": 0.8781990478966288,
+      "coverage": 0.6,
+      "min_decidedness": 0.29516999348273554,
+      "n_prefix": 120
+    },
+    {
+      "auroc_b_signed": 0.9365407319952774,
+      "ci_hi": 0.9845076978159685,
+      "ci_lo": 0.8786583167714187,
+      "coverage": 0.605,
+      "min_decidedness": 0.2941842077262921,
+      "n_prefix": 121
+    },
+    {
+      "auroc_b_signed": 0.9376623376623376,
+      "ci_hi": 0.9847050220579632,
+      "ci_lo": 0.8843141233766234,
+      "coverage": 0.61,
+      "min_decidedness": 0.2907273014062328,
+      "n_prefix": 122
+    },
+    {
+      "auroc_b_signed": 0.9390175042348956,
+      "ci_hi": 0.9861910241657076,
+      "ci_lo": 0.8897688962358614,
+      "coverage": 0.615,
+      "min_decidedness": 0.2875532367606814,
+      "n_prefix": 123
+    },
+    {
+      "auroc_b_signed": 0.9400386847195358,
+      "ci_hi": 0.9852481846671253,
+      "ci_lo": 0.8898286795361384,
+      "coverage": 0.62,
+      "min_decidedness": 0.2824897763261681,
+      "n_prefix": 124
+    },
+    {
+      "auroc_b_signed": 0.9412878787878788,
+      "ci_hi": 0.9850682267115601,
+      "ci_lo": 0.8866603114930183,
+      "coverage": 0.625,
+      "min_decidedness": 0.2669775467828757,
+      "n_prefix": 125
+    },
+    {
+      "auroc_b_signed": 0.9422210442618605,
+      "ci_hi": 0.9849856516886134,
+      "ci_lo": 0.8910393924445775,
+      "coverage": 0.63,
+      "min_decidedness": 0.2542872891213744,
+      "n_prefix": 126
+    },
+    {
+      "auroc_b_signed": 0.9433766233766234,
+      "ci_hi": 0.985776492773565,
+      "ci_lo": 0.8910201149425288,
+      "coverage": 0.635,
+      "min_decidedness": 0.25088811752639556,
+      "n_prefix": 127
+    },
+    {
+      "auroc_b_signed": 0.9442322383498856,
+      "ci_hi": 0.9823048878205128,
+      "ci_lo": 0.8948461012311902,
+      "coverage": 0.64,
+      "min_decidedness": 0.24143217706820358,
+      "n_prefix": 128
+    },
+    {
+      "auroc_b_signed": 0.9436902966314732,
+      "ci_hi": 0.9846804871373837,
+      "ci_lo": 0.8866937915949709,
+      "coverage": 0.645,
+      "min_decidedness": 0.2398822069748423,
+      "n_prefix": 129
+    },
+    {
+      "auroc_b_signed": 0.9447731755424064,
+      "ci_hi": 0.9841634689336278,
+      "ci_lo": 0.8947073618948619,
+      "coverage": 0.65,
+      "min_decidedness": 0.23794918712660576,
+      "n_prefix": 130
+    },
+    {
+      "auroc_b_signed": 0.9447419668938656,
+      "ci_hi": 0.984670230502768,
+      "ci_lo": 0.8944946522416324,
+      "coverage": 0.655,
+      "min_decidedness": 0.2353910118100137,
+      "n_prefix": 131
+    },
+    {
+      "auroc_b_signed": 0.9453069023166945,
+      "ci_hi": 0.9845074352811182,
+      "ci_lo": 0.8937312413763674,
+      "coverage": 0.66,
+      "min_decidedness": 0.23177761732286228,
+      "n_prefix": 132
+    },
+    {
+      "auroc_b_signed": 0.9460853258321612,
+      "ci_hi": 0.9836885335822118,
+      "ci_lo": 0.8955634537628799,
+      "coverage": 0.665,
+      "min_decidedness": 0.22800383011110822,
+      "n_prefix": 133
+    },
+    {
+      "auroc_b_signed": 0.9444444444444444,
+      "ci_hi": 0.984634118707724,
+      "ci_lo": 0.8890653268145357,
+      "coverage": 0.67,
+      "min_decidedness": 0.22314240591466938,
+      "n_prefix": 134
+    },
+    {
+      "auroc_b_signed": 0.942615454961134,
+      "ci_hi": 0.9825949367088607,
+      "ci_lo": 0.8897994755103688,
+      "coverage": 0.675,
+      "min_decidedness": 0.2217775617314537,
+      "n_prefix": 135
+    },
+    {
+      "auroc_b_signed": 0.9408310749774165,
+      "ci_hi": 0.9802066864295125,
+      "ci_lo": 0.8907857239591395,
+      "coverage": 0.68,
+      "min_decidedness": 0.2141082366988183,
+      "n_prefix": 136
+    },
+    {
+      "auroc_b_signed": 0.9416851441241685,
+      "ci_hi": 0.9802336028751123,
+      "ci_lo": 0.8921865719406042,
+      "coverage": 0.685,
+      "min_decidedness": 0.21122039886668775,
+      "n_prefix": 137
+    },
+    {
+      "auroc_b_signed": 0.9403310104529616,
+      "ci_hi": 0.9786331300813008,
+      "ci_lo": 0.8903277531384809,
+      "coverage": 0.69,
+      "min_decidedness": 0.20504917129219266,
+      "n_prefix": 138
+    },
+    {
+      "auroc_b_signed": 0.9388984509466437,
+      "ci_hi": 0.9787404177831949,
+      "ci_lo": 0.8911194779116467,
+      "coverage": 0.695,
+      "min_decidedness": 0.2046789837961025,
+      "n_prefix": 139
+    },
+    {
+      "auroc_b_signed": 0.9397590361445782,
+      "ci_hi": 0.977299239722046,
+      "ci_lo": 0.893814734968759,
+      "coverage": 0.7,
+      "min_decidedness": 0.200727513157794,
+      "n_prefix": 140
+    },
+    {
+      "auroc_b_signed": 0.9401744910677192,
+      "ci_hi": 0.9794321961422777,
+      "ci_lo": 0.8932732293697206,
+      "coverage": 0.705,
+      "min_decidedness": 0.19479002665891443,
+      "n_prefix": 141
+    },
+    {
+      "auroc_b_signed": 0.9409842760874005,
+      "ci_hi": 0.9798852465186765,
+      "ci_lo": 0.8959665857153064,
+      "coverage": 0.71,
+      "min_decidedness": 0.18795009290774883,
+      "n_prefix": 142
+    },
+    {
+      "auroc_b_signed": 0.9417670682730923,
+      "ci_hi": 0.9793272379579168,
+      "ci_lo": 0.8981936675272519,
+      "coverage": 0.715,
+      "min_decidedness": 0.17797845234815807,
+      "n_prefix": 143
+    },
+    {
+      "auroc_b_signed": 0.9425241951412205,
+      "ci_hi": 0.9779719706119163,
+      "ci_lo": 0.8965097756922283,
+      "coverage": 0.72,
+      "min_decidedness": 0.17609258375937964,
+      "n_prefix": 144
+    },
+    {
+      "auroc_b_signed": 0.9417022930431402,
+      "ci_hi": 0.9798067523873976,
+      "ci_lo": 0.8954553955373245,
+      "coverage": 0.725,
+      "min_decidedness": 0.17570613418768255,
+      "n_prefix": 145
+    },
+    {
+      "auroc_b_signed": 0.9424364123159303,
+      "ci_hi": 0.9786241294936947,
+      "ci_lo": 0.8977942073170732,
+      "coverage": 0.73,
+      "min_decidedness": 0.17563643340499835,
+      "n_prefix": 146
+    },
+    {
+      "auroc_b_signed": 0.9431475903614458,
+      "ci_hi": 0.9789655502997267,
+      "ci_lo": 0.8984858568267005,
+      "coverage": 0.735,
+      "min_decidedness": 0.1735821681581397,
+      "n_prefix": 147
+    },
+    {
+      "auroc_b_signed": 0.9436515291936978,
+      "ci_hi": 0.9795076421849882,
+      "ci_lo": 0.901017733213556,
+      "coverage": 0.74,
+      "min_decidedness": 0.17182855157337618,
+      "n_prefix": 148
+    },
+    {
+      "auroc_b_signed": 0.9426798101496896,
+      "ci_hi": 0.9783869038530054,
+      "ci_lo": 0.8974115277424101,
+      "coverage": 0.745,
+      "min_decidedness": 0.17134719955628752,
+      "n_prefix": 149
+    },
+    {
+      "auroc_b_signed": 0.9404761904761905,
+      "ci_hi": 0.9767386510548276,
+      "ci_lo": 0.8983908908075426,
+      "coverage": 0.75,
+      "min_decidedness": 0.16738129209955854,
+      "n_prefix": 150
+    },
+    {
+      "auroc_b_signed": 0.9399286987522282,
+      "ci_hi": 0.9779094827586207,
+      "ci_lo": 0.8972675724230856,
+      "coverage": 0.755,
+      "min_decidedness": 0.16312707976730567,
+      "n_prefix": 151
+    },
+    {
+      "auroc_b_signed": 0.9406496927129061,
+      "ci_hi": 0.974441993798742,
+      "ci_lo": 0.9009589765632622,
+      "coverage": 0.76,
+      "min_decidedness": 0.151468474422072,
+      "n_prefix": 152
+    },
+    {
+      "auroc_b_signed": 0.9394463667820069,
+      "ci_hi": 0.9743010585305105,
+      "ci_lo": 0.8983491100948874,
+      "coverage": 0.765,
+      "min_decidedness": 0.1497655048694866,
+      "n_prefix": 153
+    },
+    {
+      "auroc_b_signed": 0.940153452685422,
+      "ci_hi": 0.9752975020141547,
+      "ci_lo": 0.9012812229260663,
+      "coverage": 0.77,
+      "min_decidedness": 0.14604879595193357,
+      "n_prefix": 154
+    },
+    {
+      "auroc_b_signed": 0.9401680672268907,
+      "ci_hi": 0.9757561821772021,
+      "ci_lo": 0.8992483495981629,
+      "coverage": 0.775,
+      "min_decidedness": 0.14513483994902243,
+      "n_prefix": 155
+    },
+    {
+      "auroc_b_signed": 0.9408450704225352,
+      "ci_hi": 0.9753306878306877,
+      "ci_lo": 0.8943626661022905,
+      "coverage": 0.78,
+      "min_decidedness": 0.14397237491844628,
+      "n_prefix": 156
+    },
+    {
+      "auroc_b_signed": 0.9376023583360629,
+      "ci_hi": 0.9729073403636149,
+      "ci_lo": 0.8945102510624091,
+      "coverage": 0.785,
+      "min_decidedness": 0.13638973431640178,
+      "n_prefix": 157
+    },
+    {
+      "auroc_b_signed": 0.9383074935400516,
+      "ci_hi": 0.9721286223105252,
+      "ci_lo": 0.8954467910082259,
+      "coverage": 0.79,
+      "min_decidedness": 0.13518350336067725,
+      "n_prefix": 158
+    },
+    {
+      "auroc_b_signed": 0.9372605363984675,
+      "ci_hi": 0.9706276540485962,
+      "ci_lo": 0.8950625624583611,
+      "coverage": 0.795,
+      "min_decidedness": 0.13140861458371167,
+      "n_prefix": 159
+    },
+    {
+      "auroc_b_signed": 0.9356060606060607,
+      "ci_hi": 0.970835754674201,
+      "ci_lo": 0.8943940035976753,
+      "coverage": 0.8,
+      "min_decidedness": 0.13041081495402906,
+      "n_prefix": 160
+    },
+    {
+      "auroc_b_signed": 0.936332503113325,
+      "ci_hi": 0.9706362090290661,
+      "ci_lo": 0.892639723158482,
+      "coverage": 0.805,
+      "min_decidedness": 0.12856319330884936,
+      "n_prefix": 161
+    },
+    {
+      "auroc_b_signed": 0.936578624078624,
+      "ci_hi": 0.9713293091333869,
+      "ci_lo": 0.8930287382700939,
+      "coverage": 0.81,
+      "min_decidedness": 0.12854369213724626,
+      "n_prefix": 162
+    },
+    {
+      "auroc_b_signed": 0.9372727272727273,
+      "ci_hi": 0.9723744113029827,
+      "ci_lo": 0.8937813695204473,
+      "coverage": 0.815,
+      "min_decidedness": 0.12559115109343774,
+      "n_prefix": 163
+    },
+    {
+      "auroc_b_signed": 0.9366028708133971,
+      "ci_hi": 0.9743253872564217,
+      "ci_lo": 0.8932277762769585,
+      "coverage": 0.82,
+      "min_decidedness": 0.12534166162929683,
+      "n_prefix": 164
+    },
+    {
+      "auroc_b_signed": 0.9374262101534828,
+      "ci_hi": 0.9719353138129196,
+      "ci_lo": 0.8947542151934834,
+      "coverage": 0.825,
+      "min_decidedness": 0.12325563062507189,
+      "n_prefix": 165
+    },
+    {
+      "auroc_b_signed": 0.9369172494172495,
+      "ci_hi": 0.9710154428904428,
+      "ci_lo": 0.8954072908093171,
+      "coverage": 0.83,
+      "min_decidedness": 0.1224384094489348,
+      "n_prefix": 166
+    },
+    {
+      "auroc_b_signed": 0.937571921749137,
+      "ci_hi": 0.9691372824437341,
+      "ci_lo": 0.8943869676965062,
+      "coverage": 0.835,
+      "min_decidedness": 0.12053924589468926,
+      "n_prefix": 167
+    },
+    {
+      "auroc_b_signed": 0.9383522727272727,
+      "ci_hi": 0.9710923367355405,
+      "ci_lo": 0.8987144886363637,
+      "coverage": 0.84,
+      "min_decidedness": 0.11728719773389236,
+      "n_prefix": 168
+    },
+    {
+      "auroc_b_signed": 0.9349719101123595,
+      "ci_hi": 0.96905835519278,
+      "ci_lo": 0.8988728162161588,
+      "coverage": 0.845,
+      "min_decidedness": 0.11598728712213656,
+      "n_prefix": 169
+    },
+    {
+      "auroc_b_signed": 0.9356360105423777,
+      "ci_hi": 0.9697314966151991,
+      "ci_lo": 0.8923527477851606,
+      "coverage": 0.85,
+      "min_decidedness": 0.11236597977477386,
+      "n_prefix": 170
+    },
+    {
+      "auroc_b_signed": 0.9334705075445816,
+      "ci_hi": 0.9676123890180547,
+      "ci_lo": 0.8910154439240927,
+      "coverage": 0.855,
+      "min_decidedness": 0.10991986143203292,
+      "n_prefix": 171
+    },
+    {
+      "auroc_b_signed": 0.9336043360433605,
+      "ci_hi": 0.9679313269155775,
+      "ci_lo": 0.8900144692264257,
+      "coverage": 0.86,
+      "min_decidedness": 0.10569073996970424,
+      "n_prefix": 172
+    },
+    {
+      "auroc_b_signed": 0.9340026773761714,
+      "ci_hi": 0.9674709667547194,
+      "ci_lo": 0.8907828235651369,
+      "coverage": 0.865,
+      "min_decidedness": 0.10408162785142092,
+      "n_prefix": 173
+    },
+    {
+      "auroc_b_signed": 0.9346560846560847,
+      "ci_hi": 0.9649711338775504,
+      "ci_lo": 0.89234375,
+      "coverage": 0.87,
+      "min_decidedness": 0.10248526259903187,
+      "n_prefix": 174
+    },
+    {
+      "auroc_b_signed": 0.9350326797385621,
+      "ci_hi": 0.9665848421190159,
+      "ci_lo": 0.8933569822452656,
+      "coverage": 0.875,
+      "min_decidedness": 0.09768320089740645,
+      "n_prefix": 175
+    },
+    {
+      "auroc_b_signed": 0.9348837209302325,
+      "ci_hi": 0.9677897958400492,
+      "ci_lo": 0.8961975179821671,
+      "coverage": 0.88,
+      "min_decidedness": 0.09091155792326466,
+      "n_prefix": 176
+    },
+    {
+      "auroc_b_signed": 0.9352490421455939,
+      "ci_hi": 0.9673622748219523,
+      "ci_lo": 0.8980980847663809,
+      "coverage": 0.885,
+      "min_decidedness": 0.08958890569529776,
+      "n_prefix": 177
+    },
+    {
+      "auroc_b_signed": 0.9351010101010102,
+      "ci_hi": 0.9699493873326122,
+      "ci_lo": 0.8954696382634486,
+      "coverage": 0.89,
+      "min_decidedness": 0.0882390169031253,
+      "n_prefix": 178
+    },
+    {
+      "auroc_b_signed": 0.9355805243445692,
+      "ci_hi": 0.9685324136512218,
+      "ci_lo": 0.8976806943056944,
+      "coverage": 0.895,
+      "min_decidedness": 0.08390119405222235,
+      "n_prefix": 179
+    },
+    {
+      "auroc_b_signed": 0.9362962962962963,
+      "ci_hi": 0.9696633717959563,
+      "ci_lo": 0.8933183083128525,
+      "coverage": 0.9,
+      "min_decidedness": 0.0838322093782333,
+      "n_prefix": 180
+    },
+    {
+      "auroc_b_signed": 0.9347985347985348,
+      "ci_hi": 0.9685820308537298,
+      "ci_lo": 0.8957218526730722,
+      "coverage": 0.905,
+      "min_decidedness": 0.07756531868411198,
+      "n_prefix": 181
+    },
+    {
+      "auroc_b_signed": 0.9334541062801932,
+      "ci_hi": 0.9644861616747475,
+      "ci_lo": 0.891356421606393,
+      "coverage": 0.91,
+      "min_decidedness": 0.0771225609807924,
+      "n_prefix": 182
+    },
+    {
+      "auroc_b_signed": 0.9313022700119474,
+      "ci_hi": 0.9629186320993043,
+      "ci_lo": 0.8927090578486545,
+      "coverage": 0.915,
+      "min_decidedness": 0.07018332414147133,
+      "n_prefix": 183
+    },
+    {
+      "auroc_b_signed": 0.9318208673047382,
+      "ci_hi": 0.9636905256288563,
+      "ci_lo": 0.8940566404733938,
+      "coverage": 0.92,
+      "min_decidedness": 0.06437021292987173,
+      "n_prefix": 184
+    },
+    {
+      "auroc_b_signed": 0.9307926116436754,
+      "ci_hi": 0.962131602457564,
+      "ci_lo": 0.892929976296515,
+      "coverage": 0.925,
+      "min_decidedness": 0.06149881314274497,
+      "n_prefix": 185
+    },
+    {
+      "auroc_b_signed": 0.9311979648473636,
+      "ci_hi": 0.9652806712962964,
+      "ci_lo": 0.8916680068927607,
+      "coverage": 0.93,
+      "min_decidedness": 0.052601114658513526,
+      "n_prefix": 186
+    },
+    {
+      "auroc_b_signed": 0.931594600777854,
+      "ci_hi": 0.9629083007852474,
+      "ci_lo": 0.8940004736481211,
+      "coverage": 0.935,
+      "min_decidedness": 0.05245477149415023,
+      "n_prefix": 187
+    },
+    {
+      "auroc_b_signed": 0.9320959710276142,
+      "ci_hi": 0.964970303061802,
+      "ci_lo": 0.8913453547836377,
+      "coverage": 0.94,
+      "min_decidedness": 0.048562840868181634,
+      "n_prefix": 188
+    },
+    {
+      "auroc_b_signed": 0.9311310190369542,
+      "ci_hi": 0.9642622273628553,
+      "ci_lo": 0.8913276053968847,
+      "coverage": 0.945,
+      "min_decidedness": 0.03925451857957074,
+      "n_prefix": 189
+    },
+    {
+      "auroc_b_signed": 0.9315235457063712,
+      "ci_hi": 0.9638529516086061,
+      "ci_lo": 0.8912202388870414,
+      "coverage": 0.95,
+      "min_decidedness": 0.03667374775365096,
+      "n_prefix": 190
+    },
+    {
+      "auroc_b_signed": 0.930482456140351,
+      "ci_hi": 0.9644010498380843,
+      "ci_lo": 0.890324686108642,
+      "coverage": 0.955,
+      "min_decidedness": 0.03107538661848941,
+      "n_prefix": 191
+    },
+    {
+      "auroc_b_signed": 0.9308810763888888,
+      "ci_hi": 0.9631380488678933,
+      "ci_lo": 0.8914967675475988,
+      "coverage": 0.96,
+      "min_decidedness": 0.020676217896577587,
+      "n_prefix": 192
+    },
+    {
+      "auroc_b_signed": 0.9284793814432989,
+      "ci_hi": 0.9613354001887836,
+      "ci_lo": 0.8923198924731183,
+      "coverage": 0.965,
+      "min_decidedness": 0.020562122996087673,
+      "n_prefix": 193
+    },
+    {
+      "auroc_b_signed": 0.9288978637474758,
+      "ci_hi": 0.9612785358494669,
+      "ci_lo": 0.8890471141723437,
+      "coverage": 0.97,
+      "min_decidedness": 0.0147131360714607,
+      "n_prefix": 194
+    },
+    {
+      "auroc_b_signed": 0.929202608878603,
+      "ci_hi": 0.9613783068783069,
+      "ci_lo": 0.8920576478013886,
+      "coverage": 0.975,
+      "min_decidedness": 0.014294170905051251,
+      "n_prefix": 195
+    },
+    {
+      "auroc_b_signed": 0.9260724698042482,
+      "ci_hi": 0.9588792024963332,
+      "ci_lo": 0.8871800557659932,
+      "coverage": 0.98,
+      "min_decidedness": 0.011350627114444378,
+      "n_prefix": 196
+    }
+  ],
+  "data_hash_sha256": "94825f3d2029c0049f2a087b0093117edc576ada84f2a073b4eccdbf8e3fe3d5",
+  "eligible_coverage": 0.98,
+  "eps": 1e-12,
+  "high_coverage_bar": 0.8,
+  "max_significant_coverage": 0.98,
+  "model": "mlx-community/Qwen2.5-7B-Instruct-4bit",
+  "n_total": 200,
+  "out_of_scope": "Downstream self-retraction / trajectory self-contradiction is a separate later-gen-step experiment and is forbidden from entering this metric.",
+  "prereg_path": "/Users/msrk/Desktop/the_GOAT/wiki/results/step0-belief-readout-prereg-2026-05-17.md",
+  "prompt_strategy_name": "raw_passthrough",
+  "schema_version": "belief_readout_v1",
+  "scoring_mode": "token_partition_v1",
+  "spec_path": "/Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/run-02/Qwen2.5-7B-Instruct-4bit_belief_spec.json",
+  "undetermined_coverage": 0.0,
+  "verdict": "Recoverable-for-M"
+}

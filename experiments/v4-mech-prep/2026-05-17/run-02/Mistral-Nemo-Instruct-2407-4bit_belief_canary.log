@@ -1,0 +1,11 @@
+/Users/msrk/Documents/PRI_at_commitment/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+  Loading model: mlx-community/Mistral-Nemo-Instruct-2407-4bit
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files: 100%|██████████| 9/9 [00:00<00:00, 175575.52it/s]
+     Layers: 40 | Probed: {'final': 39} | Output projection: lm_head (V=131072, D=5120)
+[belief-canary] wrote /Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/run-02/Mistral-Nemo-Instruct-2407-4bit_belief_canary.json
+[belief-canary] wrote /Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/run-02/Mistral-Nemo-Instruct-2407-4bit_belief_spec.json
+[belief-canary] sample=0 label_B=1 p_yes=0.4034 p_no=0.5857 decidedness=0.9891 semantic=0.9891 control=0.0000
+[belief-canary] sample=1 label_B=0 p_yes=0.7948 p_no=0.2009 decidedness=0.9957 semantic=0.9957 control=0.0000
+[belief-canary] sample=2 label_B=0 p_yes=0.9404 p_no=0.0578 decidedness=0.9982 semantic=0.9982 control=0.0000

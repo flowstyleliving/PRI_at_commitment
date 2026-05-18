@@ -1,0 +1,11 @@
+/Users/msrk/Documents/PRI_at_commitment/.venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+
+  Loading model: mlx-community/Phi-4-mini-instruct-4bit
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 196608.00it/s]
+     Layers: 32 | Probed: {'final': 31} | Output projection: tied_embed (V=200064, D=3072)
+[belief-canary] wrote /Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/run-02/Phi-4-mini-instruct-4bit_belief_canary.json
+[belief-canary] wrote /Users/msrk/Documents/PRI_at_commitment/experiments/v4-mech-prep/2026-05-17/run-02/Phi-4-mini-instruct-4bit_belief_spec.json
+[belief-canary] sample=0 label_B=1 p_yes=0.0364 p_no=0.9566 decidedness=0.9930 semantic=0.9933 control=0.0037
+[belief-canary] sample=1 label_B=0 p_yes=0.1886 p_no=0.7642 decidedness=0.9529 semantic=0.9531 control=0.0343
+[belief-canary] sample=2 label_B=0 p_yes=0.5916 p_no=0.3292 decidedness=0.9207 semantic=0.9209 control=0.0600
