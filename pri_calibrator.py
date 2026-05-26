@@ -1066,7 +1066,7 @@ def load_calibration_state(
     if gamma is None:
         raise RuntimeError(
             f"could not extract final-RMSNorm gamma for {model_slug}; "
-            f"check pri_runtime._extract_final_rmsnorm_gamma logs."
+            f"check pri_v2_mlx_pipeline._extract_final_rmsnorm_gamma logs."
         )
     pri_computer = pipeline.PRIComputer(projection, final_norm_gamma=gamma)
     prompt_strategy = io_plugins.get_prompt_strategy(model_slug)
@@ -1270,7 +1270,7 @@ def calibrate_with_state(
     for w in warnings_list:
         print(f"[calibrate]   WARNING: {w}")
 
-    pipeline_path = REPO_ROOT / "pri_runtime.py"
+    pipeline_path = REPO_ROOT / "pri_v2_mlx_pipeline.py"
     io_plugins_path = REPO_ROOT / "pri_v2_io_plugins.py"
     model_adapters_path = REPO_ROOT / "model_adapters.py"
     attention_wrapper_path = REPO_ROOT / "scripts" / "diagnose_inter_head_disagreement.py"
