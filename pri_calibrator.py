@@ -67,7 +67,7 @@ class _LazyRuntimeProxy:
 
     def _load(self):
         if self._module is None:
-            self._module = importlib.import_module("pri_runtime")
+            self._module = importlib.import_module("pri_v2_mlx_pipeline")
         return self._module
 
     def __getattr__(self, name: str):
@@ -1387,8 +1387,8 @@ def main() -> int:
     p.add_argument("--task-label", default="", help="task identifier for provenance (e.g. 'anli_r2_dev')")
     p.add_argument("--seed", type=int, default=20260512)
     p.add_argument("--n-bootstrap", type=int, default=1000)
-    p.add_argument("--max-new-tokens", type=int, default=8,
-                   help="generation budget per sample (default 8 — covers panel steps 1..4 + safety)")
+    p.add_argument("--max-new-tokens", type=int, default=None,
+                   help="generation budget per sample (default 8, or 1 when --t0-commit)")
     p.add_argument("--layer", default="final", help="capture layer (default: final)")
     p.add_argument("--alpha", type=float, default=1.0)
     p.add_argument(
@@ -1436,7 +1436,7 @@ def main() -> int:
         else:
             attn_panel = list(ATTENTION_PANEL_T0)
         # Prefill is sufficient; one generation step to complete the trace cleanly.
-        if args.max_new_tokens == 8:  # only override if user didn't set it explicitly
+        if args.max_new_tokens is None:
             args.max_new_tokens = 1
     elif args.attention_multistep:
         attn_panel = list(ATTENTION_PANEL_MULTISTEP)
@@ -1446,6 +1446,9 @@ def main() -> int:
         attn_panel = list(ATTENTION_PANEL)
     else:
         attn_panel = []
+
+    if args.max_new_tokens is None:
+        args.max_new_tokens = 8
 
     if args.attention_only or args.t0_commit:
         panel = list(attn_panel) if attn_panel else list(ATTENTION_PANEL_T0 if args.t0_commit else ATTENTION_PANEL)

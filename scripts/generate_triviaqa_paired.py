@@ -125,7 +125,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-questions", type=int, default=50,
                         help="Number of unique questions (dataset size = 2× this)")
-    parser.add_argument("--seed", type=int, default=20260525)
+    parser.add_argument("--seed", type=int, default=20260526)
     parser.add_argument("--split", default="validation")
     parser.add_argument("--output", required=True)
     parser.add_argument("--no-shuffle", action="store_true",

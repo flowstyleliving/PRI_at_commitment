@@ -33,6 +33,34 @@ DATASET="${DATASET:-both}"
 ANLI_DATA="$SEALED_DATA_DIR/anli_R1_seed20260526_n200.jsonl"
 TRIVIAQA_DATA="$SEALED_DATA_DIR/triviaqa_paired_seed20260526_n100.jsonl"
 
+ANLI_HASH="d1a3aed5e86af05c4b7bd459bb5938bbcca7ab6c758c855e1bce3f938b62f48e"
+TRIVIAQA_HASH="f2f870a7e2feb2c711b2a782f6aa6040233c8915bb066e87421e85f4778b3149"
+
+# ─── Data integrity gate ──────────────────────────────────────────────────────
+verify_hash() {
+  local file="$1" expected="$2" label="$3"
+  if [[ ! -f "$file" ]]; then
+    echo "[v4-sealed-sweep] ABORT: $label not found: $file" >&2; exit 1
+  fi
+  local actual
+  actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "[v4-sealed-sweep] ABORT: $label hash mismatch" >&2
+    echo "[v4-sealed-sweep]   expected: $expected" >&2
+    echo "[v4-sealed-sweep]   got:      $actual" >&2
+    echo "[v4-sealed-sweep] This sweep is NOT part of the sealed pre-registration." >&2
+    exit 1
+  fi
+  echo "[v4-sealed-sweep] hash OK: $label"
+}
+
+if [[ "$DATASET" == "anli" || "$DATASET" == "both" ]]; then
+  verify_hash "$ANLI_DATA" "$ANLI_HASH" "ANLI R1 n=200"
+fi
+if [[ "$DATASET" == "triviaqa" || "$DATASET" == "both" ]]; then
+  verify_hash "$TRIVIAQA_DATA" "$TRIVIAQA_HASH" "TriviaQA n=100"
+fi
+
 # ─── Panel (9 models, v4 sealed panel) ───────────────────────────────────────
 MODELS=(
   "mlx-community/Llama-3.2-3B-Instruct-4bit"
