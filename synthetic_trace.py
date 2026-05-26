@@ -19,6 +19,8 @@ PRIMARY_SIGNALS = (
     "pri",
     "delta_sigma_jsd",
     "acr_mid_mean",
+    "momentum_pc1_ratio",
+    "momentum_mean_cos",
 )
 
 
@@ -111,6 +113,10 @@ def _compute_canonical_metrics(
         hidden_vectors,
         cfg_obj=cfg,
     )
+    momentum_features = pri_metrics.compute_momentum_features(
+        hidden_vectors,
+        cfg_obj=cfg,
+    )
     acr_mid_mean, acr_full_mean, acr_by_layer, acr_valid = _compute_acr(adapter)
 
     metrics = {
@@ -125,6 +131,8 @@ def _compute_canonical_metrics(
         "pc1_ratio": float(svd_features["pc1_ratio"]),
         "effective_rank": float(svd_features["effective_rank"]),
         "spectral_entropy": float(svd_features["spectral_entropy"]),
+        "momentum_pc1_ratio": float(momentum_features["momentum_pc1_ratio"]),
+        "momentum_mean_cos": float(momentum_features["momentum_mean_cos"]),
     }
     return metrics, current_hidden_final
 

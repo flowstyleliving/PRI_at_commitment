@@ -791,7 +791,6 @@ def trace_sample(
     v3_all_for_first_n_steps: int = 12,
     v3_probe_fallback: Optional[List[str]] = None,
     h_prev_sanity_max_ratio: float = 10.0,
-    capture_momentum: bool = False,
 ) -> Dict[str, Any]:
     """Run prefix + generation tracing while collecting hidden states.
 
@@ -982,8 +981,6 @@ def trace_sample(
     gen_layer_indices_by_step: List[Dict[str, int]] = []
     h_prev_source_log: List[str] = []
     step0_sanity: Dict[str, float] = {}
-    gen_step0_all_layers: List[np.ndarray] = []
-    _momentum_width = max(2, len(str(max(n_layers - 1, 0))))
 
     # At the start, prev_probs comes from the last prefix position.
     prev_probs = prefix_probs[-1]
@@ -1011,23 +1008,9 @@ def trace_sample(
             _targets_for_step(step_idx)
         )
         step_input = np.array(token_ids, dtype=np.int32)[None, :]
-        _expand_for_momentum = (
-            capture_momentum and step_idx == 0
-            and not (v3_capture and step_idx < v3_all_for_first_n_steps)
+        step_logits, step_selected_hidden = _forward_with_hidden(
+            step_input, step_idx_to_name
         )
-        if _expand_for_momentum:
-            _all_idx_to_name = {i: f"layer_{i:0{_momentum_width}d}" for i in range(n_layers)}
-            step_logits, step_selected_hidden = _forward_with_hidden(
-                step_input, _all_idx_to_name
-            )
-            for _pname, _pidx in layer_indices.items():
-                _cname = f"layer_{_pidx:0{_momentum_width}d}"
-                if _cname in step_selected_hidden:
-                    step_selected_hidden.setdefault(_pname, step_selected_hidden[_cname])
-        else:
-            step_logits, step_selected_hidden = _forward_with_hidden(
-                step_input, step_idx_to_name
-            )
 
         # Alias paper-path names onto the canonical captures so the paper-path
         # consumer loop below (and any v2 downstream reader) sees the same
@@ -1044,24 +1027,6 @@ def trace_sample(
                 step_selected_hidden.setdefault(
                     paper_name, step_selected_hidden[canonical_name]
                 )
-
-        # Momentum: collect all-layer hiddens at last position (step 0 only).
-        if capture_momentum and step_idx == 0:
-            missing = [
-                f"layer_{i:0{_momentum_width}d}"
-                for i in range(n_layers)
-                if f"layer_{i:0{_momentum_width}d}" not in step_selected_hidden
-            ]
-            if missing:
-                raise RuntimeError(
-                    f"capture_momentum: incomplete all-layer capture at step 0 — "
-                    f"{len(missing)}/{n_layers} layers missing: {missing[:5]}"
-                    f"{'...' if len(missing) > 5 else ''}"
-                )
-            gen_step0_all_layers = [
-                step_selected_hidden[f"layer_{i:0{_momentum_width}d}"][0, -1].astype(np.float32)
-                for i in range(n_layers)
-            ]
 
         # 6. Capture h_t (position T) for paper-path layers and build the v3
         #    two-position capture when enabled.
@@ -1174,7 +1139,6 @@ def trace_sample(
         "step0_sanity": step0_sanity,
         "v3_capture": bool(v3_capture),
         "n_layers": n_layers,
-        "gen_step0_all_layers": gen_step0_all_layers,
     }
 
 
@@ -1659,66 +1623,6 @@ class PRIComputer:
                 out.update(v3_centered_out)
 
         return out
-
-    def layer_momentum_v1_aligned(
-        self,
-        layer_hidden_states: List[np.ndarray],
-        rank: int = 1,
-    ) -> Dict[str, float]:
-        """
-        W_u-grounded momentum: project each layer increment onto the top-rank
-        right singular vectors of the raw W_u, then measure directional coherence
-        toward the primary output axis (v1).
-
-        Inputs are residual-stream hidden states [h_0, h_1, ..., h_L] at a
-        single generation step (pre-final-norm). Uses the static raw-W_u SVD
-        basis (same as null_ratio_raw path) so no p_t required — comparable
-        across steps.
-
-        Returns:
-            momentum_v1_mean_align: mean dot product of unit increments with v1
-            momentum_v1_frac_positive: fraction of increments with positive v1 alignment
-            momentum_v1_peak_window3: max mean v1 alignment in any 3-layer window
-        """
-        nan_out = {
-            "momentum_v1_mean_align": float("nan"),
-            "momentum_v1_frac_positive": float("nan"),
-            "momentum_v1_peak_window3": float("nan"),
-        }
-        if len(layer_hidden_states) < 3:
-            return nan_out
-
-        basis = self.output_projection.raw_right_singular_vectors(rank)
-        if basis is None:
-            return nan_out
-        Vt_raw, _, _ = basis
-        v1 = Vt_raw[0].astype(np.float64)
-
-        alignments: List[float] = []
-        for i in range(1, len(layer_hidden_states)):
-            inc = layer_hidden_states[i].astype(np.float64) - layer_hidden_states[i - 1].astype(np.float64)
-            norm = float(np.linalg.norm(inc))
-            if norm > 1e-8:
-                alignments.append(float(np.dot(inc / norm, v1)))
-
-        if len(alignments) < 2:
-            return nan_out
-
-        arr = np.array(alignments, dtype=np.float64)
-        mean_align = float(np.mean(arr))
-        frac_positive = float(np.mean(arr > 0.0))
-
-        if len(arr) >= 3:
-            windows = [float(np.mean(arr[i: i + 3])) for i in range(len(arr) - 2)]
-            peak_window3 = float(max(windows))
-        else:
-            peak_window3 = mean_align
-
-        return {
-            "momentum_v1_mean_align": mean_align,
-            "momentum_v1_frac_positive": frac_positive,
-            "momentum_v1_peak_window3": peak_window3,
-        }
 
 
 # ╔════════════════════════════════════════════════════════════════╗
