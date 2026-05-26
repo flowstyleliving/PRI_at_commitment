@@ -45,14 +45,6 @@ PROMPT_TEMPLATE = (
 SCHEMA_VERSION = "triviaqa_paired_v1"
 
 
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def _canonical(item: dict[str, Any]) -> str:
     return item["answer"]["value"].strip()
 
@@ -76,9 +68,11 @@ def _select_pairs(
     """Return up to n_questions dicts each with correct + wrong answer."""
     pairs: list[dict] = []
     used_qids: set[str] = set()
-    # Build a shuffled donor pool for each candidate so wrong answers are diverse
+    used_wrong_answers: set[str] = set()
     donor_pool = list(pool)
+    rng.shuffle(donor_pool)  # shuffle once; iterate from the front per question
 
+    donor_idx = 0
     for item in pool:
         if len(pairs) >= n_questions:
             break
@@ -89,28 +83,27 @@ def _select_pairs(
         correct = _canonical(item)
         correct_set = _all_aliases(item)
 
-        # Cross-sample wrong answer from a randomly-ordered donor pool
-        rng.shuffle(donor_pool)
         wrong: str | None = None
-        for other in donor_pool:
+        for i in range(len(donor_pool)):
+            other = donor_pool[(donor_idx + i) % len(donor_pool)]
             if other["question_id"] == qid:
                 continue
             candidate = _canonical(other)
             if candidate.lower().strip() in correct_set:
-                continue  # accidentally correct — skip
+                continue
             if len(candidate.strip()) < 2:
-                continue  # degenerate
-            # Avoid re-using an answer already picked as wrong for another question
-            already_used = any(p["wrong_answer"] == candidate for p in pairs)
-            if already_used:
+                continue
+            if candidate in used_wrong_answers:
                 continue
             wrong = candidate
+            donor_idx = (donor_idx + i + 1) % len(donor_pool)
             break
 
         if wrong is None:
-            continue  # couldn't find a clean unique wrong answer — skip
+            continue
 
         used_qids.add(qid)
+        used_wrong_answers.add(wrong)
         pairs.append({
             "question": item["question"].strip(),
             "correct_answer": correct,
@@ -151,34 +144,23 @@ def main() -> None:
 
     records: list[dict] = []
     for pair in pairs:
-        # correct answer — label 0 (YES expected; analogous to entailment in ANLI)
-        records.append({
-            "prompt": PROMPT_TEMPLATE.format(
-                question=pair["question"],
-                answer=pair["correct_answer"],
-            ),
-            "label": 0,
-            "meta": {
-                "question_id": pair["question_id"],
-                "correct_answer": pair["correct_answer"],
-                "wrong_answer": pair["wrong_answer"],
-                "kind": "correct",
-            },
-        })
-        # wrong answer — label 1 (NO expected; analogous to contradiction in ANLI)
-        records.append({
-            "prompt": PROMPT_TEMPLATE.format(
-                question=pair["question"],
-                answer=pair["wrong_answer"],
-            ),
-            "label": 1,
-            "meta": {
-                "question_id": pair["question_id"],
-                "correct_answer": pair["correct_answer"],
-                "wrong_answer": pair["wrong_answer"],
-                "kind": "wrong",
-            },
-        })
+        for label, answer_key, kind in (
+            (0, "correct_answer", "correct"),
+            (1, "wrong_answer", "wrong"),
+        ):
+            records.append({
+                "prompt": PROMPT_TEMPLATE.format(
+                    question=pair["question"],
+                    answer=pair[answer_key],
+                ),
+                "label": label,
+                "meta": {
+                    "question_id": pair["question_id"],
+                    "correct_answer": pair["correct_answer"],
+                    "wrong_answer": pair["wrong_answer"],
+                    "kind": kind,
+                },
+            })
 
     if not args.no_shuffle:
         rng.shuffle(records)
@@ -187,7 +169,7 @@ def main() -> None:
         for r in records:
             f.write(json.dumps(r) + "\n")
 
-    data_hash = _sha256_file(out_path)
+    data_hash = hashlib.sha256(out_path.read_bytes()).hexdigest()
     n_label1 = sum(r["label"] for r in records)
     n_label0 = len(records) - n_label1
 

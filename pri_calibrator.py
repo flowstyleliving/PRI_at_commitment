@@ -1451,7 +1451,7 @@ def main() -> int:
         args.max_new_tokens = 8
 
     if args.attention_only or args.t0_commit:
-        panel = list(attn_panel) if attn_panel else list(ATTENTION_PANEL_T0 if args.t0_commit else ATTENTION_PANEL)
+        panel = list(attn_panel) if attn_panel else list(ATTENTION_PANEL)
     elif attn_panel:
         panel = list(DEFAULT_PANEL) + attn_panel
     else:
