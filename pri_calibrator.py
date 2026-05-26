@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import hashlib
+import importlib
 import json
 import sys
 from dataclasses import dataclass, field, asdict
@@ -54,10 +55,27 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-# Reuse existing pipeline primitives.
-import pri_v2_mlx_pipeline as pipeline
 import pri_v2_io_plugins as io_plugins
 from analyze_adaptive_step import auroc_signed
+
+
+class _LazyRuntimeProxy:
+    """Defer the MLX runtime import until a model/tracing path actually needs it."""
+
+    def __init__(self) -> None:
+        self._module = None
+
+    def _load(self):
+        if self._module is None:
+            self._module = importlib.import_module("pri_runtime")
+        return self._module
+
+    def __getattr__(self, name: str):
+        return getattr(self._load(), name)
+
+
+# Reuse existing runtime primitives without forcing MLX import on pure-helper paths.
+pipeline = _LazyRuntimeProxy()
 
 
 SCHEMA_VERSION = "1.2"
@@ -118,6 +136,12 @@ ATTENTION_METRICS_V_NORMS: Tuple[str, ...] = (
 )
 ATTENTION_STEPS_DEFAULT: Tuple[int, ...] = (1,)              # commit step only (v3 sealed plane)
 ATTENTION_STEPS_MULTISTEP: Tuple[int, ...] = (1, 2, 3, 4)    # multistep: commit + 3 post-commit
+# t=0 instrument: prefill last-position attention (captures[layer][0]).
+# Semantically consistent across all models — always the last prompt token's
+# attention over the full prefix, computed in the same forward pass as
+# prefix_probs[-1]. Gen_step=1 captures differ per model (query is the first
+# generated token: \n for Mistral, YES/NO for Qwen, etc.).
+ATTENTION_STEPS_T0: Tuple[int, ...] = (0,)
 
 
 def make_attention_panel(
@@ -196,6 +220,13 @@ ATTENTION_PANEL_MULTISTEP: List[PanelCell] = make_attention_panel(ATTENTION_STEP
 # slightly more wall per sample but typically <5% overhead.
 ATTENTION_PANEL_WITH_V_NORMS: List[PanelCell] = make_attention_panel(
     ATTENTION_STEPS_DEFAULT, with_v_norms=True,
+)
+
+# t=0 variants: same 12-cell and 21-cell panels but at step=0 (prefill
+# last-position). Use with --t0-commit to measure at the honest commit locus.
+ATTENTION_PANEL_T0: List[PanelCell] = make_attention_panel(ATTENTION_STEPS_T0)
+ATTENTION_PANEL_T0_WITH_V_NORMS: List[PanelCell] = make_attention_panel(
+    ATTENTION_STEPS_T0, with_v_norms=True,
 )
 
 
@@ -327,7 +358,7 @@ def _compute_attention_score(
     (shape (n_kv_heads, T)); if `v_norm_captures` is None, those cells
     return None.
 
-    Returns None if the cell can't be evaluated (wrong family, step < 1,
+    Returns None if the cell can't be evaluated (wrong family, step < 0,
     label unparseable, captures missing/too-short, or n_kv_heads unknown
     for js_kv_groups, or v_norm_captures missing for a v-norm metric).
     Deferred imports break the import cycle with the diagnostic module.
@@ -338,7 +369,7 @@ def _compute_attention_score(
     )
 
     step, fam, label = cell
-    if fam != ATTENTION_FAMILY or step < 1:
+    if fam != ATTENTION_FAMILY or step < 0:
         return None
     parsed = _split_attention_label(label)
     if parsed is None:
@@ -1035,7 +1066,7 @@ def load_calibration_state(
     if gamma is None:
         raise RuntimeError(
             f"could not extract final-RMSNorm gamma for {model_slug}; "
-            f"check pri_v2_mlx_pipeline._extract_final_rmsnorm_gamma logs."
+            f"check pri_runtime._extract_final_rmsnorm_gamma logs."
         )
     pri_computer = pipeline.PRIComputer(projection, final_norm_gamma=gamma)
     prompt_strategy = io_plugins.get_prompt_strategy(model_slug)
@@ -1239,7 +1270,7 @@ def calibrate_with_state(
     for w in warnings_list:
         print(f"[calibrate]   WARNING: {w}")
 
-    pipeline_path = REPO_ROOT / "pri_v2_mlx_pipeline.py"
+    pipeline_path = REPO_ROOT / "pri_runtime.py"
     io_plugins_path = REPO_ROOT / "pri_v2_io_plugins.py"
     model_adapters_path = REPO_ROOT / "model_adapters.py"
     attention_wrapper_path = REPO_ROOT / "scripts" / "diagnose_inter_head_disagreement.py"
@@ -1386,9 +1417,28 @@ def main() -> int:
              "--attention / --attention-multistep / --attention-with-v-norms to pick "
              "which attention panel.",
     )
+    p.add_argument(
+        "--t0-commit", action="store_true",
+        help="use the t=0 prefill-last-position attention locus instead of gen_step=1. "
+             "Captures captures[layer][0] (the prefill forward's last-query-row) rather "
+             "than captures[layer][1] (the first generated token's attention). "
+             "Semantically consistent across all models: always the last prompt token's "
+             "attention over the full prefix. Implies --attention-only (use with "
+             "--attention-with-v-norms for the 21-cell panel). "
+             "Sets max_new_tokens=1 unless overridden (prefill is sufficient).",
+    )
     args = p.parse_args()
 
-    if args.attention_multistep:
+    # t=0-commit overrides the step index. Panel constants use step=0 instead of step=1.
+    if args.t0_commit:
+        if args.attention_with_v_norms:
+            attn_panel = list(ATTENTION_PANEL_T0_WITH_V_NORMS)
+        else:
+            attn_panel = list(ATTENTION_PANEL_T0)
+        # Prefill is sufficient; one generation step to complete the trace cleanly.
+        if args.max_new_tokens == 8:  # only override if user didn't set it explicitly
+            args.max_new_tokens = 1
+    elif args.attention_multistep:
         attn_panel = list(ATTENTION_PANEL_MULTISTEP)
     elif args.attention_with_v_norms:
         attn_panel = list(ATTENTION_PANEL_WITH_V_NORMS)
@@ -1397,8 +1447,8 @@ def main() -> int:
     else:
         attn_panel = []
 
-    if args.attention_only:
-        panel = list(attn_panel) if attn_panel else list(ATTENTION_PANEL)
+    if args.attention_only or args.t0_commit:
+        panel = list(attn_panel) if attn_panel else list(ATTENTION_PANEL_T0 if args.t0_commit else ATTENTION_PANEL)
     elif attn_panel:
         panel = list(DEFAULT_PANEL) + attn_panel
     else:
