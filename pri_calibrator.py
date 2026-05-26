@@ -143,6 +143,17 @@ ATTENTION_STEPS_MULTISTEP: Tuple[int, ...] = (1, 2, 3, 4)    # multistep: commit
 # generated token: \n for Mistral, YES/NO for Qwen, etc.).
 ATTENTION_STEPS_T0: Tuple[int, ...] = (0,)
 
+# ─── Momentum cell family ─────────────────────────────────────────────────────
+# W_u-grounded in-flight momentum at gen_step=0 (the commit step). Requires
+# all-layer hidden-state capture via `capture_momentum=True` in trace_sample.
+# Three readouts from `PRIComputer.layer_momentum_v1_aligned`:
+#   mean_align    — mean dot product of unit layer-increments with v1 (signed)
+#   frac_positive — fraction of layers with positive v1 alignment
+#   peak_window3  — max mean v1 alignment in any 3-layer window
+MOMENTUM_FAMILY = "Momentum"
+MOMENTUM_METRICS: Tuple[str, ...] = ("mean_align", "frac_positive", "peak_window3")
+MOMENTUM_PANEL: List[PanelCell] = [(0, MOMENTUM_FAMILY, m) for m in MOMENTUM_METRICS]
+
 
 def make_attention_panel(
     steps: Tuple[int, ...] = ATTENTION_STEPS_DEFAULT,
@@ -265,6 +276,8 @@ def _column_name(cell: PanelCell) -> str:
         return f"composite::{label}"
     if fam == ATTENTION_FAMILY:
         return f"attention::{label}"
+    if fam == MOMENTUM_FAMILY:
+        return f"momentum_v1_{label}"
     base_fam = _resid_base_family(fam) if fam in DERIVED_RESID_FAMILIES else fam
     rank = int(label.split("=")[1])
     if base_fam == "Fisher":
@@ -333,6 +346,34 @@ def _requires_v_norm_capture(panel: List[PanelCell]) -> bool:
         if _is_v_norm_metric(metric):
             return True
     return False
+
+
+def _requires_momentum_capture(panel: List[PanelCell]) -> bool:
+    return any(fam == MOMENTUM_FAMILY for _, fam, _ in panel)
+
+
+def _compute_momentum_score(
+    cell: PanelCell,
+    trace: Dict[str, Any],
+    pri_computer: pipeline.PRIComputer,
+) -> Optional[float]:
+    """Compute one Momentum-family cell from all-layer hidden states at step 0.
+
+    Calls PRIComputer.layer_momentum_v1_aligned on the ordered layer states
+    captured during the commit forward pass. Returns None if all-layer states
+    are unavailable or the model has fewer than 3 layers.
+    """
+    step, fam, metric = cell
+    if fam != MOMENTUM_FAMILY or step != 0:
+        return None
+    all_layers = trace.get("gen_step0_all_layers")
+    if not all_layers or len(all_layers) < 3:
+        return None
+    result = pri_computer.layer_momentum_v1_aligned(all_layers)
+    v = result.get(f"momentum_v1_{metric}")
+    if v is None or not np.isfinite(v):
+        return None
+    return float(v)
 
 
 def _compute_attention_score(
@@ -534,7 +575,8 @@ def _compute_panel_scores_for_sample(
     # Cache per-step compute_step output. parquet gen_step 1 → idx 0.
     # Skip steps only used by Attention cells (those don't need compute_step).
     steps_needed = sorted({
-        step for step, fam, _ in panel if fam != ATTENTION_FAMILY
+        step for step, fam, _ in panel
+        if fam not in (ATTENTION_FAMILY, MOMENTUM_FAMILY)
     })
     step_to_result: Dict[int, Optional[Dict[str, float]]] = {}
     for step in steps_needed:
@@ -573,6 +615,11 @@ def _compute_panel_scores_for_sample(
                 cell, attention_captures, attention_n_kv_heads or {},
                 v_norm_captures=attention_v_norm_captures,
             )
+            continue
+
+        # ── Momentum: computed from all-layer hidden states at step 0 ──
+        if fam == MOMENTUM_FAMILY:
+            out[cell] = _compute_momentum_score(cell, trace, pri_computer)
             continue
 
         res = step_to_result.get(step)
@@ -668,6 +715,8 @@ def _trace_one_prompt(
     prompt: str,
     prompt_strategy,
     max_new_tokens: int,
+    *,
+    capture_momentum: bool = False,
 ) -> Dict[str, Any]:
     """Apply the model's chat-template strategy then call trace_sample."""
     wrapped = prompt_strategy(prompt, tokenizer)
@@ -678,6 +727,7 @@ def _trace_one_prompt(
         layer_indices=layer_indices,
         output_projection=projection,
         max_new_tokens=max_new_tokens,
+        capture_momentum=capture_momentum,
     )
 
 
@@ -1117,6 +1167,9 @@ def calibrate_with_state(
     # path is gated on actually needing attention captures.
     capture_attention = _requires_attention_capture(panel)
     capture_v_norms = _requires_v_norm_capture(panel) if capture_attention else False
+    capture_momentum = _requires_momentum_capture(panel)
+    if capture_momentum:
+        print("[calibrate] momentum capture active: all-layer hidden states at gen_step=0")
     attention_target_map: Dict[str, int] = {}
     attention_n_kv_heads: Dict[str, int] = {}
     if capture_attention:
@@ -1152,6 +1205,7 @@ def calibrate_with_state(
                 trace = _trace_one_prompt(
                     state.model, state.tokenizer, state.projection, state.layer_indices,
                     prompt, state.prompt_strategy, max_new_tokens,
+                    capture_momentum=capture_momentum,
                 )
                 sample_captures = {tag: list(caps[tag]) for tag in caps}
                 sample_v_norm_captures = {tag: list(v_caps[tag]) for tag in v_caps}
@@ -1160,6 +1214,7 @@ def calibrate_with_state(
                 trace = _trace_one_prompt(
                     state.model, state.tokenizer, state.projection, state.layer_indices,
                     prompt, state.prompt_strategy, max_new_tokens,
+                    capture_momentum=capture_momentum,
                 )
                 # Snapshot captures while still inside the context — the
                 # wrapper restores native attention on exit, so we read
@@ -1169,6 +1224,7 @@ def calibrate_with_state(
             trace = _trace_one_prompt(
                 state.model, state.tokenizer, state.projection, state.layer_indices,
                 prompt, state.prompt_strategy, max_new_tokens,
+                capture_momentum=capture_momentum,
             )
             sample_captures = None
 
@@ -1214,7 +1270,7 @@ def calibrate_with_state(
             "sign": sign,
             "n_evaluated": n_eval,
         })
-        if np.isfinite(auc):
+        if np.isfinite(auc) and cell[1] != MOMENTUM_FAMILY:
             d = abs(auc - 0.5)
             if d > best_distance:
                 best_distance = d
@@ -1427,6 +1483,15 @@ def main() -> int:
              "--attention-with-v-norms for the 21-cell panel). "
              "Sets max_new_tokens=1 unless overridden (prefill is sufficient).",
     )
+    p.add_argument(
+        "--momentum",
+        action="store_true",
+        default=False,
+        help="add the 3-cell MOMENTUM_PANEL (W_u-grounded in-flight layer momentum at "
+             "gen_step=0: mean_align, frac_positive, peak_window3). Requires all-layer "
+             "hidden capture at the commit step (~2× slower than sparse capture). "
+             "Combine with --t0-commit for the primary instrument.",
+    )
     args = p.parse_args()
 
     # t=0-commit overrides the step index. Panel constants use step=0 instead of step=1.
@@ -1456,6 +1521,9 @@ def main() -> int:
         panel = list(DEFAULT_PANEL) + attn_panel
     else:
         panel = None  # use DEFAULT_PANEL
+
+    if args.momentum:
+        panel = list(panel or DEFAULT_PANEL) + MOMENTUM_PANEL
 
     profile = calibrate(
         model_slug=args.model,
