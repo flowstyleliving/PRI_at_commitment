@@ -228,6 +228,18 @@ ATTENTION_PANEL_T0_WITH_V_NORMS: List[PanelCell] = make_attention_panel(
     ATTENTION_STEPS_T0, with_v_norms=True,
 )
 
+# 5-cell residual-stream panel at the t=0 locus (prefix-last-position hidden state).
+# Analogous to DEFAULT_PANEL scalar/Fisher/Raw cells but measured before any
+# generation — same locus as ATTENTION_PANEL_T0. Requires the step=0 branch in
+# _compute_panel_scores_for_sample. Use with --t0-residual.
+T0_RESIDUAL_PANEL: List[PanelCell] = [
+    (0, "scalar", "d_F_full"),
+    (0, "scalar", "kl_discharged"),
+    (0, "Fisher", "r=1"),
+    (0, "Fisher", "r=2"),
+    (0, "Raw", "r=21"),
+]
+
 
 # Families that are DERIVED (not present as a direct compute_step column).
 # Residualized cells use the base family's column + a regression against
@@ -537,6 +549,22 @@ def _compute_panel_scores_for_sample(
     })
     step_to_result: Dict[int, Optional[Dict[str, float]]] = {}
     for step in steps_needed:
+        if step == 0:
+            # t=0: last prefix-token hidden state — same locus as ATTENTION_PANEL_T0.
+            prefix_seq = trace["prefix_hidden"][layer_name]
+            h_t0 = last_prefix
+            h_prev0 = prefix_seq[-2] if len(prefix_seq) >= 2 else last_prefix
+            p_t0 = trace["prefix_probs"][-1]
+            S_t0 = (float(gen_surprises[0])
+                    if len(gen_surprises) > 0 and np.isfinite(gen_surprises[0])
+                    else 0.0)
+            step_to_result[0] = pri_computer.compute_step(
+                h_t=h_t0, h_prev=h_prev0, p_t=p_t0, S_t=S_t0,
+                alpha=alpha, topk_values=[32], lowrank_values=[32],
+                v3_rank_values=list(v3_rank_values),
+                v3_capture_raw=True, v3_capture_centered=True,
+            )
+            continue
         idx = step - 1
         if idx >= n_gen:
             step_to_result[step] = None
@@ -1408,7 +1436,7 @@ def main() -> int:
         help="extend the panel with the 21-cell ATTENTION_PANEL_WITH_V_NORMS — adds 3 SinkProbe-"
              "style value-norm metrics (v_norm_bos, v_norm_max, v_norm_lastq_weighted) at the "
              "commit step on top of the 12 default attention cells. Switches to the "
-             "attention_capture_with_values capture path; <5% extra wall vs --attention.",
+             "attention_capture_with_values capture path; <5%% extra wall vs --attention.",
     )
     p.add_argument(
         "--attention-only", action="store_true",
@@ -1425,6 +1453,13 @@ def main() -> int:
              "attention over the full prefix. Implies --attention-only (use with "
              "--attention-with-v-norms for the 21-cell panel). "
              "Sets max_new_tokens=1 unless overridden (prefill is sufficient).",
+    )
+    p.add_argument(
+        "--t0-residual", action="store_true",
+        help="use the 5-cell T0_RESIDUAL_PANEL — residual-stream cells (d_F_full, "
+             "kl_discharged, Fisher r=1/r=2, Raw r=21) measured at the t=0 prefix-last-"
+             "position locus. Structurally consistent across all model families. "
+             "Sets max_new_tokens=1 (prefill + one token for S_t).",
     )
     args = p.parse_args()
 
@@ -1446,10 +1481,14 @@ def main() -> int:
     else:
         attn_panel = []
 
+    if args.t0_residual and args.max_new_tokens is None:
+        args.max_new_tokens = 1
     if args.max_new_tokens is None:
         args.max_new_tokens = 8
 
-    if args.attention_only or args.t0_commit:
+    if args.t0_residual:
+        panel = list(T0_RESIDUAL_PANEL)
+    elif args.attention_only or args.t0_commit:
         panel = list(attn_panel) if attn_panel else list(ATTENTION_PANEL)
     elif attn_panel:
         panel = list(DEFAULT_PANEL) + attn_panel
