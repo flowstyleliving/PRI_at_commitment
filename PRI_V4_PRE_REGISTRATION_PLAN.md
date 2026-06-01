@@ -1,6 +1,8 @@
-# PRI v4 Pre-Registration Plan — Attention-Channel Calibrators at the Commit Step
+# PRI v4 Pre-Registration Plan — ACE: Attention Commitment Estimator at the Commit Step
 
 **Status:** `frozen 2026-05-26` — datasets generated; implementation verified (109/109 fast tests pass); Phi-3.5-mini gate decision INCLUDED. Do NOT re-specify sealed parameters after this line.
+
+**Paper method name (locked 2026-05-30, post-seal presentation-only):** **ACE — Attention Commitment Estimator.** This is the paper-facing name for the v4 sealed instrument (attention-channel calibrators at the t=0 commit step). It does NOT modify any sealed parameter, panel cell, gate threshold, or analysis-plane choice below. All references to "attention-channel calibrators at the commit step," "v4 calibrator," or "t=0 attention calibrators" in this document refer to ACE.
 
 **Feeds:** `wiki/paper/v4-scope-2026-05-26.md` (paper-scope decision memo, Step 5.2)
 **Mirrors structure of:** `PRI_V3_PRE_REGISTRATION_PLAN.md`
@@ -15,7 +17,7 @@
 
 ## One-line thesis
 
-Per-model attention-channel calibrators at the t=0 commit step discriminate YES/NO reliably across architectures and task domains, but no single attention cell transfers — neither metric nor sign is portable across model or dataset, only the generation locus (step=1, final layer) is stable.
+Per-model **ACE** (Attention Commitment Estimator) calibrators at the t=0 commit step discriminate YES/NO reliably across architectures and task domains, but no single attention cell transfers — neither metric nor sign is portable across model or dataset, only the generation locus (step=1, final layer) is stable.
 
 ---
 
