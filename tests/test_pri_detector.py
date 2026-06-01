@@ -47,13 +47,13 @@ class TestConstructionPure:
 
     def test_strict_mode_rejects_io_plugins_drift(self, tmp_path, synthetic_profile_dict):
         """Codex review fix: strict mode must catch drift in pri_v2_io_plugins.py,
-        not just pri_v2_mlx_pipeline.py. We forge a profile whose io_plugins
+        not just pri_runtime.py. We forge a profile whose io_plugins
         hash is wrong, and assert strict mode raises BEFORE any model load."""
         # Set the pipeline hash to the current real value so it passes,
         # but leave the io_plugins hash as the fixture's bogus "0000aaaa".
         import pri_calibrator
         synthetic_profile_dict["provenance"]["pipeline_module_hash_sha256"] = (
-            pri_calibrator._hash_file(pri_calibrator.REPO_ROOT / "pri_v2_mlx_pipeline.py")
+            pri_calibrator._hash_file(pri_calibrator.REPO_ROOT / "pri_runtime.py")
         )
         # io_plugins_module_hash_sha256 stays as "0000aaaa" → must be flagged.
         path = tmp_path / "drifted.json"
@@ -66,7 +66,7 @@ class TestConstructionPure:
         forward methods, so drift there must be caught."""
         import pri_calibrator
         synthetic_profile_dict["provenance"]["pipeline_module_hash_sha256"] = (
-            pri_calibrator._hash_file(pri_calibrator.REPO_ROOT / "pri_v2_mlx_pipeline.py")
+            pri_calibrator._hash_file(pri_calibrator.REPO_ROOT / "pri_runtime.py")
         )
         synthetic_profile_dict["provenance"]["io_plugins_module_hash_sha256"] = (
             pri_calibrator._hash_file(pri_calibrator.REPO_ROOT / "pri_v2_io_plugins.py")

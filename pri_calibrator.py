@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import hashlib
+import importlib
 import json
 import sys
 from dataclasses import dataclass, field, asdict
@@ -54,10 +55,27 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-# Reuse existing pipeline primitives.
-import pri_v2_mlx_pipeline as pipeline
 import pri_v2_io_plugins as io_plugins
 from analyze_adaptive_step import auroc_signed
+
+
+class _LazyRuntimeProxy:
+    """Defer the MLX runtime import until a model/tracing path actually needs it."""
+
+    def __init__(self) -> None:
+        self._module = None
+
+    def _load(self):
+        if self._module is None:
+            self._module = importlib.import_module("pri_v2_mlx_pipeline")
+        return self._module
+
+    def __getattr__(self, name: str):
+        return getattr(self._load(), name)
+
+
+# Reuse existing runtime primitives without forcing MLX import on pure-helper paths.
+pipeline = _LazyRuntimeProxy()
 
 
 SCHEMA_VERSION = "1.2"
@@ -118,7 +136,12 @@ ATTENTION_METRICS_V_NORMS: Tuple[str, ...] = (
 )
 ATTENTION_STEPS_DEFAULT: Tuple[int, ...] = (1,)              # commit step only (v3 sealed plane)
 ATTENTION_STEPS_MULTISTEP: Tuple[int, ...] = (1, 2, 3, 4)    # multistep: commit + 3 post-commit
-
+# t=0 instrument: prefill last-position attention (captures[layer][0]).
+# Semantically consistent across all models — always the last prompt token's
+# attention over the full prefix, computed in the same forward pass as
+# prefix_probs[-1]. Gen_step=1 captures differ per model (query is the first
+# generated token: \n for Mistral, YES/NO for Qwen, etc.).
+ATTENTION_STEPS_T0: Tuple[int, ...] = (0,)
 
 def make_attention_panel(
     steps: Tuple[int, ...] = ATTENTION_STEPS_DEFAULT,
@@ -197,6 +220,25 @@ ATTENTION_PANEL_MULTISTEP: List[PanelCell] = make_attention_panel(ATTENTION_STEP
 ATTENTION_PANEL_WITH_V_NORMS: List[PanelCell] = make_attention_panel(
     ATTENTION_STEPS_DEFAULT, with_v_norms=True,
 )
+
+# t=0 variants: same 12-cell and 21-cell panels but at step=0 (prefill
+# last-position). Use with --t0-commit to measure at the honest commit locus.
+ATTENTION_PANEL_T0: List[PanelCell] = make_attention_panel(ATTENTION_STEPS_T0)
+ATTENTION_PANEL_T0_WITH_V_NORMS: List[PanelCell] = make_attention_panel(
+    ATTENTION_STEPS_T0, with_v_norms=True,
+)
+
+# 5-cell residual-stream panel at the t=0 locus (prefix-last-position hidden state).
+# Analogous to DEFAULT_PANEL scalar/Fisher/Raw cells but measured before any
+# generation — same locus as ATTENTION_PANEL_T0. Requires the step=0 branch in
+# _compute_panel_scores_for_sample. Use with --t0-residual.
+T0_RESIDUAL_PANEL: List[PanelCell] = [
+    (0, "scalar", "d_F_full"),
+    (0, "scalar", "kl_discharged"),
+    (0, "Fisher", "r=1"),
+    (0, "Fisher", "r=2"),
+    (0, "Raw", "r=21"),
+]
 
 
 # Families that are DERIVED (not present as a direct compute_step column).
@@ -327,7 +369,7 @@ def _compute_attention_score(
     (shape (n_kv_heads, T)); if `v_norm_captures` is None, those cells
     return None.
 
-    Returns None if the cell can't be evaluated (wrong family, step < 1,
+    Returns None if the cell can't be evaluated (wrong family, step < 0,
     label unparseable, captures missing/too-short, or n_kv_heads unknown
     for js_kv_groups, or v_norm_captures missing for a v-norm metric).
     Deferred imports break the import cycle with the diagnostic module.
@@ -338,7 +380,7 @@ def _compute_attention_score(
     )
 
     step, fam, label = cell
-    if fam != ATTENTION_FAMILY or step < 1:
+    if fam != ATTENTION_FAMILY or step < 0:
         return None
     parsed = _split_attention_label(label)
     if parsed is None:
@@ -507,6 +549,22 @@ def _compute_panel_scores_for_sample(
     })
     step_to_result: Dict[int, Optional[Dict[str, float]]] = {}
     for step in steps_needed:
+        if step == 0:
+            # t=0: last prefix-token hidden state — same locus as ATTENTION_PANEL_T0.
+            prefix_seq = trace["prefix_hidden"][layer_name]
+            h_t0 = last_prefix
+            h_prev0 = prefix_seq[-2] if len(prefix_seq) >= 2 else last_prefix
+            p_t0 = trace["prefix_probs"][-1]
+            S_t0 = (float(gen_surprises[0])
+                    if len(gen_surprises) > 0 and np.isfinite(gen_surprises[0])
+                    else 0.0)
+            step_to_result[0] = pri_computer.compute_step(
+                h_t=h_t0, h_prev=h_prev0, p_t=p_t0, S_t=S_t0,
+                alpha=alpha, topk_values=[32], lowrank_values=[32],
+                v3_rank_values=list(v3_rank_values),
+                v3_capture_raw=True, v3_capture_centered=True,
+            )
+            continue
         idx = step - 1
         if idx >= n_gen:
             step_to_result[step] = None
@@ -1356,8 +1414,8 @@ def main() -> int:
     p.add_argument("--task-label", default="", help="task identifier for provenance (e.g. 'anli_r2_dev')")
     p.add_argument("--seed", type=int, default=20260512)
     p.add_argument("--n-bootstrap", type=int, default=1000)
-    p.add_argument("--max-new-tokens", type=int, default=8,
-                   help="generation budget per sample (default 8 — covers panel steps 1..4 + safety)")
+    p.add_argument("--max-new-tokens", type=int, default=None,
+                   help="generation budget per sample (default 8, or 1 when --t0-commit)")
     p.add_argument("--layer", default="final", help="capture layer (default: final)")
     p.add_argument("--alpha", type=float, default=1.0)
     p.add_argument(
@@ -1378,7 +1436,7 @@ def main() -> int:
         help="extend the panel with the 21-cell ATTENTION_PANEL_WITH_V_NORMS — adds 3 SinkProbe-"
              "style value-norm metrics (v_norm_bos, v_norm_max, v_norm_lastq_weighted) at the "
              "commit step on top of the 12 default attention cells. Switches to the "
-             "attention_capture_with_values capture path; <5% extra wall vs --attention.",
+             "attention_capture_with_values capture path; <5%% extra wall vs --attention.",
     )
     p.add_argument(
         "--attention-only", action="store_true",
@@ -1386,9 +1444,35 @@ def main() -> int:
              "--attention / --attention-multistep / --attention-with-v-norms to pick "
              "which attention panel.",
     )
+    p.add_argument(
+        "--t0-commit", action="store_true",
+        help="use the t=0 prefill-last-position attention locus instead of gen_step=1. "
+             "Captures captures[layer][0] (the prefill forward's last-query-row) rather "
+             "than captures[layer][1] (the first generated token's attention). "
+             "Semantically consistent across all models: always the last prompt token's "
+             "attention over the full prefix. Implies --attention-only (use with "
+             "--attention-with-v-norms for the 21-cell panel). "
+             "Sets max_new_tokens=1 unless overridden (prefill is sufficient).",
+    )
+    p.add_argument(
+        "--t0-residual", action="store_true",
+        help="use the 5-cell T0_RESIDUAL_PANEL — residual-stream cells (d_F_full, "
+             "kl_discharged, Fisher r=1/r=2, Raw r=21) measured at the t=0 prefix-last-"
+             "position locus. Structurally consistent across all model families. "
+             "Sets max_new_tokens=1 (prefill + one token for S_t).",
+    )
     args = p.parse_args()
 
-    if args.attention_multistep:
+    # t=0-commit overrides the step index. Panel constants use step=0 instead of step=1.
+    if args.t0_commit:
+        if args.attention_with_v_norms:
+            attn_panel = list(ATTENTION_PANEL_T0_WITH_V_NORMS)
+        else:
+            attn_panel = list(ATTENTION_PANEL_T0)
+        # Prefill is sufficient; one generation step to complete the trace cleanly.
+        if args.max_new_tokens is None:
+            args.max_new_tokens = 1
+    elif args.attention_multistep:
         attn_panel = list(ATTENTION_PANEL_MULTISTEP)
     elif args.attention_with_v_norms:
         attn_panel = list(ATTENTION_PANEL_WITH_V_NORMS)
@@ -1397,7 +1481,14 @@ def main() -> int:
     else:
         attn_panel = []
 
-    if args.attention_only:
+    if args.t0_residual and args.max_new_tokens is None:
+        args.max_new_tokens = 1
+    if args.max_new_tokens is None:
+        args.max_new_tokens = 8
+
+    if args.t0_residual:
+        panel = list(T0_RESIDUAL_PANEL)
+    elif args.attention_only or args.t0_commit:
         panel = list(attn_panel) if attn_panel else list(ATTENTION_PANEL)
     elif attn_panel:
         panel = list(DEFAULT_PANEL) + attn_panel

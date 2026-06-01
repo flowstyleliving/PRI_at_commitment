@@ -179,6 +179,36 @@ Kept for reference. Step-1 / final-layer / `alpha=1.0` on the original n=200/cel
 | Mistral-7B-Instruct-v0.3-4bit | 1.00 | 1.00 | `pri_v2_topk32` | 0.6715 |
 | Qwen2.5-7B-Instruct-4bit | 0.98 | 1.00 | `pri_v2_lowrank32` | 0.7858 |
 
+## 🛠️ Tools
+
+### Commitment Tracker — `scripts/commitment_tracker.py`
+
+Dogfooding PRI's commitment-architecture lens on personal infrastructure. Scans Hermes session transcripts for future-tense declarations, stores them in a local SQLite DB (`~/.hermes/commitments.db`), and surfaces overdue commitments for closure.
+
+```bash
+# Scan recent sessions for commitments
+python scripts/commitment_tracker.py scan --days 7
+
+# Check pending commitments (cron-friendly)
+python scripts/commitment_tracker.py check --report
+
+# Interactive check (terminal)
+python scripts/commitment_tracker.py check
+
+# Manually add a commitment
+python scripts/commitment_tracker.py add "I'll ship the paper by Friday" --check 2026-06-05
+
+# Resolve non-interactively
+python scripts/commitment_tracker.py resolve 3 --kept|--broken|--acknowledged
+
+# Show all tracked commitments
+python scripts/commitment_tracker.py status
+```
+
+Scheduled daily via `hermes cron`: scans for new declarations, surfaces anything past its check date. The extraction is regex-based (not LLM) — fast, deterministic, zero-cost.
+
+ACE ≠ PRI — this tracker is a meta-tool, not part of the detector.
+
 ## Notes
 
 - Decoding defaults to greedy generation (`temperature=0`) so `Δh` at commitment is deterministic given the prompt.
