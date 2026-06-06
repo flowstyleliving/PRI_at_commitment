@@ -6,6 +6,25 @@
 
 ---
 
+## 🎛️ v6 — Projection Veto (readout-space conflict)
+
+v5 taught the hard lesson: `a` and `m` can fight in residual space for benign reasons. The same-`Δh` and residual-budget baselines deflated the Qwen/Llama signal, meaning much of the apparent friction was norm budgeting rather than epistemic conflict.
+
+v6 moves the lens to the readout: **we do not care if attention and MLP fight in the hallway; we care if they fight over the steering wheel.** For each attention write `a` and MLP write `m`, project both through frozen `W_u` contrast directions and ask whether they oppose each other on answer-relevant axes:
+
+```text
+p_c(x) = <u_c, x>
+projection_veto_c = -p_c(a) * p_c(m)
+```
+
+The primary projection should use `W_u` directly as a **contrast bank**, not a single raw top-1 logit: start with frozen YES-vs-NO / entail-vs-contradict token-bucket contrasts, then use top-1-vs-runner-up as an unsupervised secondary. If final norm matters, use the local norm-linearized direction `u_c(h) = J_norm(h)^T (W_u[i] - W_u[j])`.
+
+The same-`Δh` benign baseline remains mandatory: a v6 signal only counts if projection-space conflict survives identical net residual update, matched cancellation, projection-budget controls, random directions, and shuffled labels.
+
+Spec: [docs/v6_projection_veto.md](docs/v6_projection_veto.md)
+
+---
+
 ## 🔥 v5 — Internal Knowledge Veto (residual-stream sub-layer friction)
 
 Inside a transformer block the residual update is `Δh = a + m`, where `a` is the attention write (post-`W_o`, pre-add) and `m` is the MLP write (pre-add). IKV's bet is that a commitment tell lives in the **friction between `a` and `m`** — the knowledge layer's **veto** of the route attention just committed to — and that this lives in neither write alone, and crucially **not in their sum `Δh`**.
@@ -81,7 +100,7 @@ The pilot self-protects on unfamiliar architectures: an allowlist gate → a sub
 
 ---
 
-## 🧭 The line so far — v1 → v5 (PRI lineage → Internal Knowledge Veto)
+## 🧭 The line so far — v1 → v6 (PRI lineage → Internal Knowledge Veto)
 
 Each step listens for the same commitment signature in a different place; the trend is toward signals that need **less of the output head** and **more of the model's own dynamics**. Versions v1–v4 were developed under the name **PRI**; v5 is **Internal Knowledge Veto**.
 
@@ -91,11 +110,12 @@ Each step listens for the same commitment signature in a different place; the tr
 | **v2** (PRI) | A **magnitude** of the commit-time update under a Fisher-pullback geometry. | partial | superseded by v3 |
 | **v3** (PRI) | A **direction** observable at the output head — *where* the update points relative to the most decisive commit axes, independent of how far it moved. Validated across a model panel and hardened into a production calibration library. | yes | sealed; **internals & sealed parameters are not in this repo** (live in the pre-registration / paper) |
 | **v4 — ACE** | Reads the **attention landscape itself** (a *pre-generation belief readout*), `W_u`-free. Spine of the current paper. | no | sealed / paper |
-| **v5 — Internal Knowledge Veto** | **Residual-stream sub-layer friction** (the knowledge layer's veto of the attention route), `W_u`-free and orthogonal to the v3 sum. | no | this branch — pilot/screen |
+| **v5 — Internal Knowledge Veto** | **Residual-stream sub-layer friction** (the knowledge layer's veto of the attention route), `W_u`-free and orthogonal to the v3 sum. | no | corrected: mostly benign cancellation / residual budget |
+| **v6 — Projection Veto** | **Readout-space conflict** between attention and MLP writes after projection onto frozen `W_u` contrast directions. | yes | this branch — draft spec |
 
 🔒 **On v3:** the precise direction metric, the sealed gate parameters, the geometry correction, and the per-model confirmatory numbers are deliberately **kept out of this public branch**. They belong to the frozen pre-registration and the paper. What matters for the v3→v5 story is only the shape: v3 established that a *direction*-based commit signal beats a *magnitude*-based one and is deployable via per-(model, distribution) calibration — and that motivated pushing the readout off the output head entirely (v4, and now Internal Knowledge Veto).
 
-🏗️ **Production library (model-agnostic).** `pri_calibrator.py` fits a per-(model, deployment-distribution) profile against a labeled `.jsonl` and persists a versioned, selection-bias-corrected (nested out-of-bag bootstrap) calibration profile; `pri_detector.py` is the byte-reproducible scoring side with pipeline-hash drift checks. IKV's positive cluster is promoted into this same machinery for its real confidence intervals — the veto feature dumps plug straight in, no model re-run.
+🏗️ **Production library (model-agnostic).** `pri_calibrator.py` fits a per-(model, deployment-distribution) profile against a labeled `.jsonl` and persists a versioned, selection-bias-corrected (nested out-of-bag bootstrap) calibration profile; `pri_detector.py` is the byte-reproducible scoring side with pipeline-hash drift checks. Any promoted v6 projection-veto signal must go through this same machinery for its real confidence intervals.
 
 ---
 
@@ -117,8 +137,9 @@ Decoding defaults to greedy (`temperature=0`) so the commit-time update `Δh` is
 
 ---
 
-## 🗺️ Repo map (Internal-Knowledge-Veto-forward)
+## 🗺️ Repo map (Projection-Veto-forward)
 
+- **`docs/v6_projection_veto.md`** — v6 draft spec: projection-space conflict, `W_u` contrast-bank choice, same-`Δh` controls.
 - **`scripts/pilot_residual_friction.py`** — the IKV / v5 veto screen (see above).
 - **`scripts/analyze_friction_layer_profile.py`** — offline layer profiler.
 - **`scripts/friction_residualizer.py`**, **`scripts/test_residual_friction.py`** — veto primitives + tests.
