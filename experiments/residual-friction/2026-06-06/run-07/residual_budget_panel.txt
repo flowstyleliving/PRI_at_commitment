@@ -1,0 +1,48 @@
+
+=== Qwen2.5-7B-Instruct-4bit (residual_friction_features_v3) ===
+budget_norm marginals: mean_path_norm=0.740, mean_delta_norm=0.672, mean_delta_over_path=0.672, mean_delta_over_hnorm=0.611
+budget_trim marginals: mean_trim_norm=0.808, mean_path_norm=0.740, mean_delta_norm=0.672, mean_delta_over_path=0.672
+friction | null+route              aucA=0.765 aucB=0.885 Delta=+0.1205 [+0.1072,+0.1341]
+budget_norm | null+route           aucA=0.765 aucB=0.860 Delta=+0.0949 [+0.0851,+0.1055]
+budget_trim | null+route           aucA=0.765 aucB=0.872 Delta=+0.1067 [+0.0958,+0.1177]
+friction | null+route+budget_norm  aucA=0.860 aucB=0.888 Delta=+0.0283 [+0.0188,+0.0365]
+friction | null+route+budget_trim  aucA=0.872 aucB=0.889 Delta=+0.0180 [+0.0101,+0.0250]
+budget_norm | null+route+friction  aucA=0.885 aucB=0.888 Delta=+0.0028 [-0.0010,+0.0058]
+same-Delta benign | null+route     aucA=0.765 aucB=0.878 Delta=+0.1129 [+0.0995,+0.1248]
+friction | null+route+same-Delta   aucA=0.878 aucB=0.891 Delta=+0.0134 [+0.0068,+0.0195]
+
+=== Qwen3-8B-4bit (residual_friction_features_v3) ===
+budget_norm marginals: mean_balance_norm=0.725, mean_delta_norm=0.576, mean_path_norm=0.573, mean_balance_over_path=0.566
+budget_trim marginals: mean_balance_norm=0.725, mean_delta_norm=0.576, mean_path_norm=0.573, mean_balance_over_path=0.566
+friction | null+route              aucA=0.764 aucB=0.860 Delta=+0.0955 [+0.0811,+0.1095]
+budget_norm | null+route           aucA=0.764 aucB=0.794 Delta=+0.0301 [+0.0181,+0.0404]
+budget_trim | null+route           aucA=0.764 aucB=0.819 Delta=+0.0543 [+0.0430,+0.0649]
+friction | null+route+budget_norm  aucA=0.794 aucB=0.859 Delta=+0.0647 [+0.0539,+0.0741]
+friction | null+route+budget_trim  aucA=0.819 aucB=0.867 Delta=+0.0484 [+0.0385,+0.0592]
+budget_norm | null+route+friction  aucA=0.860 aucB=0.859 Delta=-0.0010 [-0.0065,+0.0030]
+same-Delta benign | null+route     aucA=0.764 aucB=0.888 Delta=+0.1235 [+0.1116,+0.1381]
+friction | null+route+same-Delta   aucA=0.888 aucB=0.884 Delta=-0.0036 [-0.0093,-0.0002]
+
+=== Llama-3.2-3B-Instruct-4bit (residual_friction_features_v3) ===
+budget_norm marginals: mean_delta_over_path=0.720, mean_balance_norm=0.635, mean_balance_over_path=0.600, mean_path_norm=0.554
+budget_trim marginals: mean_delta_over_path=0.720, mean_trim_over_path=0.720, mean_trim_norm=0.654, mean_balance_norm=0.635
+friction | null+route              aucA=0.686 aucB=0.731 Delta=+0.0458 [+0.0303,+0.0587]
+budget_norm | null+route           aucA=0.686 aucB=0.739 Delta=+0.0531 [+0.0384,+0.0656]
+budget_trim | null+route           aucA=0.686 aucB=0.745 Delta=+0.0585 [+0.0448,+0.0716]
+friction | null+route+budget_norm  aucA=0.739 aucB=0.744 Delta=+0.0063 [-0.0037,+0.0135]
+friction | null+route+budget_trim  aucA=0.745 aucB=0.746 Delta=+0.0020 [-0.0080,+0.0083]
+budget_norm | null+route+friction  aucA=0.731 aucB=0.744 Delta=+0.0133 [+0.0054,+0.0207]
+same-Delta benign | null+route     aucA=0.686 aucB=0.733 Delta=+0.0477 [+0.0320,+0.0605]
+friction | null+route+same-Delta   aucA=0.733 aucB=0.732 Delta=-0.0010 [-0.0087,+0.0031]
+
+=== Llama-3.1-8B-Instruct-4bit (residual_friction_features_v3) ===
+budget_norm marginals: mean_balance_over_path=0.693, mean_balance_norm=0.689, mean_delta_over_path=0.649, mean_path_norm=0.590
+budget_trim marginals: mean_balance_over_path=0.693, mean_balance_norm=0.689, mean_delta_over_path=0.649, mean_trim_over_path=0.649
+friction | null+route              aucA=0.672 aucB=0.686 Delta=+0.0150 [-0.0044,+0.0294]
+budget_norm | null+route           aucA=0.672 aucB=0.660 Delta=-0.0108 [-0.0262,-0.0003]
+budget_trim | null+route           aucA=0.672 aucB=0.660 Delta=-0.0116 [-0.0275,+0.0001]
+friction | null+route+budget_norm  aucA=0.660 aucB=0.687 Delta=+0.0264 [+0.0141,+0.0405]
+friction | null+route+budget_trim  aucA=0.660 aucB=0.688 Delta=+0.0279 [+0.0162,+0.0398]
+budget_norm | null+route+friction  aucA=0.686 aucB=0.687 Delta=+0.0018 [-0.0067,+0.0090]
+same-Delta benign | null+route     aucA=0.672 aucB=0.688 Delta=+0.0171 [-0.0059,+0.0314]
+friction | null+route+same-Delta   aucA=0.688 aucB=0.683 Delta=-0.0043 [-0.0138,+0.0012]

@@ -40,6 +40,12 @@ The historical schema-v2 Qwen/Llama dumps only supported the random-û floor: Qw
 
 Schema v3 dumps now persist the sufficient same-`Δh` projections directly as `Xbenign`: raw interference/veto magnitude is matched, `Δh` is held fixed, and the hidden disagreement channel is rotated off the consequential direction. That lets the offline baseline report `real friction - same-Δh benign` before sealed nested-OOB promotion, without storing full `a`/`m` vectors.
 
+### Residual-Norm Budget Test
+
+`scripts/analyze_residual_budget.py` tests the more prosaic explanation: attention writes a route, the MLP counterweights it, and the block keeps the residual update inside a norm budget. It builds budget features from `||a||`, `||m||`, `||a+m||`, path balance, trim, and gain ratios, then asks whether friction still adds OOF AUROC after those budget features or after the stricter same-`Δh` benign floor.
+
+Run-07 says: budget features explain most of Qwen2.5 and Llama-3.2, partly explain Qwen3, and are redundant once raw friction is present on Llama-3.1. The decisive check is stricter: **friction adds essentially nothing after same-`Δh` benign** across the promoted Qwen/Llama candidates: Qwen2.5 +0.0134, Qwen3 -0.0036, Llama-3.2 -0.0010, Llama-3.1 -0.0043. That supports the residual-budget / benign-cancellation interpretation over a clean Knowledge Veto.
+
 ### Run the Internal Knowledge Veto pilot
 
 ```bash
@@ -55,6 +61,10 @@ Schema v3 dumps now persist the sufficient same-`Δh` projections directly as `X
 # 3) Offline (no MLX): same-Delta synthetic guard + random-u floor from dumps.
 .venv/bin/python scripts/benign_cancellation_baseline.py \
   experiments/residual-friction/<DATE>/run-NN/features/*.npz
+
+# 4) Offline (no MLX): residual-norm budget diagnostic.
+.venv/bin/python scripts/analyze_residual_budget.py \
+  experiments/residual-friction/<DATE>/run-NN/features/*.npz
 ```
 
 The pilot self-protects on unfamiliar architectures: an allowlist gate → a sub-layer-component gate → a per-layer `a + m` reconstruction check → a length-spanning native-logits parity check (≤ 5e-3) → a finite-fraction check. Anything that does not decompose cleanly as `h + a + m` **aborts loudly** rather than emitting wrong features. The `.npz` dumps are the durable handoff: all downstream statistics (profiles, paired/null-centered tests, the sealed calibrator) run offline without re-loading any model.
@@ -63,6 +73,7 @@ The pilot self-protects on unfamiliar architectures: an allowlist gate → a sub
 - `scripts/pilot_residual_friction.py` — the IKV screen (a/m capture, locked primary endpoint, controls, feature dump).
 - `scripts/analyze_friction_layer_profile.py` — offline per-layer / sliding-window profiler over a feature dump.
 - `scripts/benign_cancellation_baseline.py` — same-`Δh` synthetic guard + random-û floor report for existing dumps.
+- `scripts/analyze_residual_budget.py` — offline norm-budget diagnostic over schema-v2/v3 dumps.
 - `scripts/friction_residualizer.py` — veto primitives (interference, directed veto) + the conditional-normal residualizer for the future correctness-labelled variant.
 - `scripts/test_residual_friction.py` — identity/algebra unit suite (incl. the byte-identical-raw-friction-separated-only-by-direction contract).
 - `model_adapters.py` — sub-layer capture helpers (`layer_supports_sublayer_capture`, pre-norm `a`/`m` split with a verify path).
