@@ -32,6 +32,14 @@ A screening pilot asks the decisive question: **does the veto add discrimination
 
 > ⚠️ These are **screening** intervals (split + training variance), not inferential CIs. "Positive" means *clears the screen → eligible to promote to a sealed run*, not *validated*. Two models also exposed control leaks (one warm random-direction control; one broken shuffled-labels control on a reasoning-distill), flagged for the sealed pass.
 
+### Benign Cancellation Baseline
+
+The central identifiability guard is: **hold `Δh = a + m` fixed and test whether the hidden split still carries signal**. `scripts/benign_cancellation_baseline.py` adds a pure NumPy same-`Δh` harness that constructs paired decompositions with byte-identical net residual updates and matched route norms; only the real split places disagreement on the epistemic direction. Current synthetic result: real epistemic split Δ=+0.4833, benign same-`Δh` Δ=-0.0063, net +0.4896.
+
+For the existing Qwen/Llama pilot dumps, the exact same-`Δh` real-sample control is not yet possible because the `.npz` files persist scalar friction features, not the underlying per-layer `a`/`m` vectors. The available conservative floor is the persisted random-û control: Qwen2.5 net +0.1048, Qwen3-8B net +0.0987, Llama-3.2-3B net +0.0517, Llama-3.1-8B full-window net +0.0198. Late-window net peaks remain larger: Qwen2.5 18–20 +0.1475, Qwen3-8B 23–25 +0.1371, Llama-3.2 17–19 +0.0874, Llama-3.1 21–23 +0.1959.
+
+Next dump-format upgrade: persist per-sample/per-layer `a` and `m` vectors, or sufficient projections to reconstruct paired same-`Δh` splits, before the sealed nested-OOB promotion.
+
 ### Run the Internal Knowledge Veto pilot
 
 ```bash
@@ -43,6 +51,10 @@ A screening pilot asks the decisive question: **does the veto add discrimination
 # 2) Offline (no MLX): per-layer / sliding-window profile from the dumped features.
 .venv/bin/python scripts/analyze_friction_layer_profile.py \
   experiments/residual-friction/<DATE>/run-NN/features/*.npz
+
+# 3) Offline (no MLX): same-Delta synthetic guard + random-u floor from dumps.
+.venv/bin/python scripts/benign_cancellation_baseline.py \
+  experiments/residual-friction/<DATE>/run-NN/features/*.npz
 ```
 
 The pilot self-protects on unfamiliar architectures: an allowlist gate → a sub-layer-component gate → a per-layer `a + m` reconstruction check → a length-spanning native-logits parity check (≤ 5e-3) → a finite-fraction check. Anything that does not decompose cleanly as `h + a + m` **aborts loudly** rather than emitting wrong features. The `.npz` dumps are the durable handoff: all downstream statistics (profiles, paired/null-centered tests, the sealed calibrator) run offline without re-loading any model.
@@ -50,6 +62,7 @@ The pilot self-protects on unfamiliar architectures: an allowlist gate → a sub
 **Internal Knowledge Veto (v5) artifacts & code**
 - `scripts/pilot_residual_friction.py` — the IKV screen (a/m capture, locked primary endpoint, controls, feature dump).
 - `scripts/analyze_friction_layer_profile.py` — offline per-layer / sliding-window profiler over a feature dump.
+- `scripts/benign_cancellation_baseline.py` — same-`Δh` synthetic guard + random-û floor report for existing dumps.
 - `scripts/friction_residualizer.py` — veto primitives (interference, directed veto) + the conditional-normal residualizer for the future correctness-labelled variant.
 - `scripts/test_residual_friction.py` — identity/algebra unit suite (incl. the byte-identical-raw-friction-separated-only-by-direction contract).
 - `model_adapters.py` — sub-layer capture helpers (`layer_supports_sublayer_capture`, pre-norm `a`/`m` split with a verify path).
