@@ -1,0 +1,56 @@
+Loaded 200 samples (pos=100, neg=100)
+Data: experiments/v4-sealed/2026-05-26/data/anli_R1_seed20260526_n200.jsonl
+NOTE: label = belief class (0=entail/YES, 1=contradict/NO), not correctness.
+
+
+>>> Qwen2.5-7B
+  loading mlx-community/Qwen2.5-7B-Instruct-4bit ...
+
+  Loading model: mlx-community/Qwen2.5-7B-Instruct-4bit
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files: 100%|██████████| 9/9 [00:00<00:00, 186874.93it/s]
+     Layers: 28 | Probed: {'final': 27} | Output projection: lm_head (V=152064, D=3584)
+    28 layers; projection veto summarized over [7, 21)
+    contrast NO_bucket_minus_YES_bucket norm=0.653
+      YES ids=[14004, 7414, 9834, 9454] decoded=['YES', ' Yes', ' yes', 'Yes']
+      NO  ids=[8996, 2308, 902, 2753] decoded=['NO', ' No', ' no', 'No']
+    native-parity check on samples [0, 98, 100, 190] (prefix lens [106, 153, 172, 241])
+    native-logits parity OK at len=172 (rel-L2=0.00e+00)
+    [25/200]
+    [50/200]
+    [75/200]
+    native-logits parity OK at len=241 (rel-L2=0.00e+00)
+    [100/200]
+    native-logits parity OK at len=153 (rel-L2=0.00e+00)
+    [125/200]
+    [150/200]
+    [175/200]
+    native-logits parity OK at len=106 (rel-L2=0.00e+00)
+    [200/200]
+    wrote feature dump: experiments/projection-veto/2026-06-06/run-02/features/mlx-community_Qwen2.5-7B-Instruct-4bit.projection_veto_features.npz
+
+========================================================================
+  Qwen2.5-7B   (n=200)
+========================================================================
+  marginal sign-free AUROC (descriptive):
+    null_ratio                     0.614
+    mean_proj_veto                 0.865
+    max_proj_veto                  0.834
+    mean_same_delta_proj_veto      0.860
+    mean_proj_trim                 0.852
+    mean_proj_amplify              0.747
+    mean_abs_pa                    0.564
+    mean_abs_pm                    0.711
+    mean_abs_pnet                  0.854
+    mean_na                        0.727
+    mean_nm                        0.720
+    mean_delta_norm                0.672
+
+  incremental cross-fit OOF AUROC — repeated-CV split-sensitivity:
+    projection-veto | null+route           aucA=0.765 aucB=0.876  Δ=0.110 [0.100,0.124] (r=200) ✅>0
+    same-Δ projection | null+route         aucA=0.765 aucB=0.876  Δ=0.111 [0.101,0.125] (r=200) ✅>0
+    projection-budget | null+route         aucA=0.765 aucB=0.870  Δ=0.105 [0.093,0.118] (r=200) ✅>0
+    projection-veto | null+route+budget    aucA=0.870 aucB=0.871  Δ=0.001 [-0.002,0.004] (r=200)
+    projection-veto | null+route+same-Δ    aucA=0.876 aucB=0.875  Δ=-0.001 [-0.003,0.001] (r=200)
+    shuffled-labels                        aucA=0.443 aucB=0.458  Δ=0.017 [-0.032,0.050] (r=200)
+
+  same-Δ net projection-veto Δ = -0.0012

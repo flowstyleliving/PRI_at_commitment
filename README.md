@@ -21,6 +21,8 @@ The primary projection should use `W_u` directly as a **contrast bank**, not a s
 
 The same-`Δh` benign baseline remains mandatory: a v6 signal only counts if projection-space conflict survives identical net residual update, matched cancellation, projection-budget controls, random directions, and shuffled labels.
 
+First Qwen2.5-7B screen (ANLI R1, n=200, t=0) is a useful falsification check: raw projection-veto clears strongly (`Δ=+0.110 [0.100,0.124]` over `null+route`), but the same-`Δh` projection baseline clears by the same amount (`Δ=+0.111`) and the net statistic is `-0.0012`. Projection-budget also explains the lift. So v6 does see answer-axis conflict, but on this first run it reads as projection-space norm/budget structure, not a clean Knowledge Veto.
+
 Spec: [docs/v6_projection_veto.md](docs/v6_projection_veto.md)
 
 ---
@@ -111,7 +113,7 @@ Each step listens for the same commitment signature in a different place; the tr
 | **v3** (PRI) | A **direction** observable at the output head — *where* the update points relative to the most decisive commit axes, independent of how far it moved. Validated across a model panel and hardened into a production calibration library. | yes | sealed; **internals & sealed parameters are not in this repo** (live in the pre-registration / paper) |
 | **v4 — ACE** | Reads the **attention landscape itself** (a *pre-generation belief readout*), `W_u`-free. Spine of the current paper. | no | sealed / paper |
 | **v5 — Internal Knowledge Veto** | **Residual-stream sub-layer friction** (the knowledge layer's veto of the attention route), `W_u`-free and orthogonal to the v3 sum. | no | corrected: mostly benign cancellation / residual budget |
-| **v6 — Projection Veto** | **Readout-space conflict** between attention and MLP writes after projection onto frozen `W_u` contrast directions. | yes | this branch — draft spec |
+| **v6 — Projection Veto** | **Readout-space conflict** between attention and MLP writes after projection onto frozen `W_u` contrast directions. | yes | first Qwen2.5 screen: raw +, same-Delta net null |
 
 🔒 **On v3:** the precise direction metric, the sealed gate parameters, the geometry correction, and the per-model confirmatory numbers are deliberately **kept out of this public branch**. They belong to the frozen pre-registration and the paper. What matters for the v3→v5 story is only the shape: v3 established that a *direction*-based commit signal beats a *magnitude*-based one and is deployable via per-(model, distribution) calibration — and that motivated pushing the readout off the output head entirely (v4, and now Internal Knowledge Veto).
 
