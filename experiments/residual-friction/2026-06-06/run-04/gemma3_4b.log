@@ -1,0 +1,55 @@
+Loaded 200 samples (pos=100, neg=100)
+Data: experiments/v4-sealed/2026-05-26/data/anli_R1_seed20260526_n200.jsonl
+NOTE: label = belief class (0=entail/YES, 1=contradict/NO), not correctness.
+
+
+>>> Gemma-3-4B
+  loading mlx-community/gemma-3-4b-it-4bit ...
+
+  Loading model: mlx-community/gemma-3-4b-it-4bit
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 273541.57it/s]
+     Layers: 34 | Probed: {'final': 33} | Output projection: lm_head (V=262208, D=2560)
+    34 layers; friction summarized over [8, 26)
+    native-parity check on samples [0, 98, 100, 190] (prefix lens [105, 151, 169, 233])
+    native-logits parity OK at len=169 (rel-L2=0.00e+00)
+    [25/200]
+    [50/200]
+    [75/200]
+    native-logits parity OK at len=233 (rel-L2=0.00e+00)
+    [100/200]
+    native-logits parity OK at len=151 (rel-L2=0.00e+00)
+    [125/200]
+    [150/200]
+    [175/200]
+    native-logits parity OK at len=105 (rel-L2=0.00e+00)
+    [200/200]
+    wrote feature dump: experiments/residual-friction/2026-06-06/run-04/features/mlx-community_gemma-3-4b-it-4bit.residual_friction_features.npz
+
+==================================================================
+  Gemma-3-4B   (n=200)
+==================================================================
+  marginal sign-free AUROC (DESCRIPTIVE only — sign-free inflates):
+    null_ratio               0.638
+    mean_interference        0.539
+    max_interference         0.583
+    mean_veto                0.535
+    max_veto                 0.576
+    mean_cos                 0.539
+    min_cos                  0.585
+    mean_directed_veto       0.638
+    max_directed_veto        0.563
+    mean_na                  0.648
+    mean_nm                  0.789
+    mean_hnorm               0.745
+
+  incremental cross-fit OOF AUROC — repeated-CV SPLIT-SENSITIVITY interval
+  (split+training variance only; NOT an inferential CI — screening, not proof):
+    friction | null+route          aucA=0.778 aucB=0.767  Δ=-0.009 [-0.023,-0.001] (r=200) ★PRIMARY
+    friction | null  (descr.)      aucA=0.633 aucB=0.655  Δ=0.023 [0.004,0.040] (r=200) ✅>0
+    route-size | null  (descr.)    aucA=0.633 aucB=0.778  Δ=0.146 [0.129,0.156] (r=200) ✅>0
+    random-û | null  (ctrl→0)      aucA=0.633 aucB=0.622  Δ=-0.008 [-0.034,0.001] (r=200)
+    random-û | null+route  (ctrl→0) aucA=0.778 aucB=0.773  Δ=-0.004 [-0.013,-0.000] (r=200)
+    shuffled-labels  (ctrl→0)      aucA=0.468 aucB=0.528  Δ=0.060 [0.021,0.095] (r=200) ✅>0
+
+  Screen (go/no-go, not inference): PRIMARY ★ interval clears 0 AND both
+  controls ~0  →  promote to a sealed calibrator nested-OOB run for the real CI.

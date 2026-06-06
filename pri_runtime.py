@@ -907,6 +907,11 @@ def trace_sample(
     if len(token_ids) < 2:
         raise RuntimeError("Prompt too short after tokenization.")
 
+    # Prefix-only token ids, snapshotted before the generation loop appends to
+    # `token_ids` — lets callers assert tokenization parity against a separate
+    # forward of the same prompt (additive; existing consumers unaffected).
+    prefix_token_ids = list(token_ids)
+
     input_ids = np.array(token_ids, dtype=np.int32)[None, :]
     eos_id = get_eos_token_id(tokenizer)
 
@@ -1122,6 +1127,7 @@ def trace_sample(
     generated_text = decode_ids(tokenizer, gen_token_ids)
 
     return {
+        "prefix_token_ids": prefix_token_ids,
         "prefix_hidden": prefix_hidden,
         "last_prefix_hidden": last_prefix_hidden,
         "prefix_probs": prefix_probs,

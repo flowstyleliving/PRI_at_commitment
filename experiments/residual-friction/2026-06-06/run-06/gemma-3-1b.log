@@ -1,0 +1,27 @@
+Loaded 200 samples (pos=100, neg=100)
+Data: experiments/v4-sealed/2026-05-26/data/anli_R1_seed20260526_n200.jsonl
+NOTE: label = belief class (0=entail/YES, 1=contradict/NO), not correctness.
+
+
+>>> mlx-community/gemma-3-1b-it-4bit
+  loading mlx-community/gemma-3-1b-it-4bit ...
+
+  Loading model: mlx-community/gemma-3-1b-it-4bit
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files: 100%|██████████| 9/9 [00:00<00:00, 128835.28it/s]
+     Layers: 26 | Probed: {'final': 25} | Output projection: lm_head (V=262144, D=1152)
+    26 layers; friction summarized over [6, 20)
+    native-parity check on samples [0, 98, 100, 190] (prefix lens [114, 160, 178, 242])
+    native-logits parity OK at len=178 (rel-L2=4.76e-03)
+    [25/200]
+    [50/200]
+    [75/200]
+Traceback (most recent call last):
+  File "/Users/msrk/Documents/PRI_at_commitment/scripts/pilot_residual_friction.py", line 637, in <module>
+    sys.exit(main())
+  File "/Users/msrk/Documents/PRI_at_commitment/scripts/pilot_residual_friction.py", line 625, in main
+    res = run_model(slug, prompts, y, args, data_path=args.data)
+  File "/Users/msrk/Documents/PRI_at_commitment/scripts/pilot_residual_friction.py", line 503, in run_model
+    a_last, m_last, h_norm = _friction_forward(
+  File "/Users/msrk/Documents/PRI_at_commitment/scripts/pilot_residual_friction.py", line 251, in _friction_forward
+    raise RuntimeError(
+RuntimeError: friction-forward vs native logits mismatch at len=242: rel-L2=1.243e-02 (> 5e-3). The manual mask / post-embed / projection path drifts from the native forward — a/m captured off the wrong path.

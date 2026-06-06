@@ -1,0 +1,7 @@
+Loaded 200 samples (pos=100, neg=100)
+Data: experiments/v4-sealed/2026-05-26/data/anli_R1_seed20260526_n200.jsonl
+NOTE: label = belief class (0=entail/YES, 1=contradict/NO), not correctness.
+
+
+>>> mlx-community/dolphin-2.9.3-mistral-nemo-12b-4bit
+Refusing mlx-community/dolphin-2.9.3-mistral-nemo-12b-4bit: not in the standard-pre-norm allowlist ('Mistral', 'Qwen', 'Llama', 'gemma-3'). a/m decomposition is only validated there.

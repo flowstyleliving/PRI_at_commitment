@@ -9,7 +9,7 @@ mask, cache, and position inputs to transformer blocks.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 
@@ -125,6 +125,75 @@ def forward_layer(layer: Any, h: mx.array, mask: Any) -> mx.array:
             return layer(h, mask, None)
         except TypeError:
             return layer(h, mask)
+
+
+def layer_supports_sublayer_capture(layer: Any) -> bool:
+    """True iff a layer exposes the standard pre-norm components needed to split
+    the block into its attention write `a` and MLP write `m`:
+    `self_attn`, `mlp`, `input_layernorm`, `post_attention_layernorm`.
+
+    Llama / Mistral / Qwen-2.5 satisfy this. Families with extra or differently-
+    placed sub-layer norms (Gemma-3's pre/post feed-forward layernorm; fused or
+    parallel-attention blocks) do NOT decompose as a plain `h + a + m` under
+    these four names — for them `forward_layer_capture` must be run with
+    `verify=True`, which fails loudly rather than returning wrong a/m.
+    """
+    return all(
+        hasattr(layer, name)
+        for name in ("self_attn", "mlp", "input_layernorm", "post_attention_layernorm")
+    )
+
+
+def forward_layer_capture(
+    layer: Any,
+    h: mx.array,
+    mask: Any,
+    verify: bool = False,
+    verify_atol: float = 1e-3,
+    verify_rtol: float = 5e-3,
+) -> Tuple[mx.array, mx.array, mx.array]:
+    """Pre-norm transformer block, returning `(out, a, m)`.
+
+    `a` = attention sub-layer write (post-`W_o`, **pre** residual add);
+    `m` = MLP sub-layer write (**pre** add). By construction `out = h + a + m`,
+    so the within-block residual update is `Δh = a + m` — the decomposition
+    candidate #9 needs and that the black-box `forward_layer` averages away.
+
+    Mirrors the manual block in `ModelAdapter._call_layer_with_collection`
+    (input_layernorm → self_attn; post_attention_layernorm → mlp). Cache is
+    `None` (prefill / single-pass tracing only — do NOT use inside an
+    incremental KV-cached decode, the second mlp read would desync).
+
+    VALIDITY: only correct for standard pre-norm blocks
+    (`layer_supports_sublayer_capture`). For any other family the reconstruction
+    is wrong; pass `verify=True` to re-run the black-box block and assert
+    `out ≈ forward_layer(layer, h, mask)`, raising instead of silently returning
+    bad a/m. `verify` ≈ doubles the per-layer cost — verify the first sample,
+    then trust. `a`/`m` are returned at full `[B, T, D]`; the caller slices the
+    commit position.
+    """
+    if not layer_supports_sublayer_capture(layer):
+        raise ValueError(
+            f"forward_layer_capture needs a standard pre-norm block "
+            f"(self_attn/mlp/input_layernorm/post_attention_layernorm); "
+            f"layer {type(layer).__name__} does not expose them — a/m cannot be "
+            f"separated safely."
+        )
+    a = layer.self_attn(layer.input_layernorm(h), mask, None)
+    h2 = h + a
+    m = layer.mlp(layer.post_attention_layernorm(h2))
+    out = h2 + m
+    if verify:
+        ref = forward_layer(layer, h, mask)
+        mx.eval(out, ref)
+        if not bool(mx.allclose(out, ref, atol=verify_atol, rtol=verify_rtol).all().item()):
+            max_abs = float(mx.max(mx.abs(out - ref)).item())
+            raise RuntimeError(
+                f"forward_layer_capture reconstruction mismatch (max|Δ|={max_abs:.3e} "
+                f"> atol={verify_atol:.1e}); this block is not a plain pre-norm "
+                f"h+a+m structure, so captured a/m are invalid for this family."
+            )
+    return out, a, m
 
 
 class ModelAdapter(ABC):

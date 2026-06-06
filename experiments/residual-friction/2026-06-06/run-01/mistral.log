@@ -1,0 +1,54 @@
+Loaded 200 samples (pos=100, neg=100)
+Data: experiments/v4-sealed/2026-05-26/data/anli_R1_seed20260526_n200.jsonl
+NOTE: label = belief class (0=entail/YES, 1=contradict/NO), not correctness.
+
+
+>>> Mistral-7B
+  loading mlx-community/Mistral-7B-Instruct-v0.3-4bit ...
+
+  Loading model: mlx-community/Mistral-7B-Instruct-v0.3-4bit
+Fetching 7 files:   0%|          | 0/7 [00:00<?, ?it/s]Fetching 7 files: 100%|██████████| 7/7 [00:00<00:00, 124936.71it/s]
+     Layers: 32 | Probed: {'final': 31} | Output projection: lm_head (V=32768, D=4096)
+    32 layers; friction summarized over [8, 24)
+    native-parity check on samples [0, 98, 100, 183] (prefix lens [129, 180, 199, 267])
+    native-logits parity OK at len=199 (rel-L2=0.00e+00)
+    [25/200]
+    [50/200]
+    [75/200]
+    native-logits parity OK at len=267 (rel-L2=0.00e+00)
+    [100/200]
+    native-logits parity OK at len=180 (rel-L2=0.00e+00)
+    [125/200]
+    [150/200]
+    [175/200]
+    native-logits parity OK at len=129 (rel-L2=0.00e+00)
+    [200/200]
+
+==================================================================
+  Mistral-7B   (n=200)
+==================================================================
+  marginal sign-free AUROC (DESCRIPTIVE only — sign-free inflates):
+    null_ratio               0.663
+    mean_interference        0.557
+    max_interference         0.586
+    mean_veto                0.742
+    max_veto                 0.502
+    mean_cos                 0.742
+    min_cos                  0.609
+    mean_directed_veto       0.629
+    max_directed_veto        0.506
+    mean_na                  0.647
+    mean_nm                  0.741
+    mean_hnorm               0.541
+
+  incremental cross-fit OOF AUROC — repeated-CV SPLIT-SENSITIVITY interval
+  (split+training variance only; NOT an inferential CI — screening, not proof):
+    friction | null+route          aucA=0.805 aucB=0.816  Δ=0.012 [-0.002,0.021] (r=200) ★PRIMARY
+    friction | null  (descr.)      aucA=0.657 aucB=0.713  Δ=0.056 [0.035,0.069] (r=200) ✅>0
+    route-size | null  (descr.)    aucA=0.657 aucB=0.805  Δ=0.148 [0.133,0.161] (r=200) ✅>0
+    random-û | null  (ctrl→0)      aucA=0.657 aucB=0.645  Δ=-0.011 [-0.034,-0.000] (r=200)
+    random-û | null+route  (ctrl→0) aucA=0.805 aucB=0.802  Δ=-0.002 [-0.012,0.002] (r=200)
+    shuffled-labels  (ctrl→0)      aucA=0.475 aucB=0.476  Δ=0.002 [-0.041,0.031] (r=200)
+
+  Screen (go/no-go, not inference): PRIMARY ★ interval clears 0 AND both
+  controls ~0  →  promote to a sealed calibrator nested-OOB run for the real CI.

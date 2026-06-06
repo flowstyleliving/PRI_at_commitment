@@ -1,0 +1,55 @@
+Loaded 200 samples (pos=100, neg=100)
+Data: experiments/v4-sealed/2026-05-26/data/anli_R1_seed20260526_n200.jsonl
+NOTE: label = belief class (0=entail/YES, 1=contradict/NO), not correctness.
+
+
+>>> mlx-community/DeepSeek-R1-Distill-Qwen-7B-4bit
+  loading mlx-community/DeepSeek-R1-Distill-Qwen-7B-4bit ...
+
+  Loading model: mlx-community/DeepSeek-R1-Distill-Qwen-7B-4bit
+Fetching 6 files:   0%|          | 0/6 [00:00<?, ?it/s]Fetching 6 files: 100%|██████████| 6/6 [00:00<00:00, 91180.52it/s]
+     Layers: 28 | Probed: {'final': 27} | Output projection: lm_head (V=152064, D=3584)
+    28 layers; friction summarized over [7, 21)
+    native-parity check on samples [0, 98, 100, 190] (prefix lens [107, 154, 173, 242])
+    native-logits parity OK at len=173 (rel-L2=0.00e+00)
+    [25/200]
+    [50/200]
+    [75/200]
+    native-logits parity OK at len=242 (rel-L2=0.00e+00)
+    [100/200]
+    native-logits parity OK at len=154 (rel-L2=0.00e+00)
+    [125/200]
+    [150/200]
+    [175/200]
+    native-logits parity OK at len=107 (rel-L2=0.00e+00)
+    [200/200]
+    wrote feature dump: experiments/residual-friction/2026-06-06/run-06/features/mlx-community_DeepSeek-R1-Distill-Qwen-7B-4bit.residual_friction_features.npz
+
+==================================================================
+  mlx-community/DeepSeek-R1-Distill-Qwen-7B-4bit   (n=200)
+==================================================================
+  marginal sign-free AUROC (DESCRIPTIVE only — sign-free inflates):
+    null_ratio               0.551
+    mean_interference        0.530
+    max_interference         0.551
+    mean_veto                0.519
+    max_veto                 0.534
+    mean_cos                 0.527
+    min_cos                  0.536
+    mean_directed_veto       0.535
+    max_directed_veto        0.522
+    mean_na                  0.557
+    mean_nm                  0.547
+    mean_hnorm               0.501
+
+  incremental cross-fit OOF AUROC — repeated-CV SPLIT-SENSITIVITY interval
+  (split+training variance only; NOT an inferential CI — screening, not proof):
+    friction | null+route          aucA=0.553 aucB=0.544  Δ=-0.008 [-0.040,0.011] (r=200) ★PRIMARY
+    friction | null  (descr.)      aucA=0.522 aucB=0.460  Δ=-0.060 [-0.125,-0.013] (r=200)
+    route-size | null  (descr.)    aucA=0.522 aucB=0.553  Δ=0.031 [-0.010,0.090] (r=200)
+    random-û | null  (ctrl→0)      aucA=0.522 aucB=0.481  Δ=-0.041 [-0.087,-0.003] (r=200)
+    random-û | null+route  (ctrl→0) aucA=0.553 aucB=0.541  Δ=-0.010 [-0.033,0.000] (r=200)
+    shuffled-labels  (ctrl→0)      aucA=0.396 aucB=0.560  Δ=0.166 [0.116,0.211] (r=200) ✅>0
+
+  Screen (go/no-go, not inference): PRIMARY ★ interval clears 0 AND both
+  controls ~0  →  promote to a sealed calibrator nested-OOB run for the real CI.
