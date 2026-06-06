@@ -46,7 +46,9 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 from pilot_residual_friction import _repeated_cv_delta, _signfree_auroc  # noqa: E402
 
-# layer_tensor feature column order (pilot LAYER_DUMP_FEATS):
+# layer_tensor v2 feature column order (pilot LAYER_DUMP_FEATS). v3 appends
+# same-Delta benign projections after the original columns; keep the original
+# indices stable for backward compatibility.
 F_INTERF, F_VETO, F_DVETO, F_RANDDVETO = 0, 1, 2, 3
 TRIPLET = [F_INTERF, F_VETO, F_DVETO]
 
@@ -59,8 +61,13 @@ def _profile(npz_path: Path, seed: int, repeats: int, folds: int) -> str:
     LT = np.asarray(d["layer_tensor"], dtype=np.float64)  # (n, L, 8)
     layer_idx = [int(i) for i in d["layer_indices"]]
     feat_names = [str(f) for f in d["layer_feature_names"]]
-    schema = "residual_friction_features_v2"
+    meta_schema = "unknown"
+    if "metadata" in d.files:
+        import json
+        meta_schema = json.loads(str(d["metadata"])).get("schema", "unknown")
+    schema = meta_schema if meta_schema != "unknown" else "residual_friction_features_v2"
     base = np.column_stack([Xnull, Xroute])
+    f_same_delta = feat_names.index("same_delta_directed_veto") if "same_delta_directed_veto" in feat_names else None
 
     lines: List[str] = []
     lines.append(f"dump_schema {schema} tensor {LT.shape} features {feat_names}")
@@ -71,8 +78,12 @@ def _profile(npz_path: Path, seed: int, repeats: int, folds: int) -> str:
     lines.append("")  # placeholder for baseline_auc_approx
 
     lines.append("")
-    lines.append("Per-layer friction triplet over global null+route; net subtracts same-layer random-u increment")
-    lines.append("layer raw_delta lo hi rand_delta net veto_auc interf_auc dveto_auc")
+    if f_same_delta is None:
+        lines.append("Per-layer friction triplet over global null+route; net subtracts same-layer random-u increment")
+        lines.append("layer raw_delta lo hi rand_delta net veto_auc interf_auc dveto_auc")
+    else:
+        lines.append("Per-layer friction triplet over global null+route; nets subtract random-u and same-Delta benign increments")
+        lines.append("layer raw_delta lo hi rand_delta net_rand same_delta net_same_delta veto_auc interf_auc dveto_auc")
     base_auc = float("nan")
     nL = LT.shape[1]
     for j in range(nL):
@@ -80,32 +91,59 @@ def _profile(npz_path: Path, seed: int, repeats: int, folds: int) -> str:
         Xrand = np.column_stack([base, LT[:, j, F_RANDDVETO]])
         raw = _repeated_cv_delta(base, Xtrip, y, repeats, folds, seed)
         rnd = _repeated_cv_delta(base, Xrand, y, repeats, folds, seed)
+        same = None
+        if f_same_delta is not None:
+            Xsame = np.column_stack([base, LT[:, j, [F_INTERF, F_VETO, f_same_delta]]])
+            same = _repeated_cv_delta(base, Xsame, y, repeats, folds, seed)
         if not np.isfinite(base_auc):
             base_auc = raw["auc_a"]
-        net = raw["delta_median"] - rnd["delta_median"]
+        net_rand = raw["delta_median"] - rnd["delta_median"]
         va = _signfree_auroc(LT[:, j, F_VETO], y)
         ia = _signfree_auroc(LT[:, j, F_INTERF], y)
         da = _signfree_auroc(LT[:, j, F_DVETO], y)
-        lines.append(
-            f"{layer_idx[j]:02d} {raw['delta_median']:+.4f} {raw['delta_lo']:+.4f} "
-            f"{raw['delta_hi']:+.4f} {rnd['delta_median']:+.4f} {net:+.4f} "
-            f"{va:.4f} {ia:.4f} {da:.4f}"
-        )
+        if same is None:
+            lines.append(
+                f"{layer_idx[j]:02d} {raw['delta_median']:+.4f} {raw['delta_lo']:+.4f} "
+                f"{raw['delta_hi']:+.4f} {rnd['delta_median']:+.4f} {net_rand:+.4f} "
+                f"{va:.4f} {ia:.4f} {da:.4f}"
+            )
+        else:
+            net_same = raw["delta_median"] - same["delta_median"]
+            lines.append(
+                f"{layer_idx[j]:02d} {raw['delta_median']:+.4f} {raw['delta_lo']:+.4f} "
+                f"{raw['delta_hi']:+.4f} {rnd['delta_median']:+.4f} {net_rand:+.4f} "
+                f"{same['delta_median']:+.4f} {net_same:+.4f} {va:.4f} {ia:.4f} {da:.4f}"
+            )
 
     lines.append("")
-    lines.append("3-layer sliding windows; friction block flattened, random block matched by one rand-u column per layer")
-    lines.append("window raw_delta lo hi rand_delta net")
+    if f_same_delta is None:
+        lines.append("3-layer sliding windows; friction block flattened, random block matched by one rand-u column per layer")
+        lines.append("window raw_delta lo hi rand_delta net")
+    else:
+        lines.append("3-layer sliding windows; friction block flattened, random-u and same-Delta blocks matched per layer")
+        lines.append("window raw_delta lo hi rand_delta net_rand same_delta net_same_delta")
     for j in range(nL - 2):
         sl = slice(j, j + 3)
         Xtrip = np.column_stack([base, LT[:, sl, TRIPLET].reshape(len(y), -1)])
         Xrand = np.column_stack([base, LT[:, sl, F_RANDDVETO]])
         raw = _repeated_cv_delta(base, Xtrip, y, repeats, folds, seed)
         rnd = _repeated_cv_delta(base, Xrand, y, repeats, folds, seed)
-        net = raw["delta_median"] - rnd["delta_median"]
-        lines.append(
-            f"{layer_idx[j]:02d}-{layer_idx[j+2]:02d} {raw['delta_median']:+.4f} "
-            f"{raw['delta_lo']:+.4f} {raw['delta_hi']:+.4f} {rnd['delta_median']:+.4f} {net:+.4f}"
-        )
+        net_rand = raw["delta_median"] - rnd["delta_median"]
+        if f_same_delta is None:
+            lines.append(
+                f"{layer_idx[j]:02d}-{layer_idx[j+2]:02d} {raw['delta_median']:+.4f} "
+                f"{raw['delta_lo']:+.4f} {raw['delta_hi']:+.4f} {rnd['delta_median']:+.4f} {net_rand:+.4f}"
+            )
+        else:
+            same_cols = LT[:, sl, [F_INTERF, F_VETO, f_same_delta]].reshape(len(y), -1)
+            Xsame = np.column_stack([base, same_cols])
+            same = _repeated_cv_delta(base, Xsame, y, repeats, folds, seed)
+            net_same = raw["delta_median"] - same["delta_median"]
+            lines.append(
+                f"{layer_idx[j]:02d}-{layer_idx[j+2]:02d} {raw['delta_median']:+.4f} "
+                f"{raw['delta_lo']:+.4f} {raw['delta_hi']:+.4f} {rnd['delta_median']:+.4f} "
+                f"{net_rand:+.4f} {same['delta_median']:+.4f} {net_same:+.4f}"
+            )
 
     lines[header_idx] = f"baseline_auc_approx {base_auc:.3f}"
     return "\n".join(lines) + "\n"
