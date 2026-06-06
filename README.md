@@ -14,21 +14,21 @@ Inside a transformer block the residual update is `Δh = a + m`, where `a` is th
 - 🧬 **Orthogonal by construction.** `Δh = a + m` is invariant to the friction (same sum, opposite fight), so any signal that reads `Δh` is blind to the veto. Whether the veto *carries* a commitment tell is the open empirical question this branch tests.
 - 🆓 **`W_u`-free.** The veto is measured from `a` and `m` directly (angle / destructive-interference / directed veto) — no output vocabulary head required.
 
-### Pilot status — 9-model screen (ANLI R1, n=200, t=0)
+### Pilot status — same-Delta corrected screen (ANLI R1, n=200, t=0)
 
-A screening pilot asks the decisive question: **does the veto add discrimination *on top of* the prior direction signal (and beyond mere magnitude / route size)?** Results so far point to a **late-layer-localized** signal, present on capable Qwen and Llama models and absent on Mistral / Gemma:
+A screening pilot asks the decisive question: **does the veto add discrimination *on top of* the prior direction signal (and beyond mere magnitude / route size)?** The first random-û-controlled screen looked positive on capable Qwen and Llama models. The stricter schema-v3 rerun adds the **Benign Cancellation Baseline**: hold `Δh = a + m` fixed, match raw cancellation, and rotate only the hidden disagreement channel off the consequential direction. Under that baseline, most of the original Qwen/Llama signal is explained as benign cancellation / geometry rather than a clean directed knowledge veto.
 
-| Model | Family | IKV screen (incremental over the prior signal + route size) |
+| Model | Family | Same-Delta corrected status |
 |---|---|---|
-| Qwen2.5-7B | Qwen | ✅ positive (late-layer; one control runs warm — true effect slightly lower) |
-| Qwen3-8B | Qwen | ✅ positive (clean controls) |
-| Llama-3.2-3B | Llama | ✅ positive |
-| Llama-3.1-8B | Llama | ✅ positive **at a late-layer window** — diluted to null by a full-window mean |
+| Qwen2.5-7B | Qwen | raw full-window +0.1205, same-Δ floor +0.1129 → net +0.0076; best selected 3-layer net +0.0366 |
+| Qwen3-8B | Qwen | raw full-window +0.0955, same-Δ floor +0.1235 → net -0.0280; best selected 3-layer net +0.0062 |
+| Llama-3.2-3B | Llama | raw full-window +0.0458, same-Δ floor +0.0477 → net -0.0019; best selected 3-layer net +0.0102 |
+| Llama-3.1-8B | Llama | raw full-window +0.0150, same-Δ floor +0.0171 → net -0.0021; best selected 3-layer net +0.0336 |
 | Qwen3-1.7B | Qwen | — null (below the capability/scale threshold) |
 | Mistral-7B · Mistral-Nemo-12B | Mistral | — null (both scales; sink/magnitude-dominated) |
 | Gemma-3-4B | Gemma | — null |
 
-📌 **Key finding is about the operating point, not just the models.** The veto signal concentrates in the **last 3–4 layers**; averaging across a wide mid-band *dilutes* it in proportion to model depth. That is exactly why the deeper Llama-3.1-8B first read as a non-replication before a per-layer audit surfaced its strong late-layer spike. The next step pins a late-layer window and runs the production calibrator's nested-OOB bootstrap for a real confidence interval.
+📌 **Key correction: random-û was too weak a floor.** Same-Delta benign cancellation is the right negative control for this candidate. It preserves the net residual update and raw cancellation magnitude, so it catches "A and M cancel because the block is norm-bounding/refining" rather than "A and M carry an epistemic conflict." The remaining selected-window residuals are small and post-hoc; they are not enough to promote to sealed nested-OOB without a fresh pre-registered operating point.
 
 > ⚠️ These are **screening** intervals (split + training variance), not inferential CIs. "Positive" means *clears the screen → eligible to promote to a sealed run*, not *validated*. Two models also exposed control leaks (one warm random-direction control; one broken shuffled-labels control on a reasoning-distill), flagged for the sealed pass.
 
@@ -36,7 +36,7 @@ A screening pilot asks the decisive question: **does the veto add discrimination
 
 The central identifiability guard is: **hold `Δh = a + m` fixed and test whether the hidden split still carries signal**. `scripts/benign_cancellation_baseline.py` adds a pure NumPy same-`Δh` harness that constructs paired decompositions with byte-identical net residual updates and matched route norms; only the real split places disagreement on the epistemic direction. Current synthetic result: real epistemic split Δ=+0.4833, benign same-`Δh` Δ=-0.0063, net +0.4896.
 
-For the existing Qwen/Llama pilot dumps, the exact same-`Δh` real-sample control is not yet possible because those historical `.npz` files use schema v2: scalar friction features plus the random-û control. Their available conservative floor is therefore random-û: Qwen2.5 net +0.1048, Qwen3-8B net +0.0987, Llama-3.2-3B net +0.0517, Llama-3.1-8B full-window net +0.0198. Late-window net peaks remain larger: Qwen2.5 18–20 +0.1475, Qwen3-8B 23–25 +0.1371, Llama-3.2 17–19 +0.0874, Llama-3.1 21–23 +0.1959.
+The historical schema-v2 Qwen/Llama dumps only supported the random-û floor: Qwen2.5 net +0.1048, Qwen3-8B net +0.0987, Llama-3.2-3B net +0.0517, Llama-3.1-8B full-window net +0.0198. Schema-v3 reruns in `experiments/residual-friction/2026-06-06/run-07/` show that those estimates were anti-conservative: full-window same-Δ nets are Qwen2.5 +0.0076, Qwen3-8B -0.0280, Llama-3.2-3B -0.0019, Llama-3.1-8B -0.0021.
 
 Schema v3 dumps now persist the sufficient same-`Δh` projections directly as `Xbenign`: raw interference/veto magnitude is matched, `Δh` is held fixed, and the hidden disagreement channel is rotated off the consequential direction. That lets the offline baseline report `real friction - same-Δh benign` before sealed nested-OOB promotion, without storing full `a`/`m` vectors.
 

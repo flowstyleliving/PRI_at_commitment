@@ -1,0 +1,14 @@
+Synthetic same-Delta harness
+  n=400 dim=128
+  max |Delta_real - Delta_benign| = 1.110e-16
+  max route-norm mismatch          = 4.441e-16
+  real epistemic split: Delta=+0.4833 [+0.4596,+0.5164] auc=1.000
+  benign same-Delta:    Delta=-0.0063 [-0.0149,-0.0000] auc=0.509
+  net Knowledge Veto floor-subtracted Delta = +0.4896
+
+Persisted dump panel: same-Delta benign floor when present, else random-u fallback
+model primary lo hi floor_kind floor lo hi net schema
+Qwen2.5-7B-Instruct-4bit +0.1205 +0.1072 +0.1341 same_delta +0.1129 +0.0995 +0.1248 +0.0076 residual_friction_features_v3
+Qwen3-8B-4bit +0.0955 +0.0811 +0.1095 same_delta +0.1235 +0.1116 +0.1381 -0.0280 residual_friction_features_v3
+Llama-3.2-3B-Instruct-4bit +0.0458 +0.0303 +0.0587 same_delta +0.0477 +0.0320 +0.0605 -0.0019 residual_friction_features_v3
+Llama-3.1-8B-Instruct-4bit +0.0150 -0.0044 +0.0294 same_delta +0.0171 -0.0059 +0.0314 -0.0021 residual_friction_features_v3
