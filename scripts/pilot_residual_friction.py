@@ -100,6 +100,7 @@ ROUTE_FEATS = ["mean_na", "mean_nm", "mean_hnorm", "prefix_len"]
 LAYER_DUMP_FEATS = [
     "interference", "veto", "directed_veto", "rand_directed_veto",
     "cos", "na", "nm", "hnorm",
+    "same_delta_directed_veto", "same_delta_feasible_margin", "delta_norm",
 ]
 
 
@@ -266,23 +267,56 @@ def _layer_friction(
     Δh = a+m (rung-1 neighbour: upstream of this block, NOT independent of a_L
     but not circular-with-this-block's-own-(a+m)); rand_dveto uses a random û."""
     cols = {k: [] for k in ("cos", "interference", "veto", "directed_veto",
-                            "rand_directed_veto", "na", "nm", "hnorm")}
+                            "rand_directed_veto", "na", "nm", "hnorm",
+                            "same_delta_directed_veto",
+                            "same_delta_feasible_margin", "delta_norm")}
     for L in range(lo, hi):
         a, m = a_last[L], m_last[L]
+        delta = a + m
+        nd = float(np.linalg.norm(delta))
+        na = float(np.linalg.norm(a))
+        nm = float(np.linalg.norm(m))
         cols["cos"].append(_cos(a, m))
         cols["interference"].append(f_interference(a, m))
         cols["veto"].append(_veto(a, m))
-        cols["na"].append(float(np.linalg.norm(a)))
-        cols["nm"].append(float(np.linalg.norm(m)))
+        cols["na"].append(na)
+        cols["nm"].append(nm)
         cols["hnorm"].append(float(h_norm[L]))
+        cols["delta_norm"].append(nd)
         if L >= 1:
             u = a_last[L - 1] + m_last[L - 1]  # neighbour-block Δh
+            nu = float(np.linalg.norm(u))
             cols["directed_veto"].append(f_directed_veto(a, m, u))
             r = rng.standard_normal(a.shape[0])
             cols["rand_directed_veto"].append(f_directed_veto(a, m, r))
+            if nu > 1e-12:
+                uhat = u / nu
+                delta_on_u = float(delta @ uhat)
+                # Same-Delta benign control: keep Δh fixed and keep raw
+                # cancellation/route magnitudes matched, but rotate the hidden
+                # disagreement channel away from u. Then A'·u = M'·u = Δ·u/2.
+                cols["same_delta_directed_veto"].append(-0.25 * delta_on_u * delta_on_u)
+
+                # Feasibility of additionally matching ||a|| and ||m|| while
+                # imposing r·u = 0 for A'=Δ/2+r, M'=Δ/2-r. Non-negative means
+                # the route-matched benign split exists in the u-orthogonal
+                # subspace; high-dimensional residual streams should clear this.
+                r_norm_sq = max(0.0, 0.5 * (na * na + nm * nm) - 0.25 * nd * nd)
+                c = 0.5 * (na * na - nm * nm)  # required Δ·r
+                proj_delta_sq = max(0.0, nd * nd - delta_on_u * delta_on_u)
+                if proj_delta_sq <= 1e-12:
+                    feasible_margin = r_norm_sq if abs(c) <= 1e-8 else -np.inf
+                else:
+                    feasible_margin = r_norm_sq - (c * c) / proj_delta_sq
+                cols["same_delta_feasible_margin"].append(float(feasible_margin))
+            else:
+                cols["same_delta_directed_veto"].append(np.nan)
+                cols["same_delta_feasible_margin"].append(np.nan)
         else:
             cols["directed_veto"].append(np.nan)
             cols["rand_directed_veto"].append(np.nan)
+            cols["same_delta_directed_veto"].append(np.nan)
+            cols["same_delta_feasible_margin"].append(np.nan)
     return {k: np.array(v) for k, v in cols.items()}
 
 
@@ -296,6 +330,8 @@ def _summarize(lf: Dict[str, np.ndarray]) -> Dict[str, float]:
         "mean_veto": mean(lf["veto"]), "max_veto": mx_(lf["veto"]),
         "mean_directed_veto": mean(lf["directed_veto"]), "max_directed_veto": mx_(lf["directed_veto"]),
         "mean_rand_directed_veto": mean(lf["rand_directed_veto"]),
+        "mean_same_delta_directed_veto": mean(lf["same_delta_directed_veto"]),
+        "min_same_delta_feasible_margin": mn_(lf["same_delta_feasible_margin"]),
         "mean_na": mean(lf["na"]), "mean_nm": mean(lf["nm"]), "mean_hnorm": mean(lf["hnorm"]),
     }
 
@@ -384,6 +420,7 @@ def _dump_feature_matrices(
     Xroute: np.ndarray,
     Xfric: np.ndarray,
     Xrand: np.ndarray,
+    Xbenign: np.ndarray,
     summaries: Dict[str, np.ndarray],
     layer_tensor: np.ndarray,
 ) -> Path:
@@ -400,7 +437,7 @@ def _dump_feature_matrices(
         dtype="U64",
     )
     meta = {
-        "schema": "residual_friction_features_v2",
+        "schema": "residual_friction_features_v3",
         "model_slug": slug,
         "data_path": data_path,
         "n_samples": int(len(y)),
@@ -414,6 +451,11 @@ def _dump_feature_matrices(
         "route_feature_names": list(ROUTE_FEATS),
         "friction_feature_names": list(PINNED_FRICTION_FEATS),
         "random_feature_names": ["mean_rand_directed_veto"],
+        "benign_same_delta_feature_names": [
+            "mean_interference",
+            "mean_veto",
+            "mean_same_delta_directed_veto",
+        ],
         "layer_feature_names": list(LAYER_DUMP_FEATS),
     }
     np.savez_compressed(
@@ -423,6 +465,7 @@ def _dump_feature_matrices(
         Xroute=np.asarray(Xroute, dtype=np.float64),
         Xfric=np.asarray(Xfric, dtype=np.float64),
         Xrand=np.asarray(Xrand, dtype=np.float64),
+        Xbenign=np.asarray(Xbenign, dtype=np.float64),
         prompt_sha256=prompt_sha256,
         summary_names=np.array(list(summaries.keys()), dtype=object),
         summary_matrix=np.column_stack([summaries[k] for k in summaries.keys()]).astype(np.float64),
@@ -525,17 +568,22 @@ def run_model(slug: str, prompts: List[str], y: np.ndarray, args, data_path: str
 
     Xnull = null_ratio[:, None]
     Xfric = np.column_stack([S[k] for k in PINNED_FRICTION_FEATS])
+    Xbenign = np.column_stack([
+        S["mean_interference"],
+        S["mean_veto"],
+        S["mean_same_delta_directed_veto"],
+    ])
     # Richer magnitude/routing control: norms + residual norm + prefix length.
     Xroute = np.column_stack([S[k] for k in ROUTE_FEATS])
     Xrand = S["mean_rand_directed_veto"][:, None]
-    for nm_, X in [("null_ratio", Xnull), ("friction", Xfric), ("route", Xroute)]:
+    for nm_, X in [("null_ratio", Xnull), ("friction", Xfric), ("benign_same_delta", Xbenign), ("route", Xroute)]:
         _check_finite(nm_, X)
 
     if args.feature_dump_dir:
         _dump_feature_matrices(
             Path(args.feature_dump_dir), slug, data_path, prompts, y, lo, hi, args,
             Xnull=Xnull, Xroute=Xroute, Xfric=Xfric, Xrand=Xrand, summaries=S,
-            layer_tensor=layer_tensor,
+            Xbenign=Xbenign, layer_tensor=layer_tensor,
         )
 
     marg = {k: _signfree_auroc(S[k], y) for k in keys}
@@ -553,6 +601,7 @@ def run_model(slug: str, prompts: List[str], y: np.ndarray, args, data_path: str
         # negative controls (incremental, same machinery), at both baselines:
         "delta_rand_over_null": _repeated_cv_delta(Xnull, np.column_stack([Xnull, Xrand]), y, rp, fo, sd),
         "delta_rand_over_null_route": _repeated_cv_delta(Xnr, np.column_stack([Xnr, Xrand]), y, rp, fo, sd),
+        "delta_benign_same_delta_over_null_route": _repeated_cv_delta(Xnr, np.column_stack([Xnr, Xbenign]), y, rp, fo, sd),
     }
     yk = y.copy()
     np.random.default_rng(sd + 7).shuffle(yk)
@@ -571,7 +620,8 @@ def _print_model(name: str, res: Dict) -> None:
     print("  marginal sign-free AUROC (DESCRIPTIVE only — sign-free inflates):")
     for k in ["null_ratio", "mean_interference", "max_interference", "mean_veto",
               "max_veto", "mean_cos", "min_cos", "mean_directed_veto",
-              "max_directed_veto", "mean_na", "mean_nm", "mean_hnorm"]:
+              "max_directed_veto", "mean_same_delta_directed_veto",
+              "min_same_delta_feasible_margin", "mean_na", "mean_nm", "mean_hnorm"]:
         print(f"    {k:<24s} {_fmt(res['marg'].get(k))}")
     inc = res["inc"]
 
@@ -590,6 +640,7 @@ def _print_model(name: str, res: Dict) -> None:
     line("delta_route_over_null", "route-size | null  (descr.)")
     line("delta_rand_over_null", "random-û | null  (ctrl→0)")
     line("delta_rand_over_null_route", "random-û | null+route  (ctrl→0)")
+    line("delta_benign_same_delta_over_null_route", "same-Δ benign | null+route")
     line("delta_shuffled_labels", "shuffled-labels  (ctrl→0)")
     print("\n  Screen (go/no-go, not inference): PRIMARY ★ interval clears 0 AND both")
     print("  controls ~0  →  promote to a sealed calibrator nested-OOB run for the real CI.")

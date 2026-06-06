@@ -12,16 +12,18 @@ Two checks are intentionally separated:
    the same norm in the u-orthogonal subspace. A valid Knowledge Veto statistic
    should beat the benign same-Delta split.
 
-2. A persisted-dump panel. Existing pilot dumps contain scalar friction features
-   and a random-u control, but not the underlying A/M vectors, so they cannot run
-   the exact same-Delta benign split on real samples. For those dumps, this script
-   reports the conservative random-u floor:
+2. A persisted-dump panel. Schema v3 dumps contain an `Xbenign` block: the same
+   raw cancellation/interference magnitudes with the directed-veto component
+   replaced by the route-matched same-Delta benign split. Older schema v2 dumps
+   contain only scalar friction features and a random-u control, so they fall back
+   to the conservative random-u floor:
 
        net = Delta(real friction | null+route) - Delta(random-u | null+route)
 
-The exact real-sample same-Delta baseline requires future dumps to persist the
-per-sample per-layer A/M vectors or sufficient projections to reconstruct paired
-same-Delta splits.
+The exact vector-level construction is A' = Delta/2 + r, M' = Delta/2 - r with
+r rotated away from the consequential direction u while preserving the route
+norm constraints when feasible. The pilot persists the sufficient projections
+needed for this control; it does not need to store full A/M vectors.
 """
 from __future__ import annotations
 
@@ -182,26 +184,32 @@ def _synthetic_same_delta(
 
 def _dump_panel(npz_paths: list[Path], *, seed: int, repeats: int, folds: int) -> str:
     lines: list[str] = []
-    lines.append("Persisted dump panel: random-u floor (exact same-Delta unavailable without A/M vectors)")
-    lines.append("model primary lo hi rand_u lo hi net schema")
+    lines.append("Persisted dump panel: same-Delta benign floor when present, else random-u fallback")
+    lines.append("model primary lo hi floor_kind floor lo hi net schema")
     for path in npz_paths:
         d = np.load(path, allow_pickle=True)
         y = np.asarray(d["y"], dtype=np.int32)
         Xnull = np.asarray(d["Xnull"], dtype=np.float64)
         Xroute = np.asarray(d["Xroute"], dtype=np.float64)
         Xfric = np.asarray(d["Xfric"], dtype=np.float64)
-        Xrand = np.asarray(d["Xrand"], dtype=np.float64)
         base = np.column_stack([Xnull, Xroute])
         real = _repeated_cv_delta(base, np.column_stack([base, Xfric]), y, repeats, folds, seed)
-        rnd = _repeated_cv_delta(base, np.column_stack([base, Xrand]), y, repeats, folds, seed)
+        if "Xbenign" in d.files:
+            Xfloor = np.asarray(d["Xbenign"], dtype=np.float64)
+            floor_kind = "same_delta"
+        else:
+            Xfloor = np.asarray(d["Xrand"], dtype=np.float64)
+            floor_kind = "random_u"
+        floor = _repeated_cv_delta(base, np.column_stack([base, Xfloor]), y, repeats, folds, seed)
         meta = json.loads(str(d["metadata"])) if "metadata" in d.files else {}
         model = meta.get("model_slug", path.stem).replace("mlx-community/", "")
         schema = meta.get("schema", "unknown")
         lines.append(
             f"{model} "
             f"{real['delta_median']:+.4f} {real['delta_lo']:+.4f} {real['delta_hi']:+.4f} "
-            f"{rnd['delta_median']:+.4f} {rnd['delta_lo']:+.4f} {rnd['delta_hi']:+.4f} "
-            f"{real['delta_median'] - rnd['delta_median']:+.4f} {schema}"
+            f"{floor_kind} "
+            f"{floor['delta_median']:+.4f} {floor['delta_lo']:+.4f} {floor['delta_hi']:+.4f} "
+            f"{real['delta_median'] - floor['delta_median']:+.4f} {schema}"
         )
     return "\n".join(lines) + "\n"
 

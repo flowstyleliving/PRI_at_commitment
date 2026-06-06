@@ -36,9 +36,9 @@ A screening pilot asks the decisive question: **does the veto add discrimination
 
 The central identifiability guard is: **hold `Δh = a + m` fixed and test whether the hidden split still carries signal**. `scripts/benign_cancellation_baseline.py` adds a pure NumPy same-`Δh` harness that constructs paired decompositions with byte-identical net residual updates and matched route norms; only the real split places disagreement on the epistemic direction. Current synthetic result: real epistemic split Δ=+0.4833, benign same-`Δh` Δ=-0.0063, net +0.4896.
 
-For the existing Qwen/Llama pilot dumps, the exact same-`Δh` real-sample control is not yet possible because the `.npz` files persist scalar friction features, not the underlying per-layer `a`/`m` vectors. The available conservative floor is the persisted random-û control: Qwen2.5 net +0.1048, Qwen3-8B net +0.0987, Llama-3.2-3B net +0.0517, Llama-3.1-8B full-window net +0.0198. Late-window net peaks remain larger: Qwen2.5 18–20 +0.1475, Qwen3-8B 23–25 +0.1371, Llama-3.2 17–19 +0.0874, Llama-3.1 21–23 +0.1959.
+For the existing Qwen/Llama pilot dumps, the exact same-`Δh` real-sample control is not yet possible because those historical `.npz` files use schema v2: scalar friction features plus the random-û control. Their available conservative floor is therefore random-û: Qwen2.5 net +0.1048, Qwen3-8B net +0.0987, Llama-3.2-3B net +0.0517, Llama-3.1-8B full-window net +0.0198. Late-window net peaks remain larger: Qwen2.5 18–20 +0.1475, Qwen3-8B 23–25 +0.1371, Llama-3.2 17–19 +0.0874, Llama-3.1 21–23 +0.1959.
 
-Next dump-format upgrade: persist per-sample/per-layer `a` and `m` vectors, or sufficient projections to reconstruct paired same-`Δh` splits, before the sealed nested-OOB promotion.
+Schema v3 dumps now persist the sufficient same-`Δh` projections directly as `Xbenign`: raw interference/veto magnitude is matched, `Δh` is held fixed, and the hidden disagreement channel is rotated off the consequential direction. That lets the offline baseline report `real friction - same-Δh benign` before sealed nested-OOB promotion, without storing full `a`/`m` vectors.
 
 ### Run the Internal Knowledge Veto pilot
 
