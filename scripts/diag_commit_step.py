@@ -31,14 +31,15 @@ import argparse, csv, json, os, statistics, sys, tempfile
 from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
-import pri_v2_io_plugins as io
-import pri_v2_mlx_pipeline as pipeline
-from pri_calibrator import _load_calibration_jsonl
 
-STRICT = (io.tier_emphatic_closing, io.tier_answer_prefix, io.tier_bare_first_word)
 
-def strict_parse(t):
-    for fn in STRICT:
+def strict_parse(t, io_module):
+    strict = (
+        io_module.tier_emphatic_closing,
+        io_module.tier_answer_prefix,
+        io_module.tier_bare_first_word,
+    )
+    for fn in strict:
         r = fn(t)
         if r is not None:
             return r
@@ -52,6 +53,10 @@ def bucket(k):
     return "step65_cap"
 
 def main() -> int:
+    import pri_v2_io_plugins as io
+    import pri_runtime as pipeline
+    from pri_calibrator import _load_calibration_jsonl
+
     p = argparse.ArgumentParser()
     p.add_argument("--model", required=True)
     p.add_argument("--data", default=str(REPO/"experiments/anli-sweep/2026-05-15/run-02/anli_R1_seed20260513_n100.jsonl"))
@@ -90,7 +95,7 @@ def main() -> int:
             cell[(status, lab)] += 1
             cstep = None
             for k in range(1, len(ids)+1):
-                if strict_parse(pipeline.decode_ids(tok, ids[:k])) == final:
+                if strict_parse(pipeline.decode_ids(tok, ids[:k]), io) == final:
                     cstep = k; break
             cb = bucket(cstep) if cstep else "weak_only"
             buckets[cb] += 1

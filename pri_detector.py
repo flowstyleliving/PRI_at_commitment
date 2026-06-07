@@ -31,7 +31,7 @@ Important caveats — see also the deployability warnings in the profile:
   * The detector is locked to ONE (model, task) regime. Don't deploy a
     profile calibrated on ANLI on, e.g., factual QA.
 
-  * If you've updated `pri_v2_mlx_pipeline.py` since the profile was
+  * If you've updated `pri_runtime.py` since the profile was
     calibrated, the metric values may have drifted. Pass
     `strict_pipeline_hash=True` to refuse to load on hash mismatch, or
     accept the warning and re-calibrate.
@@ -54,7 +54,7 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import pri_v2_mlx_pipeline as pipeline
+import pri_runtime as pipeline
 import pri_v2_io_plugins as io_plugins
 from pri_calibrator import CalibrationProfile, SCHEMA_VERSION, _hash_file
 
@@ -171,7 +171,7 @@ class Detector:
         # finding that prompt strategy + adapter changes also affect scores
         # while strict_pipeline_hash=True silently passed.
         score_critical_hashes = [
-            ("pipeline_module_hash_sha256",       REPO_ROOT / "pri_v2_mlx_pipeline.py"),
+            ("pipeline_module_hash_sha256",       REPO_ROOT / "pri_runtime.py"),
             ("io_plugins_module_hash_sha256",     REPO_ROOT / "pri_v2_io_plugins.py"),
             ("model_adapters_module_hash_sha256", REPO_ROOT / "model_adapters.py"),
             ("calibrator_module_hash_sha256",     REPO_ROOT / "pri_calibrator.py"),
@@ -460,7 +460,7 @@ def _self_test(profile_path: str, calibration_data_path: str) -> int:
     A perfect self-test confirms:
       (a) trace_sample → compute_step is deterministic
       (b) profile's metric column + sign + gen_step are wired up correctly
-      (c) pri_v2_mlx_pipeline.py code path is byte-identical to calibration
+      (c) pri_runtime.py code path is byte-identical to calibration
     """
     from sklearn.metrics import roc_auc_score
 
@@ -527,7 +527,7 @@ def main() -> int:
     p.add_argument("--threshold", type=float, default=None,
                    help="binary-prediction threshold (default: profile.detector.threshold)")
     p.add_argument("--strict-pipeline-hash", action="store_true",
-                   help="refuse to load if pri_v2_mlx_pipeline.py has changed since calibration")
+                   help="refuse to load if pri_runtime.py has changed since calibration")
     p.add_argument("--self-test", action="store_true",
                    help="re-score --calibration-data, verify AUROC matches profile")
     p.add_argument("--calibration-data", help="calibration jsonl (for --self-test)")

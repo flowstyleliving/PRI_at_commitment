@@ -102,6 +102,68 @@ def compute_delta_sigma_mean_cross_layer_jsd(
     return float(max(0.0, min(1.0, jsd / denom)))
 
 
+def compute_momentum_features(
+    hidden_vectors: List[mx.array],
+    cfg_obj: config.UncertaintyConfig | None = None,
+) -> dict:
+    """
+    Residual-stream momentum across transformer layers at a single generation step.
+
+    Computes layer increments inc_l = h_l - h_{l-1} and measures how
+    coherently they point in the same direction — the "rush to commitment."
+
+    momentum_pc1_ratio: PC1 energy fraction of the unit-increment matrix.
+        High = all layers pushing the same way (coordinated rush).
+    momentum_mean_cos: Mean cosine similarity between consecutive layer increments.
+        High = each layer continues the previous layer's direction.
+    """
+    default = {"momentum_pc1_ratio": 0.0, "momentum_mean_cos": 0.0}
+    if len(hidden_vectors) < 3:
+        return default
+
+    eps = 1e-8
+
+    vecs: list = []
+    for h in hidden_vectors:
+        arr = np.asarray(h.tolist(), dtype=np.float64)
+        if arr.ndim != 1 or arr.size == 0:
+            return default
+        vecs.append(arr)
+
+    incs = [vecs[i] - vecs[i - 1] for i in range(1, len(vecs))]
+    norms = np.array([np.linalg.norm(inc) for inc in incs], dtype=np.float64)
+    valid = norms > eps
+    if int(valid.sum()) < 2:
+        return default
+
+    unit_incs = [incs[i] / norms[i] for i in range(len(incs)) if valid[i]]
+
+    mat = np.vstack(unit_incs)
+    mat_centered = mat - mat.mean(axis=0, keepdims=True)
+    if np.allclose(mat_centered, 0.0):
+        # All increments identical → perfect coherence
+        pc1_ratio = 1.0
+    else:
+        try:
+            _, s, _ = np.linalg.svd(mat_centered, full_matrices=False)
+        except np.linalg.LinAlgError:
+            return default
+        s_sq = s ** 2
+        s_total = float(np.sum(s_sq))
+        pc1_ratio = float(s_sq[0] / s_total) if s_total > eps else 0.0
+
+    cos_vals = [
+        float(np.dot(unit_incs[i], unit_incs[i + 1]))
+        for i in range(len(unit_incs) - 1)
+    ]
+    mean_cos = float(np.mean(cos_vals)) if cos_vals else 0.0
+
+    return {
+        "momentum_pc1_ratio": float(np.clip(pc1_ratio, 0.0, 1.0)),
+        "momentum_mean_cos": float(np.clip(mean_cos, -1.0, 1.0)),
+    }
+
+
 def compute_svd_spectrum_features(
     hidden_vectors: List[mx.array],
     epsilon: float | None = None,
