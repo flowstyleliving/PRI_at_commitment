@@ -24,6 +24,22 @@ Spec: [docs/v7_attention_route.md](docs/v7_attention_route.md)
 
 ---
 
+## 👁️ v8 — ACE Route Override
+
+v8 uses the sealed v4/ACE `t=0` attention cell as the route sensor, then asks whether v6 MLP/readout and projection-veto features add beyond that route:
+
+```text
+ACE-route | null + route-size
+MLP/final/override | null + route-size + ACE-route
+projection-veto | null + route-size + ACE-route + budget/same-Delta
+```
+
+First Qwen2.5-7B screen: ACE route adds `Delta=+0.0623`; MLP/readout/override still add beyond ACE (`+0.058` to `+0.070`). But the projection-veto component again collapses under the same-Delta and projection-budget floors: raw beyond ACE `+0.0662`, same-Delta floor `+0.0635`, net `+0.0027`; after ACE+budget `+0.0025`; after ACE+same-Delta `+0.0007`. Shuffled-label ACE-route is also warm (`+0.0354`), so this remains an exploratory screen, not a sealed promotion.
+
+Spec: [docs/v8_ace_route_override.md](docs/v8_ace_route_override.md)
+
+---
+
 ## 🎛️ v6 — Projection Veto (readout-space conflict)
 
 v5 taught the hard lesson: `a` and `m` can fight in residual space for benign reasons. The same-`Δh` and residual-budget baselines deflated the Qwen/Llama signal, meaning much of the apparent friction was norm budgeting rather than epistemic conflict.
@@ -133,6 +149,7 @@ Each step listens for the same commitment signature in a different place; the tr
 | **v5 — Internal Knowledge Veto** | **Residual-stream sub-layer friction** (the knowledge layer's veto of the attention route), `W_u`-free and orthogonal to the v3 sum. | no | corrected: mostly benign cancellation / residual budget |
 | **v6 — Projection Veto** | **Readout-space conflict** between attention and MLP writes after projection onto frozen `W_u` contrast directions. | yes | first Qwen2.5 screen: raw +, same-Delta net null |
 | **v7 — Attention Route** | **Signed answer direction of the attention write before MLP response**, plus override tests. | yes | first Qwen2.5 screen: signed route null; MLP/final strong |
+| **v8 — ACE Route Override** | **Sealed ACE `t=0` attention cell as route sensor**, then MLP/readout override beyond ACE. | mixed | first Qwen2.5 screen: ACE + MLP strong; veto net null |
 
 🔒 **On v3:** the precise direction metric, the sealed gate parameters, the geometry correction, and the per-model confirmatory numbers are deliberately **kept out of this public branch**. They belong to the frozen pre-registration and the paper. What matters for the v3→v5 story is only the shape: v3 established that a *direction*-based commit signal beats a *magnitude*-based one and is deployable via per-(model, distribution) calibration — and that motivated pushing the readout off the output head entirely (v4, and now Internal Knowledge Veto).
 

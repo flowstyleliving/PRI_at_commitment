@@ -1,0 +1,72 @@
+[detector] WARNING: score-critical provenance changed since calibration:
+  pri_runtime.py: recorded=cf56a2607b94…  current=5330be108114…
+  model_adapters.py: recorded=5ce42c7f8de7…  current=bcee044f48bc…
+  pri_calibrator.py: recorded=031fb3ac83af…  current=68b0c6344d71…
+
+  Loading model: mlx-community/Qwen2.5-7B-Instruct-4bit
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files: 100%|██████████| 9/9 [00:00<00:00, 113701.01it/s]
+     Layers: 28 | Probed: {'final': 27} | Output projection: lm_head (V=152064, D=3584)
+[detector] loaded mlx-community/Qwen2.5-7B-Instruct-4bit  cell=Attention final_v_norm_lastq_weighted @ step 0  sign=+1
+  scoring ACE route for 200 prompts ...
+    [25/200]
+    [50/200]
+    [75/200]
+    [100/200]
+    [125/200]
+    [150/200]
+    [175/200]
+    [200/200]
+  wrote cached ACE scores: experiments/ace-route-override/2026-06-06/run-01/ace_scores_qwen25.npz
+
+==============================================================================
+  v8 ACE-route override screen
+==============================================================================
+  profile: experiments/v4-sealed/2026-05-26/profiles/anli/Qwen2.5-7B-Instruct-4bit.profile.json
+  ACE cell: attention::final_v_norm_lastq_weighted @ step 0 sign=+1
+  profile AUROC=0.790 OOB=0.780 [0.663,0.860] stability=0.69
+  projection dump: experiments/projection-veto/2026-06-06/run-02/features/mlx-community_Qwen2.5-7B-Instruct-4bit.projection_veto_features.npz
+  n=200 pos=100 neg=100
+
+  marginal sign-free AUROC: ACE route
+    ace_signed_score               0.790
+
+  marginal sign-free AUROC: MLP/readout response
+    mean_pm                        0.864
+    early_mean_pm                  0.524
+    mid_mean_pm                    0.552
+    late_mean_pm                   0.868
+    signed_max_abs_pm              0.832
+
+  marginal sign-free AUROC: final projected update
+    mean_pnet                      0.867
+    early_mean_pnet                0.530
+    mid_mean_pnet                  0.544
+    late_mean_pnet                 0.865
+    signed_max_abs_pnet            0.844
+
+  marginal sign-free AUROC: override descriptors
+    mean_projection_conflict       0.865
+    frac_attn_mlp_oppose           0.665
+    frac_final_follows_mlp         0.615
+    frac_final_follows_attn        0.792
+    mean_override_margin           0.723
+
+  incremental cross-fit OOF AUROC - repeated-CV split-sensitivity:
+    ACE-route | null+route-size                        aucA=0.765 aucB=0.828 Delta=+0.0623 [+0.0528,+0.0743] (r=200)
+    MLP-readout | null+route-size+ACE                  aucA=0.828 aucB=0.895 Delta=+0.0672 [+0.0532,+0.0788] (r=200)
+    final-readout | null+route-size+ACE                aucA=0.828 aucB=0.885 Delta=+0.0579 [+0.0467,+0.0677] (r=200)
+    override | null+route-size+ACE                     aucA=0.828 aucB=0.898 Delta=+0.0704 [+0.0580,+0.0828] (r=200)
+    projection-veto | null+route-size+ACE              aucA=0.828 aucB=0.893 Delta=+0.0662 [+0.0552,+0.0758] (r=200)
+    same-Delta projection | null+route-size+ACE        aucA=0.828 aucB=0.891 Delta=+0.0635 [+0.0534,+0.0732] (r=200)
+    budget | null+route-size+ACE                       aucA=0.828 aucB=0.885 Delta=+0.0579 [+0.0439,+0.0699] (r=200)
+    projection-veto | null+route-size+ACE+budget       aucA=0.885 aucB=0.888 Delta=+0.0025 [-0.0008,+0.0064] (r=200)
+    projection-veto | null+route-size+ACE+same-Delta   aucA=0.891 aucB=0.891 Delta=+0.0007 [-0.0014,+0.0028] (r=200)
+    shuffled-labels ACE-route                          aucA=0.464 aucB=0.498 Delta=+0.0354 [+0.0058,+0.0561] (r=200)
+    shuffled-labels override                           aucA=0.498 aucB=0.521 Delta=+0.0226 [-0.0110,+0.0609] (r=200)
+
+  v8 summary:
+    projection-veto beyond ACE raw       +0.0662
+    same-Delta floor beyond ACE          +0.0635
+    raw-minus-same floor                 +0.0027
+    projection-veto after ACE+budget     +0.0025
+    projection-veto after ACE+same-Delta +0.0007
