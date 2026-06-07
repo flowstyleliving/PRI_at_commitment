@@ -2,6 +2,18 @@
 
 > Token-level rupture detection for LLM generation, measured at the first-generated token, with a Fisher-pullback geometry and a HARP-style static-SVD baseline as the head-to-head control.
 
+## Repository status and lineage
+
+This README is the legitimate entry point for the **PRI v3** line in this working repository: Fisher-pullback geometry, static-SVD/HARP comparison, sealed v3 gates, and the later shared runtime/calibrator infrastructure that grew out of it. It is not meant to present every later exploratory branch as a new settled headline.
+
+The clean follow-on archive for the ACE / `t=0` attention-morphology work now lives in a separate repository:
+
+**T0 Morphology Furnace:** <https://github.com/flowstyleliving/t0-morphology-furnace>
+
+That repository is the canonical standalone archive for the sealed ACE/T0 morphology result: pre-registration, runner scripts, tests, sealed 2026-05-26 data/profile artifacts, and paper figures. It may be private during active development; if it is made public, that URL is the reader-facing next step after this PRI v3 repository.
+
+Branch hygiene note: this repo remains the working research repo. The `feat/v4-t0-commit-sealed-run` branch preserves the ACE/T0 bridge inside the original codebase, while `codex/v5-*` through `codex/v8-*` are exploratory follow-ups and should not be merged into the canonical line without a deliberate cherry-pick/review pass.
+
 **v3 active line.** PRI v3 decomposes the hidden-state jump `Δh = h_t − h_prev` at commitment into a **direction** observable (`null_ratio`, the fraction of `Δh` that lies outside the top-r right singular vectors of `sqrt(p_t) · W_u`) rather than v2's magnitude scalar `d_F`. The hypothesis: contradictions push `Δh` *off* the commit direction, independent of how far it moved.
 
 **HARP** (Hu et al. 2025, [arXiv:2509.11536](https://arxiv.org/abs/2509.11536)) is the static-`W_u`-SVD baseline this repo tests Fisher pullback against. It decomposes the unembedding matrix once per model and uses the orthogonal complement of the top-r right singular vectors as a fixed "reasoning subspace" for hallucination detection. Fisher pullback is the natural per-sample generalization: same SVD machinery, but on `√p_t · W_u` (the unembedding re-weighted by the current token distribution), so the basis is locally tailored to where THIS prompt's prediction is sensitive instead of model-global.
