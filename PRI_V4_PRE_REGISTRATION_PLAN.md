@@ -9,15 +9,17 @@
 
 ---
 
-## Amendments
+## Amendments / post-seal clarifications
 
-*(None yet. File amendments here before any data lands.)*
+No pre-data amendments were filed.
+
+**2026-06-06 post-seal prose clarification (no parameter change):** cleaned stale wording that still described the older generation-phase panel as `gen_step=1` / `layer=final`. The sealed block, runner, and checked-in profiles all use `--t0-commit`, `ATTENTION_PANEL_T0_WITH_V_NORMS`, `detector.gen_step=0`, and the three block-depth prefixes `{final, mid, last_minus_1}`. This clarification only aligns the narrative prose with the already-frozen implementation and artifacts; it does not change datasets, thresholds, panel cells, gates, bootstrap settings, or outcomes.
 
 ---
 
 ## One-line thesis
 
-Per-model **ACE** (Attention Commitment Estimator) calibrators at the t=0 commit step discriminate YES/NO reliably across architectures and task domains, but no single attention cell transfers — neither metric nor sign is portable across model or dataset, only the generation locus (step=1, final layer) is stable.
+Per-model **ACE** (Attention Commitment Estimator) calibrators at the t=0 commit step discriminate YES/NO reliably across architectures and task domains. The analysis locus is fixed at the prefill-last-position (`t=0`); the winning metric, sign, and block-depth prefix are selected per model and dataset, with exact cell transfer tested separately.
 
 ---
 
@@ -46,13 +48,13 @@ Per-model **ACE** (Attention Commitment Estimator) calibrators at the t=0 commit
 | Qwen3-8B | `mlx-community/Qwen3-8B-4bit` |
 | Gemma-3-4B | `mlx-community/gemma-3-4b-it-4bit` |
 
-**Phi-3.5-mini note:** This model shows real low-decidedness (Step 0 neighborhood audit 2026-05-17). Its attention discriminability is reported but **excluded from the primary gate count** (counts as 8-model gate, not 9). If it clears CI_lo > 0.50, it is counted; if it doesn't, the gate count denominator is 8. Decide before the sealed run and record below.
+**Phi-3.5-mini note:** This model shows real low-decidedness (Step 0 neighborhood audit 2026-05-17). Its attention discriminability is reported with that caveat. The pre-run gate decision below fixes how it enters the primary denominator.
 
 > **Pre-run Phi-3.5-mini gate decision:** `INCLUDED` — real low-decidedness confirmed but attention features remain valid; counts in gate if OOB CI_lo > 0.50, does not count against if it fails. Denominator = 9. Set 2026-05-26 before freeze.
 
 ### Attention metric panel (21 cells per model)
 
-All cells are at **gen_step=1** (generation step), **layer=final** (final transformer norm output). The 21 cells are:
+All cells are measured at **t=0** via `--t0-commit`: the prefill last-position attention slice `captures[layer][0]`, before any generated-token attention query. The 21 cells are:
 
 | Block-depth prefix | Metrics (7 each) |
 |---|---|
@@ -60,7 +62,7 @@ All cells are at **gen_step=1** (generation step), **layer=final** (final transf
 | `mid_` (middle transformer block) | same 7 |
 | `last_minus_1_` (second-to-last block) | same 7 |
 
-Invoked via `pri_calibrator.py --attention-with-v-norms --attention-only`. Sign locked from calibration-set OOB winner direction (no post-hoc sign-fitting on test data).
+Invoked via `pri_calibrator.py --t0-commit --attention-with-v-norms`. Sign locked from calibration-set OOB winner direction (no post-hoc sign-fitting on test data).
 
 ### Datasets
 
@@ -85,8 +87,8 @@ Datasets generated 2026-05-26 before freeze. Hashes computed by `sha256(file_byt
 
 ### Analysis plane
 
-- **Step**: generation step 1 (at the t=0 commit locus — the first generated token)
-- **Layer**: final (the last transformer norm layer output)
+- **Step**: step 0 attention capture (`captures[layer][0]`) at the t=0 commit locus — prefill last-position, before generated-token attention.
+- **Block-depth prefixes**: `final`, `mid`, and `last_minus_1`; each is crossed with the seven attention metrics above.
 - **Calibrator**: per-model OOB bootstrap AUROC, 1000 resamples, schema v1.2
 - **Winner selection**: OOB bootstrap mean AUROC; sign locked from calibration-set direction; no pooling across models
 - **Calibration data**: same dataset as evaluation (ANLI R1 n=200 or TriviaQA n=100); OOB bootstrap provides honest selection-bias-free CIs
