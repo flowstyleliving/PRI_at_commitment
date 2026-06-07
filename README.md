@@ -2,7 +2,25 @@
 
 > Catching a language model **vetoing its own commitment from the inside** — the moment its knowledge layer overrides the answer its attention just routed to — read directly from the residual stream at the commit token, without ever touching the output vocabulary head.
 
-**Internal Knowledge Veto (IKV)** is the current name, and the **v5** incarnation, of a line of work developed through v4 as **PRI (Predictive Rupture Index)**. The through-line is a single question: **at the instant a model commits to an answer, does its internal state already carry a readable signature of *how* it is committing** — confidently, against its own knowledge, off-axis? The arc moves steadily *away* from the output projection `W_u` (the "answer key") and *toward* the model's own routing and update dynamics. v5 reads the commitment tell **entirely from inside the transformer block**.
+**Internal Knowledge Veto (IKV)** is the current name, and the **v5** incarnation, of a line of work developed through v4 as **PRI (Predictive Rupture Index)**. The through-line is a single question: **at the instant a model commits to an answer, does its internal state already carry a readable signature of *how* it is committing** — confidently, against its own knowledge, off-axis? The arc moves steadily *away* from the output projection `W_u` (the "answer key") and *toward* the model's own routing and update dynamics, then selectively reintroduces `W_u` as a controlled readout lens when the question is explicitly about answer steering.
+
+---
+
+## 🧭 v7 — Attention Route
+
+v7 asks the upstream version of v6: **before the MLP answers back, where did attention route the model?** Using the same frozen YES-vs-NO `W_u` contrast as v6, it measures the signed attention write `p_a = <u_NO-YES, a>` and tests:
+
+```text
+attention-route | null + route-size
+attention-route | null + route-size + abs-attention-budget
+override | null + route-size + attention-route + abs-attention-budget
+```
+
+First implementation: [scripts/analyze_attention_route.py](scripts/analyze_attention_route.py) runs offline from v6 projection-veto dumps, because those already persist per-layer `p_a`, `p_m`, and `p_net`. New forwards are only needed for head-level attention weights or entropy.
+
+First Qwen2.5-7B offline screen from the v6 dump (ANLI R1, n=200) is **not** an attention-route win: signed attention route slightly hurts over `null+route-size` (`Delta=-0.0134 [-0.0333,-0.0022]`), while absolute attention budget helps (`Delta=+0.0298`). Late MLP/final readout remains strong (`+0.12` range), and override descriptors add after route+abs budget (`Delta=+0.0870`), but that is not yet a clean route-veto claim because v6 already showed the projection conflict is same-Delta/budget-like.
+
+Spec: [docs/v7_attention_route.md](docs/v7_attention_route.md)
 
 ---
 
@@ -114,6 +132,7 @@ Each step listens for the same commitment signature in a different place; the tr
 | **v4 — ACE** | Reads the **attention landscape itself** (a *pre-generation belief readout*), `W_u`-free. Spine of the current paper. | no | sealed / paper |
 | **v5 — Internal Knowledge Veto** | **Residual-stream sub-layer friction** (the knowledge layer's veto of the attention route), `W_u`-free and orthogonal to the v3 sum. | no | corrected: mostly benign cancellation / residual budget |
 | **v6 — Projection Veto** | **Readout-space conflict** between attention and MLP writes after projection onto frozen `W_u` contrast directions. | yes | first Qwen2.5 screen: raw +, same-Delta net null |
+| **v7 — Attention Route** | **Signed answer direction of the attention write before MLP response**, plus override tests. | yes | first Qwen2.5 screen: signed route null; MLP/final strong |
 
 🔒 **On v3:** the precise direction metric, the sealed gate parameters, the geometry correction, and the per-model confirmatory numbers are deliberately **kept out of this public branch**. They belong to the frozen pre-registration and the paper. What matters for the v3→v5 story is only the shape: v3 established that a *direction*-based commit signal beats a *magnitude*-based one and is deployable via per-(model, distribution) calibration — and that motivated pushing the readout off the output head entirely (v4, and now Internal Knowledge Veto).
 

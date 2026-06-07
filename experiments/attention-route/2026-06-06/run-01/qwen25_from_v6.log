@@ -1,0 +1,57 @@
+
+==============================================================================
+  v7 attention-route: mlx-community/Qwen2.5-7B-Instruct-4bit
+==============================================================================
+  dump: experiments/projection-veto/2026-06-06/run-02/features/mlx-community_Qwen2.5-7B-Instruct-4bit.projection_veto_features.npz
+  n=200 pos=100 neg=100
+  layer window: [7,21)
+  contrast: NO_bucket_minus_YES_bucket  positive=NO/contradiction
+
+  marginal sign-free AUROC: attention route
+    mean_pa                        0.604
+    early_mean_pa                  0.501
+    mid_mean_pa                    0.521
+    late_mean_pa                   0.616
+    signed_max_abs_pa              0.611
+
+  marginal sign-free AUROC: attention absolute budget
+    mean_abs_pa                    0.564
+    max_abs_pa                     0.611
+    mean_na                        0.727
+    mean_abs_pa_over_na            0.625
+
+  marginal sign-free AUROC: MLP/readout response
+    mean_pm                        0.864
+    early_mean_pm                  0.524
+    mid_mean_pm                    0.552
+    late_mean_pm                   0.868
+    signed_max_abs_pm              0.832
+
+  marginal sign-free AUROC: final projected update
+    mean_pnet                      0.867
+    early_mean_pnet                0.530
+    mid_mean_pnet                  0.544
+    late_mean_pnet                 0.865
+    signed_max_abs_pnet            0.844
+
+  marginal sign-free AUROC: override descriptors
+    mean_projection_conflict       0.865
+    frac_attn_mlp_oppose           0.665
+    frac_final_follows_mlp         0.615
+    frac_final_follows_attn        0.792
+    mean_override_margin           0.723
+
+  incremental cross-fit OOF AUROC - repeated-CV split-sensitivity:
+    attention-route | null+route-size              aucA=0.765 aucB=0.750 Delta=-0.0134 [-0.0333,-0.0022] (r=200)
+    abs-attn-budget | null+route-size              aucA=0.765 aucB=0.794 Delta=+0.0298 [+0.0155,+0.0418] (r=200)
+    attention-route | null+route-size+abs-attn     aucA=0.794 aucB=0.784 Delta=-0.0086 [-0.0245,-0.0003] (r=200)
+    MLP-readout | null+route-size+attention        aucA=0.750 aucB=0.872 Delta=+0.1209 [+0.1065,+0.1379] (r=200)
+    final-readout | null+route-size+attention      aucA=0.750 aucB=0.869 Delta=+0.1185 [+0.1046,+0.1366] (r=200)
+    override | null+route-size+attention+abs-attn  aucA=0.784 aucB=0.872 Delta=+0.0870 [+0.0701,+0.1058] (r=200)
+    shuffled-labels attention-route                aucA=0.576 aucB=0.556 Delta=-0.0202 [-0.0555,+0.0094] (r=200)
+
+  v7 route summary:
+    signed attention-route raw Delta       -0.0134
+    absolute attention budget floor        +0.0298
+    signed attention after abs budget      -0.0086
+    override after route+abs budget        +0.0870
