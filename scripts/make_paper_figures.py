@@ -70,9 +70,15 @@ plt.rcParams.update({
 
 
 def _save(out: Path, stem: str) -> None:
-    """Emit vector PDF for the manuscript and PNG for quick viewing."""
+    """Emit vector PDF for the manuscript and PNG for quick viewing.
+
+    CreationDate is suppressed so an unchanged figure re-renders byte-for-byte.
+    Without it every run rewrites all six PDFs with a fresh timestamp, which
+    makes a re-render indistinguishable from a content change in git.
+    """
     for ext in ("pdf", "png"):
-        plt.savefig(out / f"{stem}.{ext}")
+        metadata = {"CreationDate": None} if ext == "pdf" else None
+        plt.savefig(out / f"{stem}.{ext}", metadata=metadata)
 
 # ---- bootstrap helpers ----------------------------------------------------
 
@@ -295,7 +301,10 @@ def fig3_jn_correction(out: Path):
     for xi, d, lo, hi in zip(x, deltas, los, his):
         above = d > 0
         y = hi + 0.022 if above else lo - 0.022
-        ax.text(xi, y, f"{d:+.3f}\n[{lo:+.3f}, {hi:+.3f}]", ha="center",
+        # 4dp on delta, matching Table 2. At 3dp the run-02 value sits on a
+        # rounding knife-edge (stored 0.14949999...), so the table and the
+        # figure disagreed in the last place.
+        ax.text(xi, y, f"{d:+.4f}\n[{lo:+.3f}, {hi:+.3f}]", ha="center",
                 va="bottom" if above else "top", fontsize=9, fontweight="bold")
     # Verdict sits in the stretch of the bar the CI whisker does not cross,
     # i.e. between the baseline and the whisker cap nearest to it.
