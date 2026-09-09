@@ -1,9 +1,11 @@
 """Render the v3 paper's body figures from canonical parquets.
 
 Produces Fig 1, 2, 3, 4, 8, 9 from the figure inventory in
-`wiki/paper/scaffold.md`. Output: PNG (300 dpi) under
-`experiments/_analysis/paper_figures/`. All numbers trace to the n=150
-powered sweep at run-09 + 2026-04-27/run-{01,02} (post-norm geometry only).
+`wiki/paper/scaffold.md`. Output: vector PDF (for the manuscript) plus PNG
+(300 dpi, for quick viewing) under `experiments/_analysis/paper_figures/`.
+All numbers trace to the n=150 powered sweep at run-09 +
+2026-04-27/run-{01,02} (post-norm geometry only). Fig 3 additionally reads
+2026-04-24/run-05 and 2026-04-26/run-02 for the matched n=200 J_n pair.
 
 Bootstrap config: 1000 sample-level paired resamples, seed=20260423 — matches
 the analyzer's sealed config.
@@ -34,6 +36,9 @@ RUN_PRIMARIES = REPO / "experiments" / "v3-main-run" / "2026-04-26" / "run-09"
 RUN_PHI = REPO / "experiments" / "v3-main-run" / "2026-04-27" / "run-01"
 RUN_GEMMA = REPO / "experiments" / "v3-main-run" / "2026-04-27" / "run-02"
 RUN_BUGGY = REPO / "experiments" / "v3-main-run" / "2026-04-24" / "run-05"
+# Corrected geometry at the SAME n=200 as run-05 — the matched partner that
+# isolates the J_n effect. run-09 is the later powered replication at n=600.
+RUN_PRELIM = REPO / "experiments" / "v3-main-run" / "2026-04-26" / "run-02"
 
 MODELS = [
     ("Llama 3.2 3B", RUN_PRIMARIES / "Llama-3.2-3B-Instruct-4bit_results.parquet", "#1f77b4"),
@@ -58,7 +63,16 @@ plt.rcParams.update({
     "figure.dpi": 100,
     "savefig.dpi": 300,
     "savefig.bbox": "tight",
+    # TrueType, not Type 3 — arXiv rejects Type-3 fonts in figures.
+    "pdf.fonttype": 42,
+    "ps.fonttype": 42,
 })
+
+
+def _save(out: Path, stem: str) -> None:
+    """Emit vector PDF for the manuscript and PNG for quick viewing."""
+    for ext in ("pdf", "png"):
+        plt.savefig(out / f"{stem}.{ext}")
 
 # ---- bootstrap helpers ----------------------------------------------------
 
@@ -124,13 +138,15 @@ def fig1_sealed_e18(out: Path):
     ax.set_xticks(x)
     ax.set_xticklabels(names, rotation=10, ha="right")
     ax.set_ylabel("AUROC (residualized\nnull_ratio_post_rank1)")
-    ax.set_ylim(0.45, 1.0)
-    ax.set_title("Fig 1 — Sealed E18 verdict: 3 of 3 primaries PASS (n=600, post-norm)",
+    # Headroom above the tallest value label so the legend can sit clear of the
+    # bars; at lower right it printed on top of the Qwen 2.5 bar.
+    ax.set_ylim(0.45, 1.06)
+    ax.set_title("Sealed E18 verdict: 3 of 3 primaries PASS (n=600, post-norm)",
                  pad=12)
     for xi, a, c in zip(x, aurocs, cis):
         ax.text(xi, c[1] + 0.015, f"{a:.3f}", ha="center", fontsize=9, fontweight="bold")
-    ax.legend(loc="lower right", frameon=True)
-    plt.savefig(out / "fig1_sealed_e18.png")
+    ax.legend(loc="upper right", frameon=True, fontsize=9)
+    _save(out, "fig1_sealed_e18")
     plt.close(fig)
     print(f"  wrote {out / 'fig1_sealed_e18.png'}")
 
@@ -181,66 +197,122 @@ def fig2_sealed_e17b(out: Path):
     ax2.axhline(0, ls="-", color="grey", alpha=0.5, lw=0.8)
     ax2.set_xticks([0])
     ax2.set_xticklabels(["Δ = Fisher − Raw\n(oriented)"])
-    ax2.set_ylim(-0.01, 0.25)
+    # Headroom for the legend above the value label; at lower right it printed
+    # on top of the bar and the sealed-bar line.
+    ax2.set_ylim(-0.01, 0.32)
     ax2.set_title("Δ AUROC + 95% CI")
     ax2.text(0, ci[1] + 0.008, f"+{delta:.3f}\n[+{ci[0]:.3f}, +{ci[1]:.3f}]",
              ha="center", fontsize=9, fontweight="bold")
-    ax2.legend(loc="lower right", frameon=True, fontsize=8)
-    plt.suptitle("Fig 2 — Sealed E17b head-to-head: Fisher beats Raw on Qwen 2.5 (PASS)", y=1.02)
-    plt.savefig(out / "fig2_sealed_e17b.png")
+    ax2.legend(loc="upper left", frameon=True, fontsize=8)
+    plt.suptitle("Sealed E17b head-to-head: Fisher beats Raw on Qwen 2.5 (PASS)", y=1.02)
+    _save(out, "fig2_sealed_e17b")
     plt.close(fig)
     print(f"  wrote {out / 'fig2_sealed_e17b.png'}")
 
 # ---- Fig 3: J_n correction effect ---------------------------------------
 
-def fig3_jn_correction(out: Path):
-    # Buggy reading from the 2026-04-24 run-05 forensic parquet — analyzer can't read it
-    # post-cleanup, so we recompute here using the legacy column path directly.
-    df = pd.read_parquet(RUN_BUGGY / "Qwen2.5-7B-Instruct-4bit_results.parquet")
-    df = df[(df["layer"] == "final") & (df["gen_step"] == 1)].copy()
-    y = df["contradiction"].astype(int).values
-    f_buggy = df["null_ratio_rank1"].values  # legacy column = pre-norm Δh / post-norm basis
-    r_buggy = df["null_ratio_raw_rank1"].values
-    f_au_b = roc_auc_score(y, f_buggy); f_o_b = max(f_au_b, 1 - f_au_b)
-    r_au_b = roc_auc_score(y, r_buggy); r_o_b = max(r_au_b, 1 - r_au_b)
-    delta_b, lo_b, hi_b = boot_h2h_oriented(y, f_buggy, r_buggy)
-
-    # Corrected reading from run-09 sealed_gate.json
-    sg = json.loads((RUN_PRIMARIES / "sealed_gate.json").read_text())
+def _e17b_reading(run_dir: Path):
+    """Read the sealed analyzer's Qwen 2.5 E17b head-to-head from a run's
+    sealed_gate.json. Both readings come from the same authority the paper's
+    Table 2 quotes, so the figure cannot drift from the table."""
+    sg = json.loads((run_dir / "sealed_gate.json").read_text())
     qwen = next(r for r in sg["per_model"] if "Qwen2.5" in r["model"])
     h2h = qwen["E17b_head_to_head"]
-    f_au_c = h2h["auroc_a"]; f_o_c = max(f_au_c, 1 - f_au_c); f_sign_c = h2h["sign_a"]
-    r_au_c = h2h["auroc_b"]; r_o_c = max(r_au_c, 1 - r_au_c); r_sign_c = h2h["sign_b"]
-    delta_c, lo_c, hi_c = h2h["delta"], h2h["delta_ci"][0], h2h["delta_ci"][1]
+    return {
+        "n": qwen["n"],
+        "delta": h2h["delta"],
+        "lo": h2h["delta_ci"][0],
+        "hi": h2h["delta_ci"][1],
+    }
 
-    fig, ax = plt.subplots(figsize=(6.5, 3.5))
-    x = np.array([0, 1])
-    deltas = np.array([delta_b, delta_c])
-    err_lo = np.array([deltas[0] - lo_b, deltas[1] - lo_c])
-    err_hi = np.array([hi_b - deltas[0], hi_c - deltas[1]])
-    colors = ["#d62728", "#2ca02c"]
-    ax.bar(x, deltas, yerr=[err_lo, err_hi], color=colors, alpha=0.85, capsize=8, width=0.45)
-    ax.axhline(0.02, ls="--", color="black", alpha=0.6, lw=1, label="sealed bar (+0.02)")
-    ax.axhline(0, ls="-", color="grey", alpha=0.5, lw=0.8)
+
+def fig3_jn_correction(out: Path):
+    # Every bar reads the archived sealed_gate.json for its run — the same
+    # authority Table 2 quotes. Recomputing the buggy bar from the legacy
+    # parquet column instead produced -0.165 against the table's -0.166.
+    #
+    # Three readings, not two. run-05 and run-02 are the MATCHED n=200 pair
+    # that isolates the J_n effect; pairing run-05 against the n=600 run-09
+    # confounds the correction with a 3x sample-size increase.
+    buggy = _e17b_reading(RUN_BUGGY)
+    fixed = _e17b_reading(RUN_PRELIM)
+    powered = _e17b_reading(RUN_PRIMARIES)
+    readings = [buggy, fixed, powered]
+
+    # Assert against the sealed analyzer output before drawing (DC house rule:
+    # a figure states what the scored artifact says, or it does not ship).
+    for r, want_d, want_n in [(buggy, -0.1658, 200), (fixed, 0.1495, 200),
+                              (powered, 0.1571, 600)]:
+        assert abs(r["delta"] - want_d) < 5e-4, r
+        assert r["n"] == want_n, r
+
+    fig, ax = plt.subplots(figsize=(7.6, 3.8))
+    x = np.arange(3)
+    deltas = np.array([r["delta"] for r in readings])
+    los = np.array([r["lo"] for r in readings])
+    his = np.array([r["hi"] for r in readings])
+    colors = ["#d62728", "#2ca02c", "#2ca02c"]
+    ax.bar(x, deltas, yerr=[deltas - los, his - deltas], color=colors,
+           alpha=0.85, capsize=8, width=0.55, zorder=2)
+    # The powered replication is the same verdict on more data, not a third
+    # condition — hatch it so it does not read as another experimental arm.
+    # Sparse hatch: dense hatching cuts through the white verdict label.
+    ax.patches[2].set_hatch("/")
+    ax.patches[2].set_edgecolor("white")
+    ax.axhline(0.02, ls="--", color="black", alpha=0.6, lw=1,
+               label="sealed bar (+0.02)", zorder=1)
+    ax.axhline(0, ls="-", color="grey", alpha=0.5, lw=0.8, zorder=1)
+
+    # Fixed limits with headroom at both ends so no annotation can escape the
+    # axes and overprint the title or the tick labels.
+    # Top headroom clears the two-line value labels so the swing bracket can
+    # sit above them; the basis is post-norm throughout and is stated in the
+    # caption, so the tick labels carry only what differs between runs.
+    ax.set_ylim(-0.34, 0.40)
+    ax.set_xlim(-0.6, 2.6)
     ax.set_xticks(x)
-    ax.set_xticklabels(["Buggy 2026-04-24\n(pre-norm Δh / post-norm basis)\nrun-05",
-                        "Corrected 2026-04-27\n(post-norm Δh / post-norm basis)\nrun-09"])
+    ax.set_xticklabels(
+        [f"Buggy 2026-04-24\npre-norm $\\Delta$h\nrun-05, n={buggy['n']}",
+         f"Corrected 2026-04-26\npost-norm $\\Delta$h\nrun-02, n={fixed['n']}",
+         f"Powered replication\npost-norm $\\Delta$h\nrun-09, n={powered['n']}"],
+        fontsize=9)
     ax.set_ylabel("Δ AUROC (oriented Fisher − Raw)")
-    ax.set_title("Fig 3 — J_n correction flipped the sealed E17b verdict on Qwen 2.5\n"
-                 "(same data, same spec, different basis-coordinate-frame implementation)")
-    for xi, d, lo, hi in zip(x, deltas, [lo_b, lo_c], [hi_b, hi_c]):
-        sym = "+" if d > 0 else ""
-        ax.text(xi, hi + 0.012, f"{sym}{d:.3f}\n[{lo:+.3f}, {hi:+.3f}]",
-                ha="center", fontsize=9, fontweight="bold")
-    # annotate verdict
-    ax.text(0, lo_b - 0.04, "FAIL\n(Raw decisive)", ha="center", fontsize=10,
-            color="#d62728", fontweight="bold")
-    ax.text(1, hi_c + 0.06, "PASS\n(Fisher decisive)", ha="center", fontsize=10,
-            color="#2ca02c", fontweight="bold")
-    ax.legend(loc="upper left", frameon=True, fontsize=9)
-    plt.savefig(out / "fig3_jn_correction.png")
+    ax.set_title("$J_n$ correction flipped the sealed E17b verdict on Qwen 2.5\n"
+                 "left pair is matched at n=200 and isolates the correction; "
+                 "right bar is the powered replication",
+                 fontsize=10.5, pad=10)
+
+    # Bracket the matched pair so the comparison the paper claims is the one
+    # the eye makes.
+    swing = fixed["delta"] - buggy["delta"]
+    ax.annotate("", xy=(0, 0.335), xytext=(1, 0.335),
+                arrowprops=dict(arrowstyle="<->", color="#333333", lw=1.2))
+    ax.text(0.5, 0.348, f"$J_n$ correction: {swing:+.3f} swing", ha="center",
+            va="bottom", fontsize=9, fontweight="bold", color="#333333")
+
+    # Value + CI outside the whisker; verdict inside the bar body. Neither can
+    # collide with the other, with the title, or with the tick labels.
+    for xi, d, lo, hi in zip(x, deltas, los, his):
+        above = d > 0
+        y = hi + 0.022 if above else lo - 0.022
+        ax.text(xi, y, f"{d:+.3f}\n[{lo:+.3f}, {hi:+.3f}]", ha="center",
+                va="bottom" if above else "top", fontsize=9, fontweight="bold")
+    # Verdict sits in the stretch of the bar the CI whisker does not cross,
+    # i.e. between the baseline and the whisker cap nearest to it.
+    for xi, d, lo, hi, verdict in zip(x, deltas, los, his,
+                                      ["FAIL\nRaw decisive",
+                                       "PASS\nFisher decisive",
+                                       "PASS\nFisher decisive"]):
+        inner_cap = lo if d > 0 else hi
+        ax.text(xi, inner_cap / 2, verdict, ha="center", va="center",
+                fontsize=8.5, color="white", fontweight="bold", zorder=3)
+
+    # Lower right is the only quadrant free of a bar or a value label.
+    ax.legend(loc="lower right", frameon=True, fontsize=9)
+    _save(out, "fig3_jn_correction")
     plt.close(fig)
-    print(f"  wrote {out / 'fig3_jn_correction.png'}")
+    print(f"  wrote {out / 'fig3_jn_correction.png'} ("
+          + ", ".join(f"{r['delta']:+.4f} n={r['n']}" for r in readings) + ")")
 
 # ---- Fig 4: cross-model rank landscape ----------------------------------
 
@@ -270,10 +342,10 @@ def fig4_rank_landscape(out: Path):
     for i, ax in enumerate(axes):
         if i % 3 == 0:
             ax.set_ylabel("oriented Δ\n(Fisher − Raw)")
-    fig.suptitle("Fig 4 — Cross-architecture rank landscape (n=600, post-norm; sealed pin r=1 dotted)",
+    fig.suptitle("Cross-architecture rank landscape (n=600, post-norm; sealed pin r=1 dotted)",
                  y=1.00, fontsize=11)
     plt.tight_layout()
-    plt.savefig(out / "fig4_rank_landscape.png")
+    _save(out, "fig4_rank_landscape")
     plt.close(fig)
     print(f"  wrote {out / 'fig4_rank_landscape.png'}")
 
@@ -313,12 +385,12 @@ def fig8_gemma_rankflip(out: Path):
     ax.set_ylim(-0.55, 0.55)
     ax.set_xlabel("rank r (log scale, major + minor ticks)")
     ax.set_ylabel("oriented Δ AUROC (Fisher − Raw)")
-    ax.set_title("Fig 8 — Motif 2: within-model rank flip robust to chain length (Gemma 3-4B)\n"
+    ax.set_title("Motif 2: within-model rank flip robust to chain length (Gemma 3-4B)\n"
                  "Both strata transition F → R at r=2 → r=3 — pure SVD-spectrum effect",
                  pad=10)
     ax.legend(loc="upper right", frameon=True)
     ax.grid(True, alpha=0.3, which="major")
-    plt.savefig(out / "fig8_gemma_rankflip.png")
+    _save(out, "fig8_gemma_rankflip")
     plt.close(fig)
     print(f"  wrote {out / 'fig8_gemma_rankflip.png'}")
 
@@ -369,11 +441,11 @@ def fig9_mistral_simpsons(out: Path):
     ax.set_ylim(-0.70, 0.70)
     ax.set_xlabel("rank r (log scale, major + minor ticks)")
     ax.set_ylabel("oriented Δ AUROC (Fisher − Raw)")
-    ax.set_title("Fig 9 — Motif 3: chain-length × rank interaction (Mistral 7B)\n"
+    ax.set_title("Motif 3: chain-length × rank interaction (Mistral 7B)\n"
                  "Two Simpson's-paradox sites — pooled verdict dissolves under stratification")
     ax.legend(loc="lower right", frameon=True)
     ax.grid(True, alpha=0.3, which="major")
-    plt.savefig(out / "fig9_mistral_simpsons.png")
+    _save(out, "fig9_mistral_simpsons")
     plt.close(fig)
     print(f"  wrote {out / 'fig9_mistral_simpsons.png'}")
 
