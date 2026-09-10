@@ -606,8 +606,8 @@
       "json_path": "E17b_head_to_head.delta",
       "literal": "+0.1495",
       "selector": {
-        "start": "replicates the $n=200$ corrected prelim (",
-        "end": "within bootstrap noise.",
+        "start": "agrees with the $n=200$ corrected prelim (",
+        "end": "within bootstrap noise",
         "slot": 0
       }
     },
@@ -617,8 +617,8 @@
       "json_path": "E17b_head_to_head.delta_ci.0",
       "literal": "+0.100",
       "selector": {
-        "start": "replicates the $n=200$ corrected prelim (",
-        "end": "within bootstrap noise.",
+        "start": "agrees with the $n=200$ corrected prelim (",
+        "end": "within bootstrap noise",
         "slot": 1
       }
     },
@@ -628,8 +628,8 @@
       "json_path": "E17b_head_to_head.delta_ci.1",
       "literal": "+0.201",
       "selector": {
-        "start": "replicates the $n=200$ corrected prelim (",
-        "end": "within bootstrap noise.",
+        "start": "agrees with the $n=200$ corrected prelim (",
+        "end": "within bootstrap noise",
         "slot": 2
       }
     },
