@@ -154,6 +154,25 @@ def error_prediction(frames):
             continue
         any_testable = True
         print(f"\n{model}  (errors {err.sum()}/{len(d)} = {err.mean():.1%})")
+
+        # Tautology guard. gen_step=1 IS the token the geometry is measured at.
+        # If the outcome label is determined by that token, an error-prediction
+        # AUROC asks whether the hidden state at a position predicts which
+        # token occupies it -- near-tautological, and not about correctness.
+        # This fired on Qwen3, whose scored failures are chain-of-thought
+        # openings truncated by the generation budget.
+        first = d.generated_text.str.strip().str.split().str[0]
+        best = 0.0
+        for tok, grp in pd.DataFrame({"t": first, "e": err}).groupby("t"):
+            best += max(int((grp.e == 0).sum()), int((grp.e == 1).sum()))
+        determinacy = best / len(d)
+        if determinacy > 0.95:
+            print(f"  [!] TAUTOLOGY RISK: the first generated token determines "
+                  f"the outcome label in {determinacy:.1%} of rows.")
+            print(f"      gen_step=1 is that token, so error-prediction AUROC "
+                  f"here is not evidence about answer correctness.")
+            print(f"      first-token breakdown: "
+                  f"{first.value_counts().head(4).to_dict()}")
         con = d.contradiction.astype(bool).values
         for label, col in (("Fisher r1", FISHER.format(1)),
                            ("Raw r1", RAW.format(1)),
