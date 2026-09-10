@@ -1074,8 +1074,8 @@
         ]
       },
       "selector": {
-        "start": "their unoriented AUROCs are",
-        "end": "$, i.e.",
+        "start": "there --- unoriented,",
+        "end": "--- so their large oriented",
         "slot": 0
       }
     },
@@ -1090,8 +1090,8 @@
         ]
       },
       "selector": {
-        "start": "their unoriented AUROCs are",
-        "end": "$, i.e.",
+        "start": "there --- unoriented,",
+        "end": "--- so their large oriented",
         "slot": 1
       }
     }
