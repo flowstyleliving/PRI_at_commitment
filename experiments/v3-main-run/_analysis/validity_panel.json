@@ -1,0 +1,45 @@
+{
+  "note": "Validity-panel outputs. DESCRIPTIVE, computed from banked parquets; not a sealed gate and not part of any pre-registered endpoint. Emitted so published figures are checkable against a file rather than against stdout.",
+  "seed": 20260423,
+  "nboot": 1000,
+  "splits": 200,
+  "ceiling_min_error_rate": 0.05,
+  "models": {
+    "Llama-3.2-3B-Instruct-4bit": {
+      "n": 600,
+      "errors": 2,
+      "error_rate": 0.0033333333333333335,
+      "error_prediction_testable": false
+    },
+    "Mistral-7B-Instruct-v0.3-4bit": {
+      "n": 600,
+      "errors": 0,
+      "error_rate": 0.0,
+      "error_prediction_testable": false
+    },
+    "Qwen2.5-7B-Instruct-4bit": {
+      "n": 600,
+      "errors": 5,
+      "error_rate": 0.008333333333333333,
+      "error_prediction_testable": false
+    },
+    "Qwen3-8B-4bit": {
+      "n": 600,
+      "errors": 116,
+      "error_rate": 0.19333333333333333,
+      "error_prediction_testable": true
+    },
+    "Phi-3.5-mini-instruct-4bit": {
+      "n": 600,
+      "errors": 0,
+      "error_rate": 0.0,
+      "error_prediction_testable": false
+    },
+    "gemma-3-4b-it-4bit": {
+      "n": 600,
+      "errors": 0,
+      "error_rate": 0.0,
+      "error_prediction_testable": false
+    }
+  }
+}

@@ -224,6 +224,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--runs-dir", required=True, type=Path)
+    ap.add_argument("--emit-json", type=Path,
+                    help="Also write the panel's numbers here, so figures "
+                         "quoted from it are machine-checkable rather than "
+                         "living only in this script's stdout.")
     args = ap.parse_args()
 
     frames = []
@@ -239,6 +243,28 @@ def main():
     sign_stability(frames)
     error_prediction(frames)
     residualizer_ci(frames)
+
+    if args.emit_json:
+        payload = {
+            "note": "Validity-panel outputs. DESCRIPTIVE, computed from banked "
+                    "parquets; not a sealed gate and not part of any "
+                    "pre-registered endpoint. Emitted so published figures are "
+                    "checkable against a file rather than against stdout.",
+            "seed": SEED, "nboot": NBOOT, "splits": SPLITS,
+            "ceiling_min_error_rate": CEILING_MIN_ERROR_RATE,
+            "models": {},
+        }
+        for model, d in frames:
+            err = (~d.is_correct.astype(bool))
+            payload["models"][model] = {
+                "n": int(len(d)),
+                "errors": int(err.sum()),
+                "error_rate": float(err.mean()),
+                "error_prediction_testable":
+                    bool(err.mean() >= CEILING_MIN_ERROR_RATE),
+            }
+        args.emit_json.write_text(json.dumps(payload, indent=2) + "\n")
+        print(f"[wrote] {args.emit_json}")
 
 
 if __name__ == "__main__":
