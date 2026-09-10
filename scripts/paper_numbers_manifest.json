@@ -538,10 +538,8 @@
       "json_path": "E17b_head_to_head.delta",
       "literal": "+0.157",
       "selector": {
-        "scope": "The Fisher-weighted basis discriminates",
-        "scope_end": "\\subsection{Cross-architecture motifs}",
-        "start": "\\auroc =",
-        "end": "clears the sealed",
+        "start": "the correction itself is plotted in",
+        "end": "$ clears the sealed",
         "slot": 0
       }
     },
@@ -934,7 +932,7 @@
         ]
       },
       "selector": {
-        "start": "$+0.02$ bar by $7.9\\times$. The",
+        "start": "$+0.02$ bar by $7.9\\times$.",
         "end": "$ swing between",
         "slot": 0
       }
