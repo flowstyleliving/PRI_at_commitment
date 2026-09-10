@@ -1,0 +1,138 @@
+{
+  "model": "Phi-3.5-mini-instruct-4bit",
+  "n": 600,
+  "run": "2026-04-27/run-01",
+  "note": "DESCRIPTIVE run scored from banked parquet. NOT a sealed gate: the analyzer is primary-gated and these models are not primaries. Provided so published descriptive numbers are machine-checkable.",
+  "metrics": {
+    "null_ratio_post_rank1": {
+      "auroc": 0.5580555555555555,
+      "auroc_unoriented": 0.5580555555555555,
+      "sign": 1
+    },
+    "null_ratio_raw_post_rank1": {
+      "auroc": 0.9988666666666667,
+      "auroc_unoriented": 0.9988666666666667,
+      "sign": 1
+    },
+    "null_ratio_post_rank2": {
+      "auroc": 0.8782,
+      "auroc_unoriented": 0.8782,
+      "sign": 1
+    },
+    "null_ratio_raw_post_rank2": {
+      "auroc": 0.9990666666666668,
+      "auroc_unoriented": 0.9990666666666668,
+      "sign": 1
+    },
+    "null_ratio_post_rank3": {
+      "auroc": 0.8936222222222223,
+      "auroc_unoriented": 0.8936222222222223,
+      "sign": 1
+    },
+    "null_ratio_raw_post_rank3": {
+      "auroc": 0.9991555555555556,
+      "auroc_unoriented": 0.9991555555555556,
+      "sign": 1
+    },
+    "null_ratio_post_rank4": {
+      "auroc": 0.8069555555555555,
+      "auroc_unoriented": 0.19304444444444446,
+      "sign": -1
+    },
+    "null_ratio_raw_post_rank4": {
+      "auroc": 0.9980888888888888,
+      "auroc_unoriented": 0.9980888888888888,
+      "sign": 1
+    },
+    "null_ratio_post_rank5": {
+      "auroc": 0.7449,
+      "auroc_unoriented": 0.2551,
+      "sign": -1
+    },
+    "null_ratio_raw_post_rank5": {
+      "auroc": 0.9978111111111111,
+      "auroc_unoriented": 0.9978111111111111,
+      "sign": 1
+    },
+    "null_ratio_post_rank8": {
+      "auroc": 0.7988666666666666,
+      "auroc_unoriented": 0.20113333333333336,
+      "sign": -1
+    },
+    "null_ratio_raw_post_rank8": {
+      "auroc": 0.9986444444444444,
+      "auroc_unoriented": 0.9986444444444444,
+      "sign": 1
+    },
+    "null_ratio_post_rank13": {
+      "auroc": 0.7768777777777778,
+      "auroc_unoriented": 0.22312222222222222,
+      "sign": -1
+    },
+    "null_ratio_raw_post_rank13": {
+      "auroc": 0.9978444444444445,
+      "auroc_unoriented": 0.9978444444444445,
+      "sign": 1
+    },
+    "null_ratio_post_rank16": {
+      "auroc": 0.7619222222222222,
+      "auroc_unoriented": 0.23807777777777778,
+      "sign": -1
+    },
+    "null_ratio_raw_post_rank16": {
+      "auroc": 0.9974888888888889,
+      "auroc_unoriented": 0.9974888888888889,
+      "sign": 1
+    },
+    "null_ratio_post_rank21": {
+      "auroc": 0.7201666666666667,
+      "auroc_unoriented": 0.27983333333333327,
+      "sign": -1
+    },
+    "null_ratio_raw_post_rank21": {
+      "auroc": 0.9974666666666666,
+      "auroc_unoriented": 0.9974666666666666,
+      "sign": 1
+    },
+    "null_ratio_post_rank32": {
+      "auroc": 0.5360555555555555,
+      "auroc_unoriented": 0.5360555555555555,
+      "sign": 1
+    },
+    "null_ratio_raw_post_rank32": {
+      "auroc": 0.9973333333333334,
+      "auroc_unoriented": 0.9973333333333334,
+      "sign": 1
+    },
+    "null_ratio_post_rank34": {
+      "auroc": 0.5472111111111111,
+      "auroc_unoriented": 0.5472111111111111,
+      "sign": 1
+    },
+    "null_ratio_raw_post_rank34": {
+      "auroc": 0.9969222222222223,
+      "auroc_unoriented": 0.9969222222222223,
+      "sign": 1
+    },
+    "null_ratio_post_rank55": {
+      "auroc": 0.7109777777777777,
+      "auroc_unoriented": 0.7109777777777777,
+      "sign": 1
+    },
+    "null_ratio_raw_post_rank55": {
+      "auroc": 0.996,
+      "auroc_unoriented": 0.996,
+      "sign": 1
+    },
+    "null_ratio_post_rank64": {
+      "auroc": 0.7738888888888888,
+      "auroc_unoriented": 0.7738888888888888,
+      "sign": 1
+    },
+    "null_ratio_raw_post_rank64": {
+      "auroc": 0.9955666666666666,
+      "auroc_unoriented": 0.9955666666666666,
+      "sign": 1
+    }
+  }
+}
