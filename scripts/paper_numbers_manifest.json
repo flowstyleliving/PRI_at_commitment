@@ -1,0 +1,1101 @@
+{
+  "schema_version": 1,
+  "notes": [
+    "Published literals were transcribed, not replaced with artifact values. Table cells expand into separate claims in printed token order, with exact signs and positional binding.",
+    "Default numeric tolerance is half a unit at literal precision: 0.00005 for four places, 0.0005 for three places, plus 1e-12 serialization slack in Tiers 2/3 only. Integer counts and signs are exact. Whole percentages explicitly allow 0.5 percentage point.",
+    "Tier 1 has no exceptions: CI widths can fail direct membership even though Tier 3 verifies their derivation.",
+    "Unresolved descriptive AUROC claims deliberately fail closed. They need identified banked sources; unrelated sealed values are not substitutes.",
+    "Qwen unoriented v1 is published as 0.084, but 1 - 0.9154777777777778 = 0.0845222222222222, rounding to 0.085. This known discrepancy is retained.",
+    "Near 0.90 is an explicitly approximate prose description for both baseline AUROCs, using 0.02 tolerance.",
+    "Section 5 chance-level 0.5 statements are mathematical reference points, not measured artifact quotes. Other rank/stratum delta landscape claims require separate sweep artifacts and are outside the sealed AUROC manifest."
+  ],
+  "sources": {
+    "l09": {
+      "run": "2026-04-26/run-09",
+      "model_match": "Llama"
+    },
+    "m09": {
+      "run": "2026-04-26/run-09",
+      "model_match": "Mistral"
+    },
+    "q09": {
+      "run": "2026-04-26/run-09",
+      "model_match": "Qwen2.5"
+    },
+    "q02": {
+      "run": "2026-04-26/run-02",
+      "model_match": "Qwen2.5"
+    },
+    "q05": {
+      "run": "2026-04-24/run-05",
+      "model_match": "Qwen2.5"
+    }
+  },
+  "tables": [
+    {
+      "id": "e18",
+      "scope": "\\subsection{Sealed E18 verdict",
+      "rows": [
+        {
+          "id": "llama",
+          "source": "l09",
+          "tex_context": "Llama 3.2 3B",
+          "cells": [
+            {
+              "id": "auroc",
+              "json_path": "E18_sealed_rank1_lowrank32.auroc",
+              "literal": "0.8713"
+            },
+            {
+              "id": "ci.lower",
+              "json_path": "E18_sealed_rank1_lowrank32.ci.0",
+              "literal": "0.842"
+            },
+            {
+              "id": "ci.upper",
+              "json_path": "E18_sealed_rank1_lowrank32.ci.1",
+              "literal": "0.896"
+            },
+            {
+              "id": "sign",
+              "json_path": "E18_sealed_rank1_lowrank32.sign",
+              "literal": "+1"
+            },
+            {
+              "id": "verdict",
+              "literal": "PASS",
+              "transform": "e18_verdict"
+            }
+          ]
+        },
+        {
+          "id": "mistral",
+          "source": "m09",
+          "tex_context": "Mistral 7B",
+          "cells": [
+            {
+              "id": "auroc",
+              "json_path": "E18_sealed_rank1_lowrank32.auroc",
+              "literal": "0.8707"
+            },
+            {
+              "id": "ci.lower",
+              "json_path": "E18_sealed_rank1_lowrank32.ci.0",
+              "literal": "0.845"
+            },
+            {
+              "id": "ci.upper",
+              "json_path": "E18_sealed_rank1_lowrank32.ci.1",
+              "literal": "0.897"
+            },
+            {
+              "id": "sign",
+              "json_path": "E18_sealed_rank1_lowrank32.sign",
+              "literal": "+1"
+            },
+            {
+              "id": "verdict",
+              "literal": "PASS",
+              "transform": "e18_verdict"
+            }
+          ]
+        },
+        {
+          "id": "qwen",
+          "source": "q09",
+          "tex_context": "Qwen 2.5 7B",
+          "cells": [
+            {
+              "id": "auroc",
+              "json_path": "E18_sealed_rank1_lowrank32.auroc",
+              "literal": "0.6468"
+            },
+            {
+              "id": "ci.lower",
+              "json_path": "E18_sealed_rank1_lowrank32.ci.0",
+              "literal": "0.603"
+            },
+            {
+              "id": "ci.upper",
+              "json_path": "E18_sealed_rank1_lowrank32.ci.1",
+              "literal": "0.691"
+            },
+            {
+              "id": "sign",
+              "json_path": "E18_sealed_rank1_lowrank32.sign",
+              "literal": "+1"
+            },
+            {
+              "id": "verdict",
+              "literal": "PASS",
+              "transform": "e18_verdict"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "e17b",
+      "scope": "\\subsection{Sealed E17b verdict",
+      "rows": [
+        {
+          "id": "buggy",
+          "source": "q05",
+          "tex_context": "Buggy 2026-04-24 (run-05)",
+          "cells": [
+            {
+              "id": "n",
+              "json_path": "n",
+              "literal": "200"
+            },
+            {
+              "id": "fisher",
+              "json_path": "E17b_head_to_head.auroc_a",
+              "literal": "0.7665"
+            },
+            {
+              "id": "fisher.sign",
+              "json_path": "E17b_head_to_head.sign_a",
+              "literal": "-1"
+            },
+            {
+              "id": "raw",
+              "json_path": "E17b_head_to_head.auroc_b",
+              "literal": "0.9323"
+            },
+            {
+              "id": "raw.sign",
+              "json_path": "E17b_head_to_head.sign_b",
+              "literal": "+1"
+            },
+            {
+              "id": "delta",
+              "json_path": "E17b_head_to_head.delta",
+              "literal": "-0.1658"
+            },
+            {
+              "id": "ci.lower",
+              "json_path": "E17b_head_to_head.delta_ci.0",
+              "literal": "-0.240"
+            },
+            {
+              "id": "ci.upper",
+              "json_path": "E17b_head_to_head.delta_ci.1",
+              "literal": "-0.098"
+            }
+          ]
+        },
+        {
+          "id": "corrected",
+          "source": "q02",
+          "tex_context": "Corrected 2026-04-26 (run-02)",
+          "cells": [
+            {
+              "id": "n",
+              "json_path": "n",
+              "literal": "200"
+            },
+            {
+              "id": "fisher",
+              "json_path": "E17b_head_to_head.auroc_a",
+              "literal": "0.9008"
+            },
+            {
+              "id": "fisher.sign",
+              "json_path": "E17b_head_to_head.sign_a",
+              "literal": "+1"
+            },
+            {
+              "id": "raw",
+              "json_path": "E17b_head_to_head.auroc_b",
+              "literal": "0.7513"
+            },
+            {
+              "id": "raw.sign",
+              "json_path": "E17b_head_to_head.sign_b",
+              "literal": "-1"
+            },
+            {
+              "id": "delta",
+              "json_path": "E17b_head_to_head.delta",
+              "literal": "+0.1495"
+            },
+            {
+              "id": "ci.lower",
+              "json_path": "E17b_head_to_head.delta_ci.0",
+              "literal": "+0.100"
+            },
+            {
+              "id": "ci.upper",
+              "json_path": "E17b_head_to_head.delta_ci.1",
+              "literal": "+0.201"
+            }
+          ]
+        },
+        {
+          "id": "powered",
+          "source": "q09",
+          "tex_context": "\\textbf{Corrected, powered (run-09)}",
+          "cells": [
+            {
+              "id": "n",
+              "json_path": "n",
+              "literal": "600"
+            },
+            {
+              "id": "fisher",
+              "json_path": "E17b_head_to_head.auroc_a",
+              "literal": "0.8967"
+            },
+            {
+              "id": "fisher.sign",
+              "json_path": "E17b_head_to_head.sign_a",
+              "literal": "+1"
+            },
+            {
+              "id": "raw",
+              "json_path": "E17b_head_to_head.auroc_b",
+              "literal": "0.7396"
+            },
+            {
+              "id": "raw.sign",
+              "json_path": "E17b_head_to_head.sign_b",
+              "literal": "-1"
+            },
+            {
+              "id": "delta",
+              "json_path": "E17b_head_to_head.delta",
+              "literal": "+0.1571"
+            },
+            {
+              "id": "ci.lower",
+              "json_path": "E17b_head_to_head.delta_ci.0",
+              "literal": "+0.125"
+            },
+            {
+              "id": "ci.upper",
+              "json_path": "E17b_head_to_head.delta_ci.1",
+              "literal": "+0.190"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "baselines",
+      "scope": "\\subsection{Baselines}",
+      "rows": [
+        {
+          "id": "llama",
+          "source": "l09",
+          "tex_context": "Llama 3.2 3B",
+          "cells": [
+            {
+              "id": "surprise",
+              "json_path": "baseline_surprise.auroc",
+              "literal": "0.6347"
+            },
+            {
+              "id": "surprise.sign",
+              "json_path": "baseline_surprise.sign",
+              "literal": "+"
+            },
+            {
+              "id": "v1",
+              "json_path": "baseline_v1_cosine.auroc",
+              "literal": "0.6224"
+            },
+            {
+              "id": "v1.sign",
+              "json_path": "baseline_v1_cosine.sign",
+              "literal": "+"
+            },
+            {
+              "id": "v2.topk32",
+              "json_path": "baseline_v2_topk32.auroc",
+              "literal": "0.7528"
+            },
+            {
+              "id": "v2.topk32.sign",
+              "json_path": "baseline_v2_topk32.sign",
+              "literal": "+"
+            },
+            {
+              "id": "v2.lowrank32",
+              "json_path": "baseline_v2_lowrank32.auroc",
+              "literal": "0.7500"
+            },
+            {
+              "id": "v2.lowrank32.sign",
+              "json_path": "baseline_v2_lowrank32.sign",
+              "literal": "+"
+            },
+            {
+              "id": "v3",
+              "json_path": "E17_null_bare_rank1.auroc",
+              "literal": "0.8963"
+            },
+            {
+              "id": "v3.sign",
+              "json_path": "E17_null_bare_rank1.sign",
+              "literal": "+"
+            }
+          ]
+        },
+        {
+          "id": "mistral",
+          "source": "m09",
+          "tex_context": "Mistral 7B",
+          "cells": [
+            {
+              "id": "surprise",
+              "json_path": "baseline_surprise.auroc",
+              "literal": "0.5187"
+            },
+            {
+              "id": "surprise.sign",
+              "json_path": "baseline_surprise.sign",
+              "literal": "+"
+            },
+            {
+              "id": "v1",
+              "json_path": "baseline_v1_cosine.auroc",
+              "literal": "0.5309"
+            },
+            {
+              "id": "v1.sign",
+              "json_path": "baseline_v1_cosine.sign",
+              "literal": "+"
+            },
+            {
+              "id": "v2.topk32",
+              "json_path": "baseline_v2_topk32.auroc",
+              "literal": "0.6623"
+            },
+            {
+              "id": "v2.topk32.sign",
+              "json_path": "baseline_v2_topk32.sign",
+              "literal": "+"
+            },
+            {
+              "id": "v2.lowrank32",
+              "json_path": "baseline_v2_lowrank32.auroc",
+              "literal": "0.6618"
+            },
+            {
+              "id": "v2.lowrank32.sign",
+              "json_path": "baseline_v2_lowrank32.sign",
+              "literal": "+"
+            },
+            {
+              "id": "v3",
+              "json_path": "E17_null_bare_rank1.auroc",
+              "literal": "0.7849"
+            },
+            {
+              "id": "v3.sign",
+              "json_path": "E17_null_bare_rank1.sign",
+              "literal": "+"
+            }
+          ]
+        },
+        {
+          "id": "qwen",
+          "source": "q09",
+          "tex_context": "Qwen 2.5 7B",
+          "cells": [
+            {
+              "id": "surprise",
+              "json_path": "baseline_surprise.auroc",
+              "literal": "0.8947"
+            },
+            {
+              "id": "surprise.sign",
+              "json_path": "baseline_surprise.sign",
+              "literal": "-"
+            },
+            {
+              "id": "v1",
+              "json_path": "baseline_v1_cosine.auroc",
+              "literal": "0.9155"
+            },
+            {
+              "id": "v1.sign",
+              "json_path": "baseline_v1_cosine.sign",
+              "literal": "-"
+            },
+            {
+              "id": "v2.topk32",
+              "json_path": "baseline_v2_topk32.auroc",
+              "literal": "0.7906"
+            },
+            {
+              "id": "v2.topk32.sign",
+              "json_path": "baseline_v2_topk32.sign",
+              "literal": "+"
+            },
+            {
+              "id": "v2.lowrank32",
+              "json_path": "baseline_v2_lowrank32.auroc",
+              "literal": "0.7948"
+            },
+            {
+              "id": "v2.lowrank32.sign",
+              "json_path": "baseline_v2_lowrank32.sign",
+              "literal": "+"
+            },
+            {
+              "id": "v3",
+              "json_path": "E17_null_bare_rank1.auroc",
+              "literal": "0.8967"
+            },
+            {
+              "id": "v3.sign",
+              "json_path": "E17_null_bare_rank1.sign",
+              "literal": "+"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "id": "abstract.qwen.delta",
+      "source": "q09",
+      "json_path": "E17b_head_to_head.delta",
+      "literal": "+0.157",
+      "selector": {
+        "start": "$\\Delta \\auroc =",
+        "end": "$. Mid-study",
+        "slot": 0,
+        "scope": "\\begin{abstract}",
+        "scope_end": "\\end{abstract}"
+      }
+    },
+    {
+      "id": "abstract.qwen.delta_ci.0",
+      "source": "q09",
+      "json_path": "E17b_head_to_head.delta_ci.0",
+      "literal": "+0.125",
+      "selector": {
+        "start": "$\\Delta \\auroc =",
+        "end": "$. Mid-study",
+        "slot": 1,
+        "scope": "\\begin{abstract}",
+        "scope_end": "\\end{abstract}"
+      }
+    },
+    {
+      "id": "abstract.qwen.delta_ci.1",
+      "source": "q09",
+      "json_path": "E17b_head_to_head.delta_ci.1",
+      "literal": "+0.190",
+      "selector": {
+        "start": "$\\Delta \\auroc =",
+        "end": "$. Mid-study",
+        "slot": 2,
+        "scope": "\\begin{abstract}",
+        "scope_end": "\\end{abstract}"
+      }
+    },
+    {
+      "id": "results.e17b.figure.delta",
+      "source": "q09",
+      "json_path": "E17b_head_to_head.delta",
+      "literal": "+0.157",
+      "selector": {
+        "start": "\\textbf{Right:} $\\Delta \\auroc =",
+        "end": "$ (1000-sample paired bootstrap)",
+        "slot": 0
+      }
+    },
+    {
+      "id": "results.e17b.figure.delta_ci.0",
+      "source": "q09",
+      "json_path": "E17b_head_to_head.delta_ci.0",
+      "literal": "+0.125",
+      "selector": {
+        "start": "\\textbf{Right:} $\\Delta \\auroc =",
+        "end": "$ (1000-sample paired bootstrap)",
+        "slot": 1
+      }
+    },
+    {
+      "id": "results.e17b.figure.delta_ci.1",
+      "source": "q09",
+      "json_path": "E17b_head_to_head.delta_ci.1",
+      "literal": "+0.190",
+      "selector": {
+        "start": "\\textbf{Right:} $\\Delta \\auroc =",
+        "end": "$ (1000-sample paired bootstrap)",
+        "slot": 2
+      }
+    },
+    {
+      "id": "results.e17b.text",
+      "source": "q09",
+      "json_path": "E17b_head_to_head.delta",
+      "literal": "+0.157",
+      "selector": {
+        "scope": "The Fisher-weighted basis discriminates",
+        "scope_end": "\\subsection{Cross-architecture motifs}",
+        "start": "\\auroc =",
+        "end": "clears the sealed",
+        "slot": 0
+      }
+    },
+    {
+      "id": "results.jn.buggy",
+      "source": "q05",
+      "json_path": "E17b_head_to_head.delta",
+      "literal": "-0.1658",
+      "selector": {
+        "start": "post-norm basis, run-05): $\\Delta =",
+        "end": "$, FAIL",
+        "slot": 0
+      }
+    },
+    {
+      "id": "results.jn.corrected",
+      "source": "q02",
+      "json_path": "E17b_head_to_head.delta",
+      "literal": "+0.1495",
+      "selector": {
+        "start": "consistent, run-02): $\\Delta =",
+        "end": "$, PASS",
+        "slot": 0
+      }
+    },
+    {
+      "id": "results.jn.powered",
+      "source": "q09",
+      "json_path": "E17b_head_to_head.delta",
+      "literal": "+0.1571",
+      "selector": {
+        "start": "(run-09, $\\Delta =",
+        "end": "$), the sealed verdict",
+        "slot": 0
+      }
+    },
+    {
+      "id": "results.jn.e18.before",
+      "source": "q05",
+      "json_path": "E18_sealed_rank1_lowrank32.auroc",
+      "literal": "0.7445",
+      "selector": {
+        "start": "Qwen 2.5's E18 AUROC moves from",
+        "end": "across the same",
+        "slot": 0
+      }
+    },
+    {
+      "id": "results.jn.e18.after",
+      "source": "q02",
+      "json_path": "E18_sealed_rank1_lowrank32.auroc",
+      "literal": "0.6687",
+      "selector": {
+        "start": "Qwen 2.5's E18 AUROC moves from",
+        "end": "across the same",
+        "slot": 1
+      }
+    },
+    {
+      "id": "results.prelim.delta",
+      "source": "q02",
+      "json_path": "E17b_head_to_head.delta",
+      "literal": "+0.1495",
+      "selector": {
+        "start": "replicates the $n=200$ corrected prelim (",
+        "end": "within bootstrap noise.",
+        "slot": 0
+      }
+    },
+    {
+      "id": "results.prelim.delta_ci.0",
+      "source": "q02",
+      "json_path": "E17b_head_to_head.delta_ci.0",
+      "literal": "+0.100",
+      "selector": {
+        "start": "replicates the $n=200$ corrected prelim (",
+        "end": "within bootstrap noise.",
+        "slot": 1
+      }
+    },
+    {
+      "id": "results.prelim.delta_ci.1",
+      "source": "q02",
+      "json_path": "E17b_head_to_head.delta_ci.1",
+      "literal": "+0.201",
+      "selector": {
+        "start": "replicates the $n=200$ corrected prelim (",
+        "end": "within bootstrap noise.",
+        "slot": 2
+      }
+    },
+    {
+      "id": "results.pooled.llama.delta",
+      "source": "l09",
+      "json_path": "E17b_head_to_head.delta",
+      "literal": "+0.272",
+      "selector": {
+        "start": "Llama 3.2 3B ($\\Delta =",
+        "end": "), Qwen 2.5 7B sealed",
+        "slot": 0,
+        "scope": "\\paragraph{Pooled cross-architecture summary.}",
+        "scope_end": "\\subsection{Baselines}"
+      }
+    },
+    {
+      "id": "results.pooled.llama.delta_ci.0",
+      "source": "l09",
+      "json_path": "E17b_head_to_head.delta_ci.0",
+      "literal": "+0.222",
+      "selector": {
+        "start": "Llama 3.2 3B ($\\Delta =",
+        "end": "), Qwen 2.5 7B sealed",
+        "slot": 1,
+        "scope": "\\paragraph{Pooled cross-architecture summary.}",
+        "scope_end": "\\subsection{Baselines}"
+      }
+    },
+    {
+      "id": "results.pooled.llama.delta_ci.1",
+      "source": "l09",
+      "json_path": "E17b_head_to_head.delta_ci.1",
+      "literal": "+0.320",
+      "selector": {
+        "start": "Llama 3.2 3B ($\\Delta =",
+        "end": "), Qwen 2.5 7B sealed",
+        "slot": 2,
+        "scope": "\\paragraph{Pooled cross-architecture summary.}",
+        "scope_end": "\\subsection{Baselines}"
+      }
+    },
+    {
+      "id": "results.pooled.qwen.delta",
+      "source": "q09",
+      "json_path": "E17b_head_to_head.delta",
+      "literal": "+0.157",
+      "selector": {
+        "start": "Qwen 2.5 7B sealed (",
+        "end": "), Gemma 3-4B",
+        "slot": 0,
+        "scope": "\\paragraph{Pooled cross-architecture summary.}",
+        "scope_end": "\\subsection{Baselines}"
+      }
+    },
+    {
+      "id": "results.pooled.qwen.delta_ci.0",
+      "source": "q09",
+      "json_path": "E17b_head_to_head.delta_ci.0",
+      "literal": "+0.125",
+      "selector": {
+        "start": "Qwen 2.5 7B sealed (",
+        "end": "), Gemma 3-4B",
+        "slot": 1,
+        "scope": "\\paragraph{Pooled cross-architecture summary.}",
+        "scope_end": "\\subsection{Baselines}"
+      }
+    },
+    {
+      "id": "results.pooled.qwen.delta_ci.1",
+      "source": "q09",
+      "json_path": "E17b_head_to_head.delta_ci.1",
+      "literal": "+0.190",
+      "selector": {
+        "start": "Qwen 2.5 7B sealed (",
+        "end": "), Gemma 3-4B",
+        "slot": 2,
+        "scope": "\\paragraph{Pooled cross-architecture summary.}",
+        "scope_end": "\\subsection{Baselines}"
+      }
+    },
+    {
+      "id": "results.pooled.mistral.delta",
+      "source": "m09",
+      "json_path": "E17b_head_to_head.delta",
+      "literal": "-0.140",
+      "selector": {
+        "start": "($\\Delta =",
+        "end": "), Qwen3 8B",
+        "slot": 0,
+        "scope": "\\item \\textbf{Raw decisive (3):}",
+        "scope_end": "\\subsection{Baselines}"
+      }
+    },
+    {
+      "id": "results.pooled.mistral.delta_ci.0",
+      "source": "m09",
+      "json_path": "E17b_head_to_head.delta_ci.0",
+      "literal": "-0.173",
+      "selector": {
+        "start": "($\\Delta =",
+        "end": "), Qwen3 8B",
+        "slot": 1,
+        "scope": "\\item \\textbf{Raw decisive (3):}",
+        "scope_end": "\\subsection{Baselines}"
+      }
+    },
+    {
+      "id": "results.pooled.mistral.delta_ci.1",
+      "source": "m09",
+      "json_path": "E17b_head_to_head.delta_ci.1",
+      "literal": "-0.107",
+      "selector": {
+        "start": "($\\Delta =",
+        "end": "), Qwen3 8B",
+        "slot": 2,
+        "scope": "\\item \\textbf{Raw decisive (3):}",
+        "scope_end": "\\subsection{Baselines}"
+      }
+    },
+    {
+      "id": "results.e18.threshold",
+      "source": "q09",
+      "json_path": "$.sealed_spec.threshold",
+      "literal": "0.60",
+      "selector": {
+        "start": "clear the $\\auroc \\geq",
+        "end": "$ threshold with"
+      }
+    },
+    {
+      "id": "results.e18.figure.threshold",
+      "source": "q09",
+      "json_path": "$.sealed_spec.threshold",
+      "literal": "0.60",
+      "selector": {
+        "start": "the sealed threshold (",
+        "end": ", dashed)",
+        "slot": 0
+      }
+    },
+    {
+      "id": "discussion.near90.surprise",
+      "source": "q09",
+      "json_path": "baseline_surprise.auroc",
+      "literal": "0.90",
+      "selector": {
+        "start": "oriented AUROCs near",
+        "end": "in",
+        "slot": 0
+      },
+      "tolerance": 0.02
+    },
+    {
+      "id": "discussion.near90.v1",
+      "source": "q09",
+      "json_path": "baseline_v1_cosine.auroc",
+      "literal": "0.90",
+      "selector": {
+        "start": "oriented AUROCs near",
+        "end": "in",
+        "slot": 0
+      },
+      "tolerance": 0.02
+    },
+    {
+      "id": "results.phi.raw",
+      "literal": "0.9989",
+      "selector": {
+        "start": "\\texttt{null\\_ratio\\_raw\\_post\\_rank1} $=",
+        "end": "$ --- nearly perfect"
+      },
+      "unresolved": "Phi descriptive run is absent from the sealed_gate.json bank; requires a banked source for 2026-04-27/run-01."
+    },
+    {
+      "id": "discussion.mistral.raw",
+      "literal": "0.9254",
+      "selector": {
+        "start": "scores high on\nboth --- $",
+        "end": "$ on Mistral"
+      },
+      "source": "m09",
+      "json_path": "E17b_null_raw_rank1.auroc"
+    },
+    {
+      "id": "discussion.phi.raw",
+      "literal": "0.9989",
+      "selector": {
+        "start": "on Mistral and a near-saturating $",
+        "end": "$ on Phi"
+      },
+      "unresolved": "Phi descriptive/diagnostic AUROC has no source in the sealed bank."
+    },
+    {
+      "id": "discussion.anli.auroc",
+      "literal": "0.92",
+      "selector": {
+        "start": "with AUROC up to",
+        "end": "on Qwen 2.5"
+      },
+      "unresolved": "ANLI attention diagnostic is outside the supplied sealed bank; source artifact needed."
+    },
+    {
+      "id": "discussion.curvature.auroc",
+      "literal": "1.0",
+      "selector": {
+        "start": "at $\\auroc \\approx",
+        "end": "$ on Qwen 2.5"
+      },
+      "unresolved": "Standalone curvature diagnostic is outside the supplied sealed bank; source artifact needed."
+    }
+  ],
+  "derived": [
+    {
+      "id": "discussion.qwen.unoriented.surprise",
+      "literal": "0.105",
+      "formula": {
+        "op": "unoriented",
+        "args": [
+          "q09:baseline_surprise.auroc",
+          "q09:baseline_surprise.sign"
+        ]
+      },
+      "selector": {
+        "start": "unoriented, they sit at",
+        "end": "$. On this model",
+        "slot": 0
+      }
+    },
+    {
+      "id": "discussion.qwen.unoriented.v1",
+      "literal": "0.085",
+      "formula": {
+        "op": "unoriented",
+        "args": [
+          "q09:baseline_v1_cosine.auroc",
+          "q09:baseline_v1_cosine.sign"
+        ]
+      },
+      "selector": {
+        "start": "unoriented, they sit at",
+        "end": "$. On this model",
+        "slot": 1
+      }
+    },
+    {
+      "id": "swing.methods",
+      "literal": "+0.32",
+      "formula": {
+        "op": "sub",
+        "args": [
+          "q02:E17b_head_to_head.delta",
+          "q05:E17b_head_to_head.delta"
+        ]
+      },
+      "selector": {
+        "start": "(PASS) under the corrected geometry --- the",
+        "end": "$ swing",
+        "slot": 0
+      }
+    },
+    {
+      "id": "swing.table.caption",
+      "literal": "+0.32",
+      "formula": {
+        "op": "sub",
+        "args": [
+          "q02:E17b_head_to_head.delta",
+          "q05:E17b_head_to_head.delta"
+        ]
+      },
+      "selector": {
+        "start": "Raw decisive, corrected PASSES with Fisher decisive, a",
+        "end": "$ swing.",
+        "slot": 0
+      }
+    },
+    {
+      "id": "swing.figure.caption",
+      "literal": "+0.32",
+      "formula": {
+        "op": "sub",
+        "args": [
+          "q02:E17b_head_to_head.delta",
+          "q05:E17b_head_to_head.delta"
+        ]
+      },
+      "selector": {
+        "start": "with Fisher decisive --- a",
+        "end": "$ swing at fixed",
+        "slot": 0
+      }
+    },
+    {
+      "id": "swing.results",
+      "literal": "+0.32",
+      "formula": {
+        "op": "sub",
+        "args": [
+          "q02:E17b_head_to_head.delta",
+          "q05:E17b_head_to_head.delta"
+        ]
+      },
+      "selector": {
+        "start": "$+0.02$ bar by $7.9\\times$. The",
+        "end": "$ swing between",
+        "slot": 0
+      }
+    },
+    {
+      "id": "bar.multiple",
+      "literal": "7.9",
+      "formula": {
+        "op": "div",
+        "args": [
+          "q09:E17b_head_to_head.delta",
+          0.02
+        ]
+      },
+      "selector": {
+        "start": "clears the sealed $+0.02$ bar by",
+        "end": "\\times$.",
+        "slot": 0
+      }
+    },
+    {
+      "id": "ci.narrowing.observed",
+      "literal": "36",
+      "formula": {
+        "op": "mul",
+        "args": [
+          100,
+          {
+            "op": "sub",
+            "args": [
+              1,
+              {
+                "op": "div",
+                "args": [
+                  {
+                    "op": "sub",
+                    "args": [
+                      "q09:E17b_head_to_head.delta_ci.1",
+                      "q09:E17b_head_to_head.delta_ci.0"
+                    ]
+                  },
+                  {
+                    "op": "sub",
+                    "args": [
+                      "q02:E17b_head_to_head.delta_ci.1",
+                      "q02:E17b_head_to_head.delta_ci.0"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "selector": {
+        "start": "The interval narrows by",
+        "end": "\\%",
+        "slot": 0
+      },
+      "tolerance": 0.5
+    },
+    {
+      "id": "ci.width.prelim",
+      "literal": "0.1005",
+      "formula": {
+        "op": "sub",
+        "args": [
+          "q02:E17b_head_to_head.delta_ci.1",
+          "q02:E17b_head_to_head.delta_ci.0"
+        ]
+      },
+      "selector": {
+        "pattern": "The interval narrows by .*?\\(\\$(?P<value>NUMBER)"
+      }
+    },
+    {
+      "id": "ci.width.powered",
+      "literal": "0.0643",
+      "formula": {
+        "op": "sub",
+        "args": [
+          "q09:E17b_head_to_head.delta_ci.1",
+          "q09:E17b_head_to_head.delta_ci.0"
+        ]
+      },
+      "selector": {
+        "start": "($0.1005 \\to",
+        "end": "$);"
+      }
+    },
+    {
+      "id": "ci.narrowing.ideal",
+      "literal": "42",
+      "formula": {
+        "op": "mul",
+        "args": [
+          100,
+          {
+            "op": "sub",
+            "args": [
+              1,
+              {
+                "op": "div",
+                "args": [
+                  1,
+                  {
+                    "op": "sqrt",
+                    "args": [
+                      {
+                        "op": "div",
+                        "args": [
+                          "q09:n",
+                          "q02:n"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "selector": {
+        "start": "sample-size increase would give",
+        "end": "\\%",
+        "slot": 0
+      },
+      "tolerance": 0.5
+    },
+    {
+      "id": "baselines.qwen.unoriented.surprise",
+      "literal": "0.105",
+      "formula": {
+        "op": "unoriented",
+        "args": [
+          "q09:baseline_surprise.auroc",
+          "q09:baseline_surprise.sign"
+        ]
+      },
+      "selector": {
+        "start": "their unoriented AUROCs are",
+        "end": "$, i.e.",
+        "slot": 0
+      }
+    },
+    {
+      "id": "baselines.qwen.unoriented.v1",
+      "literal": "0.085",
+      "formula": {
+        "op": "unoriented",
+        "args": [
+          "q09:baseline_v1_cosine.auroc",
+          "q09:baseline_v1_cosine.sign"
+        ]
+      },
+      "selector": {
+        "start": "their unoriented AUROCs are",
+        "end": "$, i.e.",
+        "slot": 1
+      }
+    }
+  ]
+}
